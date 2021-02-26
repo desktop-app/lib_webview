@@ -51,8 +51,12 @@ void Wrap::setTitle(std::string title) {
 	_wrapped->view.set_title(std::move(title));
 }
 
-void Wrap::setSize(int width, int height, Hint hint) {
+void Wrap::setWindowSize(int width, int height, Hint hint) {
 	_wrapped->view.set_size(width, height, int(hint));
+}
+
+void Wrap::resizeToWindow() {
+	_wrapped->view.resize_to_window();
 }
 
 void Wrap::init(std::string js) {

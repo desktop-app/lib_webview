@@ -7,17 +7,33 @@
 #pragma once
 
 #include "webview/details/webview_wrap.h"
+#include "base/unique_qptr.h"
+#include "base/basic_types.h"
 
-#include <QtCore/QString>
+class QString;
+class QWidget;
+class QWindow;
 
 namespace Webview {
 
 class Window final {
 public:
-	explicit Window(const QString &url);
+	explicit Window(QWidget *parent = nullptr);
+
+	QWidget *widget() {
+		return _widget.get();
+	}
+
+	void navigate(const QString &url);
+	void init(const QByteArray &js);
+	void eval(const QByteArray &js);
+	void bind(const QString &name, Fn<void(QByteArray)> callback);
 
 private:
+	QWindow *_window = nullptr;
+	void *_handle = nullptr;
 	details::Wrap _wrap;
+	base::unique_qptr<QWidget> _widget;
 
 };
 

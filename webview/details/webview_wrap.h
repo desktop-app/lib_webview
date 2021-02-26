@@ -37,7 +37,8 @@ public:
 	void resolve(std::string seq, int status, std::string result);
 
 	void setTitle(std::string title);
-	void setSize(int width, int height, Hint hint);
+	void setWindowSize(int width, int height, Hint hint);
+	void resizeToWindow();
 
 	void init(std::string js);
 	void eval(std::string js);
