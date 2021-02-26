@@ -6,63 +6,147 @@
 //
 #include "webview/webview_embed.h"
 
-#include "webview/details/webview_wrap.h"
+#include "webview/webview_interface.h"
 #include "base/event_filter.h"
 #include "base/invoke_queued.h"
+#include "base/platform/base_platform_info.h"
 
 #include <QtWidgets/QWidget>
 #include <QtGui/QWindow>
+#include <QtCore/QJsonDocument>
 
 namespace Webview {
 namespace {
 
-QWindow *CreateContainerWindow() {
-	const auto result = new QWindow();
-	result->setFlag(Qt::FramelessWindowHint);
-	return result;
+[[nodiscard]] QWindow *CreateContainerWindow() {
+	if constexpr (!Platform::IsMac()) {
+		const auto result = new QWindow();
+		result->setFlag(Qt::FramelessWindowHint);
+		return result;
+	} else {
+		return nullptr;
+	}
+}
+
+[[nodiscard]] QWindow *CreateContainerWindow(not_null<Interface*> webview) {
+	const auto id = webview->winId();
+	return id ? QWindow::fromWinId(WId(id)) : nullptr;
 }
 
 } // namespace
 
 Window::Window(QWidget *parent)
-: _window(CreateContainerWindow())
-, _handle((void*)_window->winId())
-, _wrap(false, &_handle)
-, _widget(
-	QWidget::createWindowContainer(
-		_window,
-		parent,
-		Qt::FramelessWindowHint)) {
+: _window(CreateContainerWindow()) {
+	if (SupportsEmbedAfterCreate()) {
+		if (!createWebView()) {
+			return;
+		}
+		if (!_window) {
+			_window = CreateContainerWindow(_webview.get());
+		}
+	}
+	if (!_window) {
+		return;
+	}
+	_widget.reset(
+		QWidget::createWindowContainer(
+			_window,
+			parent,
+			Qt::FramelessWindowHint));
+	_widget->show();
+	if (!createWebView()) {
+		return;
+	}
+	_webview->resizeToWindow();
 	base::install_event_filter(_widget, [=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::Resize || e->type() == QEvent::Move) {
-			InvokeQueued(_widget.get(), [=] { _wrap.resizeToWindow(); });
+			InvokeQueued(_widget.get(), [=] { _webview->resizeToWindow(); });
 		}
 		return base::EventFilterResult::Continue;
 	});
-	_widget->show();
+}
+
+Window::~Window() = default;
+
+bool Window::createWebView() {
+	if (!_webview) {
+		_webview = CreateInstance({
+			.window = _window ? (void*)_window->winId() : nullptr,
+			.messageHandler = messageHandler(),
+			.navigationHandler = navigationHandler()
+		});
+	}
+	if (_webview) {
+		return true;
+	}
+	delete _window;
+	_window = nullptr;
+	_widget = nullptr;
+	return false;
 }
 
 void Window::navigate(const QString &url) {
-	_wrap.navigate(url.toStdString());
+	Expects(_webview != nullptr);
+
+	_webview->navigate(url.toStdString());
 }
 
 void Window::init(const QByteArray &js) {
-	_wrap.init(js.toStdString());
+	Expects(_webview != nullptr);
+
+	_webview->init(js.toStdString());
 }
 
 void Window::eval(const QByteArray &js) {
-	_wrap.eval(js.toStdString());
+	Expects(_webview != nullptr);
+
+	_webview->eval(js.toStdString());
 }
 
-void Window::bind(const QString &name, Fn<void(QByteArray)> callback) {
-	Expects(callback != nullptr);
+void Window::setMessageHandler(Fn<void(std::string)> handler) {
+	_messageHandler = std::move(handler);
+}
 
-	_wrap.bind(name.toStdString(), [=](
-			const std::string&,
-			const std::string &result,
-			void*) {
-		callback(QByteArray::fromStdString(result));
-	}, nullptr);
+void Window::setMessageHandler(Fn<void(QJsonDocument)> handler) {
+	if (!handler) {
+		setMessageHandler(Fn<void(std::string)>());
+		return;
+	}
+	setMessageHandler([=](std::string text) {
+		auto error = QJsonParseError();
+		auto document = QJsonDocument::fromJson(
+			QByteArray::fromRawData(text.data(), text.size()),
+			&error);
+		if (error.error == QJsonParseError::NoError) {
+			handler(std::move(document));
+		}
+	});
+}
+
+Fn<void(std::string)> Window::messageHandler() const {
+	return [=](std::string message) {
+		if (_messageHandler) {
+			_messageHandler(std::move(message));
+		}
+	};
+}
+
+void Window::setNavigationHandler(Fn<void(QString)> handler) {
+	if (!handler) {
+		_navigationHandler = nullptr;
+		return;
+	}
+	_navigationHandler = [=](std::string uri) {
+		handler(QString::fromStdString(uri));
+	};
+}
+
+Fn<void(std::string)> Window::navigationHandler() const {
+	return [=](std::string message) {
+		if (_navigationHandler) {
+			_navigationHandler(std::move(message));
+		}
+	};
 }
 
 } // namespace Webview

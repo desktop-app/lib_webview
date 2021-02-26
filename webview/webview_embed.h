@@ -6,7 +6,6 @@
 //
 #pragma once
 
-#include "webview/details/webview_wrap.h"
 #include "base/unique_qptr.h"
 #include "base/basic_types.h"
 
@@ -16,24 +15,36 @@ class QWindow;
 
 namespace Webview {
 
+class Interface;
+struct Config;
+
 class Window final {
 public:
 	explicit Window(QWidget *parent = nullptr);
+	~Window();
 
+	// Returns 'nullptr' in case of an error.
 	QWidget *widget() {
 		return _widget.get();
 	}
 
 	void navigate(const QString &url);
+	void setMessageHandler(Fn<void(std::string)> handler);
+	void setMessageHandler(Fn<void(QJsonDocument)> handler);
+	void setNavigationHandler(Fn<void(QString)> handler);
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
-	void bind(const QString &name, Fn<void(QByteArray)> callback);
 
 private:
+	bool createWebView();
+	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
+	[[nodiscard]] Fn<void(std::string)> navigationHandler() const;
+
 	QWindow *_window = nullptr;
-	void *_handle = nullptr;
-	details::Wrap _wrap;
+	std::unique_ptr<Interface> _webview;
 	base::unique_qptr<QWidget> _widget;
+	Fn<void(std::string)> _messageHandler;
+	Fn<void(std::string)> _navigationHandler;
 
 };
 
