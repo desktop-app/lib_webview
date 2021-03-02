@@ -34,6 +34,13 @@ PRIVATE
     webview/platform/mac/webview_mac.h
     webview/platform/mac/webview_mac.mm
 
+    webview/platform/linux/webview_linux.h
+    webview/platform/linux/webview_linux.cpp
+    webview/platform/linux/webview_linux_webkit_gtk.cpp
+    webview/platform/linux/webview_linux_webkit_gtk.h
+    webview/platform/linux/webview_linux_webkit2gtk.cpp
+    webview/platform/linux/webview_linux_webkit2gtk.h
+
     webview/platform/win/webview_win.cpp
     webview/platform/win/webview_win.h
     webview/platform/win/webview_windows_edge_chromium.cpp
@@ -89,6 +96,24 @@ if (WIN32)
     PRIVATE
         ${webview2_loc}/${webview2_lib_folder}/WebView2LoaderStatic.lib
     )
+elseif (LINUX)
+    if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
+        find_package(PkgConfig REQUIRED)
+
+        pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+        target_include_directories(lib_webview_wrap PUBLIC ${GTK3_INCLUDE_DIRS})
+
+        pkg_check_modules(WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.0)
+        target_include_directories(lib_webview_wrap PUBLIC ${WEBKIT_INCLUDE_DIRS})
+    else()
+        remove_target_sources(lib_webview_wrap ${src_loc}
+            webview/platform/linux/webview_linux_webkit_gtk.cpp
+            webview/platform/linux/webview_linux_webkit_gtk.h
+            webview/platform/linux/webview_linux_webkit2gtk.cpp
+            webview/platform/linux/webview_linux_webkit2gtk.h
+        )
+    endif()
+    target_link_libraries(lib_webview_wrap PRIVATE desktop-app::external_qt)
 endif()
 
 nice_target_sources(lib_webview ${src_loc}

@@ -33,6 +33,9 @@ struct Config {
 	void *window = nullptr;
 	std::function<void(std::string)> messageHandler;
 	std::function<void(std::string)> navigationHandler;
+
+	// If the host project already loaded GTK2 it should not allow loading 3.
+	bool allowLoadGtk3 = true;
 };
 
 [[nodiscard]] bool Supported();

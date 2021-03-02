@@ -21,13 +21,6 @@ using namespace Windows::Foundation;
 using namespace Windows::Web::UI;
 using namespace Windows::Web::UI::Interop;
 
-//
-//#include "webview.h"
-//
-//#ifdef _MSC_VER
-//#pragma warning(pop)
-//#endif // _MSC_VER
-
 namespace Webview::EdgeHtml {
 namespace {
 

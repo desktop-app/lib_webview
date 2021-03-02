@@ -4,26 +4,22 @@
 // For license and copyright information please follow this link:
 // https://github.com/desktop-app/legal/blob/master/LEGAL
 //
-#include "webview/platform/win/webview_win.h"
+#include "webview/platform/linux/webview_linux.h"
 
-#include "webview/platform/win/webview_windows_edge_chromium.h"
-#include "webview/platform/win/webview_windows_edge_html.h"
+#include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
 namespace Webview {
 
 bool Supported() {
-	return EdgeChromium::Supported() || EdgeHtml::Supported();
+	return WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {
-	return !EdgeChromium::Supported();
+	return true;
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (auto result = EdgeChromium::CreateInstance(config)) {
-		return result;
-	}
-	return EdgeHtml::CreateInstance(std::move(config));
+	return WebKit2Gtk::CreateInstance(std::move(config));
 }
 
 } // namespace Webview
