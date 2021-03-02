@@ -13,7 +13,7 @@
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate> {
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<void(std::string)>)navigationCallback;
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<bool(std::string)>)navigationCallback;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) dealloc;
@@ -22,10 +22,10 @@
 
 @implementation Handler {
 	std::function<void(std::string)> _messageCallback;
-	std::function<void(std::string)> _navigationCallback;
+	std::function<bool(std::string)> _navigationCallback;
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<void(std::string)>)navigationCallback {
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<bool(std::string)>)navigationCallback {
 	if (self = [super init]) {
 		_messageCallback = std::move(messageCallback);
 		_navigationCallback = std::move(navigationCallback);
@@ -44,8 +44,11 @@
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
-	_navigationCallback([string UTF8String]);
-	decisionHandler(WKNavigationActionPolicyAllow);
+	if (_navigationCallback && !_navigationCallback([string UTF8String])) {
+		decisionHandler(WKNavigationActionPolicyCancel);
+	} else {
+		decisionHandler(WKNavigationActionPolicyAllow);
+	}
 }
 
 - (void) dealloc {
@@ -75,7 +78,7 @@ private:
 	WKUserContentController *_manager = nullptr;
 	WKWebView *_webview = nullptr;
 	Handler *_handler = nullptr;
-	
+
 };
 
 Instance::Instance(Config config) {

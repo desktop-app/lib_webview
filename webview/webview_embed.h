@@ -31,20 +31,20 @@ public:
 	void navigate(const QString &url);
 	void setMessageHandler(Fn<void(std::string)> handler);
 	void setMessageHandler(Fn<void(QJsonDocument)> handler);
-	void setNavigationHandler(Fn<void(QString)> handler);
+	void setNavigationHandler(Fn<bool(QString)> handler);
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
 
 private:
 	bool createWebView();
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
-	[[nodiscard]] Fn<void(std::string)> navigationHandler() const;
+	[[nodiscard]] Fn<bool(std::string)> navigationHandler() const;
 
 	QWindow *_window = nullptr;
 	std::unique_ptr<Interface> _webview;
 	base::unique_qptr<QWidget> _widget;
 	Fn<void(std::string)> _messageHandler;
-	Fn<void(std::string)> _navigationHandler;
+	Fn<bool(std::string)> _navigationHandler;
 
 };
 

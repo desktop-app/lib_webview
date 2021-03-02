@@ -6,6 +6,8 @@
 //
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 
+#include "base/basic_types.h"
+
 #include <string>
 #include <locale>
 #include <shlwapi.h>
@@ -88,9 +90,9 @@ public:
 		ICoreWebView2NavigationStartingEventArgs *args);
 
 private:
-	HWND _window;
+	HWND _window = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<void(std::string)> _navigationHandler;
+	std::function<bool(std::string)> _navigationHandler;
 	std::function<void(ICoreWebView2Controller*)> _readyHandler;
 
 };
@@ -129,16 +131,27 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Controller *controller) {
-	controller->AddRef();
+	if (!_readyHandler) {
+		return S_FALSE;
+	}
+	const auto guard = gsl::finally([&] {
+		const auto ready = _readyHandler;
+		_readyHandler = nullptr;
+		ready(controller);
+	});
+	if (!controller) {
+		return S_FALSE;
+	}
 
 	auto webview = (ICoreWebView2*)nullptr;
-	auto token = ::EventRegistrationToken();
 	controller->get_CoreWebView2(&webview);
+	if (!webview) {
+		return S_FALSE;
+	}
+	auto token = ::EventRegistrationToken();
 	webview->add_WebMessageReceived(this, &token);
 	webview->add_PermissionRequested(this, &token);
 	webview->add_NavigationStarting(this, &token);
-
-	_readyHandler(controller);
 	return S_OK;
 }
 
@@ -177,7 +190,9 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_Uri(&uri);
 
 	if (result == S_OK && uri) {
-		_navigationHandler(FromWide(uri));
+		if (_navigationHandler && !_navigationHandler(FromWide(uri))) {
+			args->put_Cancel(TRUE);
+		}
 	}
 
 	CoTaskMemFree(uri);
@@ -189,7 +204,9 @@ public:
 	Instance(
 		void *window,
 		ICoreWebView2Controller *controller,
-		ICoreWebView2 *webview);
+		ICoreWebView2 *webview,
+		std::unique_ptr<Handler> handler);
+	~Instance();
 
 	void navigate(std::string url) override;
 
@@ -204,17 +221,26 @@ private:
 	HWND _window = nullptr;
 	ICoreWebView2Controller *_controller = nullptr;
 	ICoreWebView2 *_webview = nullptr;
+	std::unique_ptr<Handler> _handler;
 
 };
 
 Instance::Instance(
 	void *window,
 	ICoreWebView2Controller *controller,
-	ICoreWebView2 *webview)
+	ICoreWebView2 *webview,
+	std::unique_ptr<Handler> handler)
 : _window(static_cast<HWND>(window))
 , _controller(controller)
-, _webview(webview) {
+, _webview(webview)
+, _handler(std::move(handler)) {
 	init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}");
+}
+
+Instance::~Instance() {
+	CoUninitialize();
+	_webview->Release();
+	_controller->Release();
 }
 
 void Instance::navigate(std::string url) {
@@ -246,7 +272,6 @@ void *Instance::winId() {
 } // namespace
 
 bool Supported() {
-	return false;
 	auto version = LPWSTR(nullptr);
 	const auto result = GetAvailableCoreWebView2BrowserVersionString(
 		nullptr,
@@ -263,34 +288,36 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	auto controller = (ICoreWebView2Controller*)nullptr;
 	auto webview = (ICoreWebView2*)nullptr;
 	const auto event = CreateEvent(nullptr, false, false, nullptr);
+	const auto guard = gsl::finally([&] { CloseHandle(event); });
+
 	const auto ready = [&](ICoreWebView2Controller *created) {
+		const auto guard = gsl::finally([&] { SetEvent(event); });
 		controller = created;
-		if (!created) {
-			SetEvent(event);
+		if (!controller) {
 			return;
 		}
 		controller->get_CoreWebView2(&webview);
 		if (!webview) {
-			SetEvent(event);
 			return;
 		}
-		webview->AddRef();
 		auto settings = (ICoreWebView2Settings*)nullptr;
 		const auto result = webview->get_Settings(&settings);
 		if (result != S_OK || !settings) {
-			SetEvent(event);
 			return;
 		}
 		settings->put_AreDefaultContextMenusEnabled(FALSE);
 		settings->put_AreDevToolsEnabled(FALSE);
 		settings->put_IsStatusBarEnabled(FALSE);
-		SetEvent(event);
+
+		controller->AddRef();
+		webview->AddRef();
 	};
+	auto handler = std::make_unique<Handler>(config, ready);
 	const auto result = CreateCoreWebView2EnvironmentWithOptions(
 		nullptr,
 		nullptr,
 		nullptr,
-		new Handler(config, ready));
+		handler.get());
 	if (result != S_OK) {
 		CoUninitialize();
 		return nullptr;
@@ -301,10 +328,16 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		COWAIT_DISPATCH_CALLS |
 		COWAIT_INPUTAVAILABLE;
 	CoWaitForMultipleHandles(flags, INFINITE, 1, handles, &index);
+
 	if (!controller || !webview) {
+		CoUninitialize();
 		return nullptr;
 	}
-	return std::make_unique<Instance>(config.window, controller, webview);
+	return std::make_unique<Instance>(
+		config.window,
+		controller,
+		webview,
+		std::move(handler));
 }
 
 } // namespace Webview::EdgeChromium

@@ -59,8 +59,9 @@ Instance::Instance(Config config, WebViewControl webview)
 	_webview.NavigationStarting([=, handler = config.navigationHandler](
 			const auto &sender,
 			const WebViewControlNavigationStartingEventArgs &args) {
-		if (handler) {
-			handler(winrt::to_string(args.Uri().AbsoluteUri()));
+		if (handler
+			&& !handler(winrt::to_string(args.Uri().AbsoluteUri()))) {
+			args.Cancel(true);
 		}
 		_webview.AddInitializeScript(winrt::to_hstring(_initScript));
 	});

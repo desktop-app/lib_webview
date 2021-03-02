@@ -29,13 +29,15 @@ public:
 private:
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
-	std::function<void(std::string)> _messageCallback;
-	std::function<void(std::string)> _navigationCallback;
+	std::function<void(std::string)> _messageHandler;
+	std::function<bool(std::string)> _navigationHandler;
 
 };
 
 Instance::Instance(Config config)
-: _window(static_cast<GtkWidget*>(config.window)) {
+: _window(static_cast<GtkWidget*>(config.window))
+, _messageHandler(std::move(config.messageHandler))
+, _navigationHandler(std::move(config.navigationHandler)) {
 	std::cout << "Init" << std::endl;
 	gtk_init_check(0, NULL);
 	std::cout << "Create WebView" << std::endl;
@@ -65,7 +67,7 @@ Instance::Instance(Config config)
 			JSStringGetUTF8CString(js, s, n);
 			JSStringRelease(js);
 #endif
-			w->_messageCallback(s);
+			w->_messageHandler(s);
 			g_free(s);
 		}),
 		this);

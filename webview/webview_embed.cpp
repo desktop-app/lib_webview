@@ -131,21 +131,21 @@ Fn<void(std::string)> Window::messageHandler() const {
 	};
 }
 
-void Window::setNavigationHandler(Fn<void(QString)> handler) {
+void Window::setNavigationHandler(Fn<bool(QString)> handler) {
 	if (!handler) {
 		_navigationHandler = nullptr;
 		return;
 	}
 	_navigationHandler = [=](std::string uri) {
-		handler(QString::fromStdString(uri));
+		return handler(QString::fromStdString(uri));
 	};
 }
 
-Fn<void(std::string)> Window::navigationHandler() const {
+Fn<bool(std::string)> Window::navigationHandler() const {
 	return [=](std::string message) {
-		if (_navigationHandler) {
-			_navigationHandler(std::move(message));
-		}
+		return _navigationHandler
+			? _navigationHandler(std::move(message))
+			: true;
 	};
 }
 
