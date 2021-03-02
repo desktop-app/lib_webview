@@ -30,6 +30,10 @@ endif()
 nice_target_sources(lib_webview_wrap ${src_loc}
 PRIVATE
     webview/webview_interface.h
+
+    webview/platform/mac/webview_mac.h
+    webview/platform/mac/webview_mac.mm
+
     webview/platform/win/webview_win.cpp
     webview/platform/win/webview_win.h
     webview/platform/win/webview_windows_edge_chromium.cpp
