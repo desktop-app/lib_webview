@@ -6,12 +6,12 @@
 //
 #include "webview/platform/linux/webview_linux.h"
 
-#include "webview/platform/linux/webview_linux_webkit2gtk.h"
+//#include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
 namespace Webview {
 
 bool Supported() {
-	return WebKit2Gtk::Supported();
+	return false;// WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {
@@ -19,7 +19,7 @@ bool SupportsEmbedAfterCreate() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	return WebKit2Gtk::CreateInstance(std::move(config));
+	return nullptr;// WebKit2Gtk::CreateInstance(std::move(config));
 }
 
 } // namespace Webview
