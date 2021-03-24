@@ -35,10 +35,10 @@ namespace {
 
 } // namespace
 
-Window::Window(QWidget *parent)
+Window::Window(QWidget *parent, WindowConfig config)
 : _window(CreateContainerWindow()) {
 	if (SupportsEmbedAfterCreate()) {
-		if (!createWebView()) {
+		if (!createWebView(config)) {
 			return;
 		}
 		if (!_window) {
@@ -54,7 +54,7 @@ Window::Window(QWidget *parent)
 			parent,
 			Qt::FramelessWindowHint));
 	_widget->show();
-	if (!createWebView()) {
+	if (!createWebView(config)) {
 		return;
 	}
 	_webview->resizeToWindow();
@@ -68,12 +68,13 @@ Window::Window(QWidget *parent)
 
 Window::~Window() = default;
 
-bool Window::createWebView() {
+bool Window::createWebView(const WindowConfig &config) {
 	if (!_webview) {
 		_webview = CreateInstance({
 			.window = _window ? (void*)_window->winId() : nullptr,
 			.messageHandler = messageHandler(),
-			.navigationHandler = navigationHandler()
+			.navigationHandler = navigationHandler(),
+			.userDataPath = config.userDataPath.toStdString(),
 		});
 	}
 	if (_webview) {

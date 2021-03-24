@@ -313,9 +313,10 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		webview->AddRef();
 	};
 	auto handler = std::make_unique<Handler>(config, ready);
+	const auto wpath = ToWide(config.userDataPath);
 	const auto result = CreateCoreWebView2EnvironmentWithOptions(
 		nullptr,
-		nullptr,
+		wpath.empty() ? nullptr : wpath.c_str(),
 		nullptr,
 		handler.get());
 	if (result != S_OK) {

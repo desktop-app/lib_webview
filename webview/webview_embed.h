@@ -18,9 +18,15 @@ namespace Webview {
 class Interface;
 struct Config;
 
+struct WindowConfig {
+	QString userDataPath;
+};
+
 class Window final {
 public:
-	explicit Window(QWidget *parent = nullptr);
+	explicit Window(
+		QWidget *parent = nullptr,
+		WindowConfig config = WindowConfig());
 	~Window();
 
 	// Returns 'nullptr' in case of an error.
@@ -36,7 +42,7 @@ public:
 	void eval(const QByteArray &js);
 
 private:
-	bool createWebView();
+	bool createWebView(const WindowConfig &config);
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string)> navigationHandler() const;
 
