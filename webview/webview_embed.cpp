@@ -10,6 +10,7 @@
 #include "base/event_filter.h"
 #include "base/invoke_queued.h"
 #include "base/platform/base_platform_info.h"
+#include "base/integration.h"
 
 #include <QtWidgets/QWidget>
 #include <QtGui/QWindow>
@@ -127,7 +128,9 @@ void Window::setMessageHandler(Fn<void(QJsonDocument)> handler) {
 Fn<void(std::string)> Window::messageHandler() const {
 	return [=](std::string message) {
 		if (_messageHandler) {
-			_messageHandler(std::move(message));
+			base::Integration::Instance().enterFromEventLoop([&] {
+				_messageHandler(std::move(message));
+			});
 		}
 	};
 }
@@ -144,9 +147,13 @@ void Window::setNavigationHandler(Fn<bool(QString)> handler) {
 
 Fn<bool(std::string)> Window::navigationHandler() const {
 	return [=](std::string message) {
-		return _navigationHandler
-			? _navigationHandler(std::move(message))
-			: true;
+		auto result = true;
+		if (_navigationHandler) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				result = _navigationHandler(std::move(message));
+			});
+		}
+		return result;
 	};
 }
 
