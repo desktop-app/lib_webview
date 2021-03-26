@@ -16,14 +16,14 @@ bool Supported() {
 }
 
 bool SupportsEmbedAfterCreate() {
-	return !EdgeChromium::Supported();
+	return EdgeHtml::Supported();
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (auto result = EdgeChromium::CreateInstance(config)) {
+	if (auto result = EdgeHtml::CreateInstance(config)) {
 		return result;
 	}
-	return EdgeHtml::CreateInstance(std::move(config));
+	return EdgeChromium::CreateInstance(std::move(config));
 }
 
 } // namespace Webview
