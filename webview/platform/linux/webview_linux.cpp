@@ -10,8 +10,13 @@
 
 namespace Webview {
 
-bool Supported() {
-	return false;// WebKit2Gtk::Supported();
+Available Availability() {
+	return Available{
+		.error = Available::Error::NoGtkOrWebkit2Gtk,
+		.details = "Please install WebKitGTK 4 (webkit2gtk-4.0) "
+		"from your package manager.",
+	};
+	// WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {

@@ -11,8 +11,15 @@
 
 namespace Webview {
 
-bool Supported() {
-	return EdgeChromium::Supported() || EdgeHtml::Supported();
+Available Availability() {
+	if (EdgeHtml::Supported() || EdgeChromium::Supported()) {
+		return Available{};
+	}
+	return Available{
+		.error = Available::Error::NoWebview2,
+		.details = "Please install Microsoft Edge Webview2 Runtime.",
+	};
+	// WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {

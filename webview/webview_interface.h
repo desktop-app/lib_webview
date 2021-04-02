@@ -34,12 +34,24 @@ struct Config {
 	std::function<void(std::string)> messageHandler;
 	std::function<bool(std::string)> navigationHandler;
 	std::string userDataPath;
-
-	// If the host project already loaded GTK2 it should not allow loading 3.
-	bool allowLoadGtk3 = true;
 };
 
-[[nodiscard]] bool Supported();
+struct Available {
+	enum class Error {
+		None,
+		NoWebview2,
+		NoGtkOrWebkit2Gtk,
+		MutterWM,
+		Wayland,
+	};
+	Error error = Error::None;
+	std::string details;
+};
+
+[[nodiscard]] Available Availability();
+[[nodiscard]] inline bool Supported() {
+	return Availability().error == Available::Error::None;
+}
 [[nodiscard]] bool SupportsEmbedAfterCreate();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.

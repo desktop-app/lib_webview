@@ -131,8 +131,8 @@ void Instance::resizeToWindow() {
 
 } // namespace
 
-bool Supported() {
-	return true;
+Available Availability() {
+	return Available{};
 }
 
 bool SupportsEmbedAfterCreate() {
