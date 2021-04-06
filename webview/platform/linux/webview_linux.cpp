@@ -6,17 +6,12 @@
 //
 #include "webview/platform/linux/webview_linux.h"
 
-//#include "webview/platform/linux/webview_linux_webkit2gtk.h"
+#include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
 namespace Webview {
 
 Available Availability() {
-	return Available{
-		.error = Available::Error::NoGtkOrWebkit2Gtk,
-		.details = "Please install WebKitGTK 4 (webkit2gtk-4.0) "
-		"from your package manager.",
-	};
-	// WebKit2Gtk::Supported();
+	return WebKit2Gtk::Availability();
 }
 
 bool SupportsEmbedAfterCreate() {
@@ -24,7 +19,7 @@ bool SupportsEmbedAfterCreate() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	return nullptr;// WebKit2Gtk::CreateInstance(std::move(config));
+	return WebKit2Gtk::CreateInstance(std::move(config));
 }
 
 } // namespace Webview

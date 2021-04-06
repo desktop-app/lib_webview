@@ -43,6 +43,7 @@ public:
 
 private:
 	bool createWebView(const WindowConfig &config);
+	bool finishWebviewEmbedding();
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string)> navigationHandler() const;
 

@@ -20,7 +20,7 @@ namespace Webview {
 namespace {
 
 [[nodiscard]] QWindow *CreateContainerWindow() {
-	if constexpr (!Platform::IsMac()) {
+	if constexpr (Platform::IsWindows()) {
 		const auto result = new QWindow();
 		result->setFlag(Qt::FramelessWindowHint);
 		return result;
@@ -55,7 +55,7 @@ Window::Window(QWidget *parent, WindowConfig config)
 			parent,
 			Qt::FramelessWindowHint));
 	_widget->show();
-	if (!createWebView(config)) {
+	if (!createWebView(config) || !finishWebviewEmbedding()) {
 		return;
 	}
 	_webview->resizeToWindow();
@@ -84,6 +84,21 @@ bool Window::createWebView(const WindowConfig &config) {
 	delete _window;
 	_window = nullptr;
 	_widget = nullptr;
+	return false;
+}
+
+bool Window::finishWebviewEmbedding() {
+	Expects(_webview != nullptr);
+	Expects(_widget != nullptr);
+	Expects(_window != nullptr);
+
+	if (_webview->finishEmbedding()) {
+		return true;
+	}
+	delete _window;
+	_window = nullptr;
+	_widget = nullptr;
+	_webview = nullptr;
 	return false;
 }
 

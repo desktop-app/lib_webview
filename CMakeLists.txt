@@ -21,10 +21,10 @@ PRIVATE
 
     webview/platform/linux/webview_linux.h
     webview/platform/linux/webview_linux.cpp
-    # webview/platform/linux/webview_linux_webkit_gtk.cpp
-    # webview/platform/linux/webview_linux_webkit_gtk.h
-    # webview/platform/linux/webview_linux_webkit2gtk.cpp
-    # webview/platform/linux/webview_linux_webkit2gtk.h
+    webview/platform/linux/webview_linux_webkit_gtk.cpp
+    webview/platform/linux/webview_linux_webkit_gtk.h
+    webview/platform/linux/webview_linux_webkit2gtk.cpp
+    webview/platform/linux/webview_linux_webkit2gtk.h
 
     webview/platform/win/webview_win.cpp
     webview/platform/win/webview_win.h

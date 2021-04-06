@@ -10,7 +10,7 @@
 
 namespace Webview::WebKit2Gtk {
 
-[[nodiscard]] bool Supported();
+[[nodiscard]] Available Availability();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
 } // namespace Webview::WebKit2Gtk

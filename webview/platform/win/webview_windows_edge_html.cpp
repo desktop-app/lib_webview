@@ -28,6 +28,8 @@ class Instance final : public Interface {
 public:
 	Instance(Config config, WebViewControl webview);
 
+	bool finishEmbedding() override;
+
 	void navigate(std::string url) override;
 
 	void resizeToWindow() override;
@@ -66,6 +68,10 @@ Instance::Instance(Config config, WebViewControl webview)
 		_webview.AddInitializeScript(winrt::to_hstring(_initScript));
 	});
 	init("window.external.invoke = s => window.external.notify(s)");
+}
+
+bool Instance::finishEmbedding() {
+	return true;
 }
 
 void Instance::navigate(std::string url) {

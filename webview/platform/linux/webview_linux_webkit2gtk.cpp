@@ -7,6 +7,7 @@
 #include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
 #include "webview/platform/linux/webview_linux_webkit_gtk.h"
+#include "base/platform/base_platform_info.h"
 
 namespace Webview::WebKit2Gtk {
 namespace {
@@ -16,6 +17,8 @@ using namespace WebkitGtk;
 class Instance final : public Interface {
 public:
 	Instance(Config config);
+
+	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
 
@@ -27,6 +30,12 @@ public:
 	void *winId() override;
 
 private:
+	static void ScriptMessageReceived(
+		WebKitUserContentManager *,
+		WebKitJavascriptResult *r,
+		gpointer arg);
+	void scriptMessageReceived(WebKitJavascriptResult *result);
+
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
 	std::function<void(std::string)> _messageHandler;
@@ -35,66 +44,75 @@ private:
 };
 
 Instance::Instance(Config config)
-: _window(static_cast<GtkWidget*>(config.window))
+: _window(gtk_window_new(GTK_WINDOW_TOPLEVEL))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationHandler(std::move(config.navigationHandler)) {
-	std::cout << "Init" << std::endl;
-	gtk_init_check(0, NULL);
-	std::cout << "Create WebView" << std::endl;
+	gtk_window_set_decorated(GTK_WINDOW(_window), false);
+	gtk_widget_show_all(_window);
 	_webview = webkit_web_view_new();
-	std::cout << "Manager.." << std::endl;
 	WebKitUserContentManager *manager =
 		webkit_web_view_get_user_content_manager(WEBKIT_WEB_VIEW(_webview));
-	std::cout << "Signal.." << std::endl;
 	g_signal_connect(
 		manager,
 		"script-message-received::external",
-		G_CALLBACK(+[](
-				WebKitUserContentManager *,
-				WebKitJavascriptResult *r,
-				gpointer arg) {
-			auto *w = static_cast<Instance*>(arg);
-#if WEBKIT_MAJOR_VERSION >= 2 && WEBKIT_MINOR_VERSION >= 22
-			JSCValue *value = webkit_javascript_result_get_js_value(r);
-			char *s = jsc_value_to_string(value);
-#else
-			JSGlobalContextRef ctx
-				= webkit_javascript_result_get_global_context(r);
-			JSValueRef value = webkit_javascript_result_get_value(r);
-			JSStringRef js = JSValueToStringCopy(ctx, value, NULL);
-			size_t n = JSStringGetMaximumUTF8CStringSize(js);
-			char *s = g_new(char, n);
-			JSStringGetUTF8CString(js, s, n);
-			JSStringRelease(js);
-#endif
-			w->_messageHandler(s);
-			g_free(s);
-		}),
+		G_CALLBACK(&Instance::ScriptMessageReceived),
 		this);
-	std::cout << "Register.." << std::endl;
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external");
-	std::cout << "Init.." << std::endl;
 	init(R"(
 window.external = {
 	invoke: function(s) {
 		window.webkit.messageHandlers.external.postMessage(s);
 	}
 };)");
+}
 
-	std::cout << "Add.." << std::endl;
+void Instance::ScriptMessageReceived(
+		WebKitUserContentManager *,
+		WebKitJavascriptResult *result,
+		gpointer arg) {
+	static_cast<Instance*>(arg)->scriptMessageReceived(result);
+}
+
+void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
+	const auto major = webkit_get_major_version();
+	const auto minor = webkit_get_minor_version();
+
+	auto message = std::string();
+	if (major > 2 || (major == 2 && minor >= 22)) {
+		JSCValue *value = webkit_javascript_result_get_js_value(result);
+		const auto s = jsc_value_to_string(value);
+		message = s;
+		g_free(s);
+	} else {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+		JSGlobalContextRef ctx
+			= webkit_javascript_result_get_global_context(result);
+		JSValueRef value = webkit_javascript_result_get_value(result);
+#pragma GCC diagnostic pop
+		JSStringRef js = JSValueToStringCopy(ctx, value, NULL);
+		size_t n = JSStringGetMaximumUTF8CStringSize(js);
+		message.resize(n, char(0));
+		JSStringGetUTF8CString(js, message.data(), n);
+		JSStringRelease(js);
+	}
+	_messageHandler(std::move(message));
+}
+
+bool Instance::finishEmbedding() {
 	gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
-	std::cout << "Focus.." << std::endl;
-	gtk_widget_grab_focus(GTK_WIDGET(_webview));
 
-	std::cout << "Settings.." << std::endl;
-	WebKitSettings *settings = webkit_web_view_get_settings(
-		WEBKIT_WEB_VIEW(_webview));
-	std::cout << "Done.." << std::endl;
+	// WebKitSettings *settings = webkit_web_view_get_settings(
+	// 	WEBKIT_WEB_VIEW(_webview));
 	//webkit_settings_set_javascript_can_access_clipboard(settings, true);
 
-	//gtk_widget_show_all(_window);
+	gtk_widget_hide(_window);
+	gtk_widget_show_all(_window);
+	gtk_widget_grab_focus(GTK_WIDGET(_webview));
+
+	return true;
 }
 
 void Instance::navigate(std::string url) {
@@ -125,7 +143,11 @@ void Instance::eval(std::string js) {
 }
 
 void *Instance::winId() {
-	return nullptr;
+	const auto window = gtk_widget_get_window(_window);
+	const auto result = window
+		? reinterpret_cast<void*>(gdk_x11_window_get_xid(window))
+		: nullptr;
+	return result;
 }
 
 void Instance::resizeToWindow() {
@@ -133,16 +155,35 @@ void Instance::resizeToWindow() {
 
 } // namespace
 
-bool Supported() {
-	static const auto resolved = Resolve();
-	return resolved;
+Available Availability() {
+	if (Platform::IsWayland()) {
+		return Available{
+			.error = Available::Error::Wayland,
+			.details = "There is no way to embed WebView window "
+			"on Wayland. Please switch to X11."
+		};
+	} else if (const auto platform = Platform::GetWindowManager().toLower()
+		; platform.contains("mutter") || platform.contains("gnome")) {
+		return Available{
+			.error = Available::Error::MutterWM,
+			.details = "Qt's window embedding doesn't work well "
+			"with Mutter window manager. Please switch to another "
+			"window manager or desktop environment."
+		};
+	} else if (!Resolve()) {
+		return Available{
+			.error = Available::Error::NoGtkOrWebkit2Gtk,
+			.details = "Please install WebKitGTK 4 (webkit2gtk-4.0) "
+			"from your package manager.",
+		};
+	}
+	return Available{};
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;
 	}
-	std::cout << "Creating" << std::endl;
 	return std::make_unique<Instance>(std::move(config));
 }
 

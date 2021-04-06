@@ -18,6 +18,8 @@ class Interface {
 public:
 	virtual ~Interface() = default;
 
+	virtual bool finishEmbedding() = 0;
+
 	virtual void navigate(std::string url) = 0;
 
 	virtual void resizeToWindow() = 0;

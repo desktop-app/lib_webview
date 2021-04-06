@@ -65,6 +65,8 @@ public:
 	explicit Instance(Config config);
 	~Instance();
 
+	bool finishEmbedding() override;
+
 	void navigate(std::string url) override;
 
 	void resizeToWindow() override;
@@ -103,6 +105,10 @@ Instance::~Instance() {
 	[_webview setNavigationDelegate:nil];
 	[_handler release];
 	[_webview release];
+}
+
+bool Instance::finishEmbedding() {
+	return true;
 }
 
 void Instance::navigate(std::string url) {

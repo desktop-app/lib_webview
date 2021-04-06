@@ -208,6 +208,8 @@ public:
 		std::unique_ptr<Handler> handler);
 	~Instance();
 
+	bool finishEmbedding() override;
+
 	void navigate(std::string url) override;
 
 	void resizeToWindow() override;
@@ -241,6 +243,10 @@ Instance::~Instance() {
 	CoUninitialize();
 	_webview->Release();
 	_controller->Release();
+}
+
+bool Instance::finishEmbedding() {
+	return true;
 }
 
 void Instance::navigate(std::string url) {
