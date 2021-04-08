@@ -246,6 +246,7 @@ Instance::~Instance() {
 }
 
 bool Instance::finishEmbedding() {
+	_controller->put_IsVisible(TRUE);
 	return true;
 }
 

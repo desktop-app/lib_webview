@@ -55,7 +55,7 @@ if (WIN32)
     ARGS
         install
         "Microsoft.Web.WebView2"
-        -Version 1.0.705.50
+        -Version 1.0.774.44
         -ExcludeVersion
         -OutputDirectory ${CMAKE_BINARY_DIR}/packages
     )
