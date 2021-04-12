@@ -63,7 +63,8 @@ class Handler final
 	, public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	, public ICoreWebView2WebMessageReceivedEventHandler
 	, public ICoreWebView2PermissionRequestedEventHandler
-	, public ICoreWebView2NavigationStartingEventHandler {
+	, public ICoreWebView2NavigationStartingEventHandler
+	, public ICoreWebView2NavigationCompletedEventHandler {
 
 public:
 	Handler(
@@ -88,11 +89,15 @@ public:
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2NavigationStartingEventArgs *args);
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NavigationCompletedEventArgs *args);
 
 private:
 	HWND _window = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<bool(std::string)> _navigationHandler;
+	std::function<bool(std::string)> _navigationStartHandler;
+	std::function<void(bool)> _navigationDoneHandler;
 	std::function<void(ICoreWebView2Controller*)> _readyHandler;
 
 };
@@ -102,7 +107,8 @@ Handler::Handler(
 	std::function<void(ICoreWebView2Controller*)> readyHandler)
 : _window(static_cast<HWND>(config.window))
 , _messageHandler(std::move(config.messageHandler))
-, _navigationHandler(std::move(config.navigationHandler))
+, _navigationStartHandler(std::move(config.navigationStartHandler))
+, _navigationDoneHandler(std::move(config.navigationDoneHandler))
 , _readyHandler(std::move(readyHandler)) {
 }
 
@@ -190,12 +196,25 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_Uri(&uri);
 
 	if (result == S_OK && uri) {
-		if (_navigationHandler && !_navigationHandler(FromWide(uri))) {
+		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri))) {
 			args->put_Cancel(TRUE);
 		}
 	}
 
 	CoTaskMemFree(uri);
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NavigationCompletedEventArgs *args) {
+	auto isSuccess = BOOL(FALSE);
+	const auto result = args->get_IsSuccess(&isSuccess);
+
+	if (_navigationDoneHandler) {
+		_navigationDoneHandler(result == S_OK && isSuccess);
+	}
+
 	return S_OK;
 }
 

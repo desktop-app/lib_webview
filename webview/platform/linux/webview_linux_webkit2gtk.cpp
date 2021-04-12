@@ -39,14 +39,16 @@ private:
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<bool(std::string)> _navigationHandler;
+	std::function<bool(std::string)> _navigationStartHandler;
+	std::function<void(bool)> _navigationDoneHandler;
 
 };
 
 Instance::Instance(Config config)
 : _window(gtk_window_new(GTK_WINDOW_TOPLEVEL))
 , _messageHandler(std::move(config.messageHandler))
-, _navigationHandler(std::move(config.navigationHandler)) {
+, _navigationStartHandler(std::move(config.navigationStartHandler))
+, _navigationDoneHandler(std::move(config.navigationDoneHandler)) {
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
 	gtk_widget_show_all(_window);
 	_webview = webkit_web_view_new();

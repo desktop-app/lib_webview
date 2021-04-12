@@ -58,7 +58,7 @@ Instance::Instance(Config config, WebViewControl webview)
 			handler(winrt::to_string(args.Value()));
 		}
 	});
-	_webview.NavigationStarting([=, handler = config.navigationHandler](
+	_webview.NavigationStarting([=, handler = config.navigationStartHandler](
 			const auto &sender,
 			const WebViewControlNavigationStartingEventArgs &args) {
 		if (handler
@@ -66,6 +66,13 @@ Instance::Instance(Config config, WebViewControl webview)
 			args.Cancel(true);
 		}
 		_webview.AddInitializeScript(winrt::to_hstring(_initScript));
+	});
+	_webview.NavigationCompleted([=, handler = config.navigationDoneHandler](
+			const auto &sender,
+			const WebViewControlNavigationCompletedEventArgs &args) {
+		if (handler) {
+			handler(args.IsSuccess());
+		}
 	});
 	init("window.external.invoke = s => window.external.notify(s)");
 }

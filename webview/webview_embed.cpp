@@ -74,7 +74,8 @@ bool Window::createWebView(const WindowConfig &config) {
 		_webview = CreateInstance({
 			.window = _window ? (void*)_window->winId() : nullptr,
 			.messageHandler = messageHandler(),
-			.navigationHandler = navigationHandler(),
+			.navigationStartHandler = navigationStartHandler(),
+			.navigationDoneHandler = navigationDoneHandler(),
 			.userDataPath = config.userDataPath.toStdString(),
 		});
 	}
@@ -150,25 +151,39 @@ Fn<void(std::string)> Window::messageHandler() const {
 	};
 }
 
-void Window::setNavigationHandler(Fn<bool(QString)> handler) {
+void Window::setNavigationStartHandler(Fn<bool(QString)> handler) {
 	if (!handler) {
-		_navigationHandler = nullptr;
+		_navigationStartHandler = nullptr;
 		return;
 	}
-	_navigationHandler = [=](std::string uri) {
+	_navigationStartHandler = [=](std::string uri) {
 		return handler(QString::fromStdString(uri));
 	};
 }
 
-Fn<bool(std::string)> Window::navigationHandler() const {
+void Window::setNavigationDoneHandler(Fn<void(bool)> handler) {
+	_navigationDoneHandler = std::move(handler);
+}
+
+Fn<bool(std::string)> Window::navigationStartHandler() const {
 	return [=](std::string message) {
 		auto result = true;
-		if (_navigationHandler) {
+		if (_navigationStartHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
-				result = _navigationHandler(std::move(message));
+				result = _navigationStartHandler(std::move(message));
 			});
 		}
 		return result;
+	};
+}
+
+Fn<void(bool)> Window::navigationDoneHandler() const {
+	return [=](bool success) {
+		if (_navigationDoneHandler) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				_navigationDoneHandler(success);
+			});
+		}
 	};
 }
 

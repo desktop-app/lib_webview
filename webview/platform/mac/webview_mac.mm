@@ -13,22 +13,26 @@
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate> {
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<bool(std::string)>)navigationCallback;
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
+- (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
+- (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
 - (void) dealloc;
 
 @end // @interface ChooseApplicationDelegate
 
 @implementation Handler {
 	std::function<void(std::string)> _messageCallback;
-	std::function<bool(std::string)> _navigationCallback;
+	std::function<bool(std::string)> _navigationStartCallback;
+	std::function<void(bool)> _navigationDoneCallback;
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationCallback:(std::function<bool(std::string)>)navigationCallback {
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback {
 	if (self = [super init]) {
 		_messageCallback = std::move(messageCallback);
-		_navigationCallback = std::move(navigationCallback);
+		_navigationStartCallback = std::move(navigationStartCallback);
+		_navigationDoneCallback = std::move(navigationDoneCallback);
 	}
 	return self;
 }
@@ -44,13 +48,24 @@
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
-	if (_navigationCallback && !_navigationCallback([string UTF8String])) {
+	if (_navigationStartCallback && !_navigationStartCallback([string UTF8String])) {
 		decisionHandler(WKNavigationActionPolicyCancel);
 	} else {
 		decisionHandler(WKNavigationActionPolicyAllow);
 	}
 }
 
+- (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+	if (_navigationDoneCallback) {
+		_navigationDoneCallback(true);
+	}
+}
+
+- (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+	if (_navigationDoneCallback) {
+		_navigationDoneCallback(false);
+	}
+}
 - (void) dealloc {
 	[super dealloc];
 }
@@ -87,7 +102,7 @@ Instance::Instance(Config config) {
 	WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
 	_manager = configuration.userContentController;
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
-	_handler = [[Handler alloc] initWithMessageCallback:config.messageHandler navigationCallback:config.navigationHandler];
+	_handler = [[Handler alloc] initWithMessageCallback:config.messageHandler navigationStartCallback:config.navigationStartHandler navigationDoneCallback:config.navigationDoneHandler];
 	[_manager addScriptMessageHandler:_handler name:@"external"];
 	[_webview setNavigationDelegate:_handler];
 	[configuration release];
