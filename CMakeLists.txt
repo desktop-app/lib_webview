@@ -119,11 +119,19 @@ elseif (LINUX)
     if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
         find_package(PkgConfig REQUIRED)
 
-        pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-        target_include_directories(lib_webview PUBLIC ${GTK3_INCLUDE_DIRS})
+        if (DESKTOP_APP_USE_PACKAGED AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
+            pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+            target_link_libraries(lib_webview PUBLIC PkgConfig::GTK3)
 
-        pkg_check_modules(WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.0)
-        target_include_directories(lib_webview PUBLIC ${WEBKIT_INCLUDE_DIRS})
+            pkg_check_modules(WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.0)
+            target_link_libraries(lib_webview PUBLIC PkgConfig::WEBKIT)
+        else()
+            pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+            target_include_directories(lib_webview PUBLIC ${GTK3_INCLUDE_DIRS})
+
+            pkg_check_modules(WEBKIT REQUIRED webkit2gtk-4.0)
+            target_include_directories(lib_webview PUBLIC ${WEBKIT_INCLUDE_DIRS})
+        endif()
     else()
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_webkit_gtk.cpp
