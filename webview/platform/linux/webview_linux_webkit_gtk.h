@@ -27,6 +27,7 @@ inline void (*gtk_container_add)(
 	GtkWidget *widget);
 inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
+inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_hide)(GtkWidget *widget);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);

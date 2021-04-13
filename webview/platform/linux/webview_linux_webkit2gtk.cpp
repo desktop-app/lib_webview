@@ -17,6 +17,7 @@ using namespace WebkitGtk;
 class Instance final : public Interface {
 public:
 	Instance(Config config);
+	~Instance();
 
 	bool finishEmbedding() override;
 
@@ -116,6 +117,15 @@ window.external = {
 		window.webkit.messageHandlers.external.postMessage(s);
 	}
 };)");
+}
+
+Instance::~Instance() {
+	if (_webview) {
+		gtk_widget_destroy(_webview);
+	}
+	if (_window) {
+		gtk_widget_destroy(_window);
+	}
 }
 
 void Instance::ScriptMessageReceived(

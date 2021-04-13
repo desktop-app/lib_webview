@@ -32,6 +32,7 @@ bool Resolve() {
 		&& LOAD_GTK_SYMBOL(gtk, gtk_container_add)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_widget_get_window)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_window_new)
+		&& LOAD_GTK_SYMBOL(gtk, gtk_widget_destroy)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_widget_hide)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_widget_show_all)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_window_get_type)
