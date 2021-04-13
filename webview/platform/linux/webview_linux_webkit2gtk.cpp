@@ -31,16 +31,49 @@ public:
 
 private:
 	static void ScriptMessageReceived(
-		WebKitUserContentManager *,
-		WebKitJavascriptResult *r,
+		WebKitUserContentManager *manager,
+		WebKitJavascriptResult *result,
 		gpointer arg);
-	void scriptMessageReceived(WebKitJavascriptResult *result);
+	void scriptMessageReceived(
+		WebKitUserContentManager *manager,
+		WebKitJavascriptResult *result);
+
+	static gboolean LoadFailed(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		char *failingUri,
+		GError *error,
+		gpointer arg);
+	gboolean loadFailed(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		char *failingUri,
+		GError *error);
+
+	static void LoadChanged(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		gpointer arg);
+	void loadChanged(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent);
+
+	static gboolean DecidePolicy(
+		WebKitWebView *webView,
+		WebKitPolicyDecision *decision,
+		WebKitPolicyDecisionType decisionType,
+		gpointer arg);
+	gboolean decidePolicy(
+		WebKitWebView *webView,
+		WebKitPolicyDecision *decision,
+		WebKitPolicyDecisionType decisionType);
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
 	std::function<void(std::string)> _messageHandler;
 	std::function<bool(std::string)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
+	bool _loadFailed = false;
 
 };
 
@@ -59,6 +92,21 @@ Instance::Instance(Config config)
 		"script-message-received::external",
 		G_CALLBACK(&Instance::ScriptMessageReceived),
 		this);
+	g_signal_connect(
+		_webview,
+		"load-failed",
+		G_CALLBACK(&Instance::LoadFailed),
+		this);
+	g_signal_connect(
+		_webview,
+		"load-changed",
+		G_CALLBACK(&Instance::LoadChanged),
+		this);
+	g_signal_connect(
+		_webview,
+		"decide-policy",
+		G_CALLBACK(&Instance::DecidePolicy),
+		this);
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external");
@@ -71,18 +119,17 @@ window.external = {
 }
 
 void Instance::ScriptMessageReceived(
-		WebKitUserContentManager *,
+		WebKitUserContentManager *manager,
 		WebKitJavascriptResult *result,
 		gpointer arg) {
-	static_cast<Instance*>(arg)->scriptMessageReceived(result);
+	static_cast<Instance*>(arg)->scriptMessageReceived(manager, result);
 }
 
-void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
-	const auto major = webkit_get_major_version();
-	const auto minor = webkit_get_minor_version();
-
+void Instance::scriptMessageReceived(
+		WebKitUserContentManager *manager,
+		WebKitJavascriptResult *result) {
 	auto message = std::string();
-	if (major > 2 || (major == 2 && minor >= 22)) {
+	if (webkit_javascript_result_get_js_value && jsc_value_to_string) {
 		JSCValue *value = webkit_javascript_result_get_js_value(result);
 		const auto s = jsc_value_to_string(value);
 		message = s;
@@ -101,6 +148,87 @@ void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
 		JSStringRelease(js);
 	}
 	_messageHandler(std::move(message));
+}
+
+gboolean Instance::LoadFailed(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		char *failingUri,
+		GError *error,
+		gpointer arg) {
+	return static_cast<Instance*>(arg)->loadFailed(
+		webView,
+		loadEvent,
+		failingUri,
+		error);
+}
+
+gboolean Instance::loadFailed(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		char *failingUri,
+		GError *error) {
+	_loadFailed = true;
+	return FALSE;
+}
+
+void Instance::LoadChanged(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent,
+		gpointer arg) {
+	static_cast<Instance*>(arg)->loadChanged(webView, loadEvent);
+}
+
+void Instance::loadChanged(
+		WebKitWebView *webView,
+		WebKitLoadEvent loadEvent) {
+	if (loadEvent == WEBKIT_LOAD_FINISHED) {
+		const auto success = !_loadFailed;
+		_loadFailed = false;
+		if (_navigationDoneHandler) {
+			_navigationDoneHandler(success);
+		}
+	}
+}
+
+gboolean Instance::DecidePolicy(
+		WebKitWebView *webView,
+		WebKitPolicyDecision *decision,
+		WebKitPolicyDecisionType decisionType,
+		gpointer arg) {
+	return static_cast<Instance*>(arg)->decidePolicy(
+		webView,
+		decision,
+		decisionType);
+}
+
+gboolean Instance::decidePolicy(
+		WebKitWebView *webView,
+		WebKitPolicyDecision *decision,
+		WebKitPolicyDecisionType decisionType) {
+	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION
+		|| !_navigationStartHandler) {
+		return FALSE;
+	}
+	WebKitURIRequest *request = nullptr;
+	WebKitNavigationPolicyDecision *navigationDecision
+		= WEBKIT_NAVIGATION_POLICY_DECISION(decision);
+	if (webkit_navigation_policy_decision_get_navigation_action
+		&& webkit_navigation_action_get_request) {
+		WebKitNavigationAction *action
+			= webkit_navigation_policy_decision_get_navigation_action(
+				navigationDecision);
+		request = webkit_navigation_action_get_request(action);
+	} else {
+		request = webkit_navigation_policy_decision_get_request(
+			navigationDecision);
+	}
+	const gchar *uri = webkit_uri_request_get_uri(request);
+	if (_navigationStartHandler(std::string(uri))) {
+		return FALSE;
+	}
+	webkit_policy_decision_ignore(decision);
+	return TRUE;
 }
 
 bool Instance::finishEmbedding() {

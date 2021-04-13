@@ -45,15 +45,22 @@ inline size_t (*JSStringGetUTF8CString)(
 	size_t bufferSize);
 inline void (*JSStringRelease)(JSStringRef string);
 
-inline guint (*webkit_get_major_version)();
-inline guint (*webkit_get_minor_version)();
-inline guint (*webkit_get_micro_version)();
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
 	WebKitJavascriptResult *js_result);
 inline JSGlobalContextRef (*webkit_javascript_result_get_global_context)(
 	WebKitJavascriptResult *js_result);
 inline JSValueRef (*webkit_javascript_result_get_value)(
 	WebKitJavascriptResult *js_result);
+
+inline GType (*webkit_navigation_policy_decision_get_type)(void);
+inline WebKitNavigationAction *(*webkit_navigation_policy_decision_get_navigation_action)(
+	WebKitNavigationPolicyDecision *decision);
+inline WebKitURIRequest *(*webkit_navigation_action_get_request)(
+	WebKitNavigationAction *navigation);
+inline WebKitURIRequest *(*webkit_navigation_policy_decision_get_request)(
+	WebKitNavigationPolicyDecision *decision);
+inline const gchar *(*webkit_uri_request_get_uri)(WebKitURIRequest *request);
+inline void (*webkit_policy_decision_ignore)(WebKitPolicyDecision *decision);
 
 inline GtkWidget *(*webkit_web_view_new)(void);
 inline GType (*webkit_web_view_get_type)(void);

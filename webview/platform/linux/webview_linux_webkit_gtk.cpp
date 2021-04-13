@@ -26,7 +26,7 @@ bool Resolve() {
 	auto &gtk = BaseGtkIntegration::Instance()->library();
 
 	auto webkit2gtk = QLibrary();
-	return LOAD_GTK_SYMBOL(gtk, gtk_widget_get_type)
+	const auto result =  LOAD_GTK_SYMBOL(gtk, gtk_widget_get_type)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_widget_grab_focus)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_container_get_type)
 		&& LOAD_GTK_SYMBOL(gtk, gtk_container_add)
@@ -38,17 +38,6 @@ bool Resolve() {
 		&& LOAD_GTK_SYMBOL(gtk, gtk_window_set_decorated)
 		&& LOAD_GTK_SYMBOL(gtk, gdk_x11_window_get_xid)
 		&& base::Platform::Gtk::LoadLibrary(webkit2gtk, "libwebkit2gtk-4.0.so.37", 0)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, jsc_value_to_string)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, JSValueToStringCopy)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringGetMaximumUTF8CStringSize)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringGetUTF8CString)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringRelease)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_get_major_version)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_get_minor_version)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_get_micro_version)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_js_value)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_global_context)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_value)
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_new)
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_get_type)
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_get_user_content_manager)
@@ -58,7 +47,38 @@ bool Resolve() {
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_load_uri)
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_user_script_new)
 		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_user_content_manager_add_script)
-		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_run_javascript);
+		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_web_view_run_javascript)
+		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_uri_request_get_uri)
+		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_policy_decision_ignore)
+		&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_type);
+	if (!result) {
+		return false;
+	}
+	{
+		const auto available1 = LOAD_GTK_SYMBOL(webkit2gtk, jsc_value_to_string)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_js_value);
+
+		const auto available2 = LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_global_context)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_javascript_result_get_value)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, JSValueToStringCopy)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringGetMaximumUTF8CStringSize)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringGetUTF8CString)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, JSStringRelease);
+		if (!available1 && !available2) {
+			return false;
+		}
+	}
+	{
+		const auto available1 = LOAD_GTK_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_navigation_action)
+			&& LOAD_GTK_SYMBOL(webkit2gtk, webkit_navigation_action_get_request);
+
+		const auto available2 = LOAD_GTK_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_request);
+
+		if (!available1 && !available2) {
+			return false;
+		}
+	}
+	return true;
 }
 
 } // namespace Webview::WebkitGtk
