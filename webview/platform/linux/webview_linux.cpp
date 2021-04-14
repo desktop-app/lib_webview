@@ -14,7 +14,10 @@ Available Availability() {
 #ifndef DESKTOP_APP_DISABLE_GTK_INTEGRATION
 	return WebKit2Gtk::Availability();
 #else // !DESKTOP_APP_DISABLE_GTK_INTEGRATION
-	return false;
+	return Available{
+		.error = Available::Error::NoGtkOrWebkit2Gtk,
+		.details = "This feature was disabled at build time.",
+	};
 #endif // DESKTOP_APP_DISABLE_GTK_INTEGRATION
 }
 
