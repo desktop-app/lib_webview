@@ -48,7 +48,7 @@ if (WIN32)
     nuget_add_webview(lib_webview)
     nuget_add_winrt(lib_webview)
 elseif (LINUX)
-    if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
+    if (NOT DESKTOP_APP_DISABLE_WEBKITGTK)
         find_package(PkgConfig REQUIRED)
 
         pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
