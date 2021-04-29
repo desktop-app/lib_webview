@@ -11,14 +11,14 @@
 namespace Webview {
 
 Available Availability() {
-#ifndef DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#ifndef DESKTOP_APP_DISABLE_WEBKITGTK
 	return WebKit2Gtk::Availability();
-#else // !DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#else // !DESKTOP_APP_DISABLE_WEBKITGTK
 	return Available{
 		.error = Available::Error::NoGtkOrWebkit2Gtk,
 		.details = "This feature was disabled at build time.",
 	};
-#endif // DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#endif // DESKTOP_APP_DISABLE_WEBKITGTK
 }
 
 bool SupportsEmbedAfterCreate() {
@@ -26,11 +26,11 @@ bool SupportsEmbedAfterCreate() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-#ifndef DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#ifndef DESKTOP_APP_DISABLE_WEBKITGTK
 	return WebKit2Gtk::CreateInstance(std::move(config));
-#else // !DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#else // !DESKTOP_APP_DISABLE_WEBKITGTK
 	return nullptr;
-#endif // DESKTOP_APP_DISABLE_GTK_INTEGRATION
+#endif // DESKTOP_APP_DISABLE_WEBKITGTK
 }
 
 } // namespace Webview
