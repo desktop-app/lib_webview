@@ -36,7 +36,7 @@ public:
 
 	void navigate(const QString &url);
 	void setMessageHandler(Fn<void(std::string)> handler);
-	void setMessageHandler(Fn<void(QJsonDocument)> handler);
+	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
 	void setNavigationStartHandler(Fn<bool(QString)> handler);
 	void setNavigationDoneHandler(Fn<void(bool)> handler);
 	void init(const QByteArray &js);

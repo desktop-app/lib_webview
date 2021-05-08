@@ -125,7 +125,7 @@ void Window::setMessageHandler(Fn<void(std::string)> handler) {
 	_messageHandler = std::move(handler);
 }
 
-void Window::setMessageHandler(Fn<void(QJsonDocument)> handler) {
+void Window::setMessageHandler(Fn<void(const QJsonDocument&)> handler) {
 	if (!handler) {
 		setMessageHandler(Fn<void(std::string)>());
 		return;
