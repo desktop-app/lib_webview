@@ -32,8 +32,6 @@ PRIVATE
     webview/platform/win/webview_windows_edge_chromium.h
     webview/platform/win/webview_windows_edge_html.cpp
     webview/platform/win/webview_windows_edge_html.h
-    webview/platform/win/webview_windows_winrt.cpp
-    webview/platform/win/webview_windows_winrt.h
 )
 
 target_include_directories(lib_webview

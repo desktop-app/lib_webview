@@ -6,7 +6,7 @@
 //
 #include "webview/platform/win/webview_windows_edge_html.h"
 
-#include "webview/platform/win/webview_windows_winrt.h"
+#include "base/platform/win/base_windows_winrt.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -109,7 +109,7 @@ void Instance::resizeToWindow() {
 } // namespace
 
 bool Supported() {
-	static const auto resolved = WinRT::Resolve();
+	static const auto resolved = base::Platform::ResolveWinRT();
 	return resolved && (WebViewControlProcess() != nullptr);
 }
 
