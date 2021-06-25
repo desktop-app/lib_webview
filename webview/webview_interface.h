@@ -18,6 +18,11 @@ class Interface {
 public:
 	virtual ~Interface() = default;
 
+	virtual int exec(
+		const std::string &parentDBusName,
+		int ppid,
+		unsigned int serviceCount) = 0;
+
 	virtual bool finishEmbedding() = 0;
 
 	virtual void navigate(std::string url) = 0;
