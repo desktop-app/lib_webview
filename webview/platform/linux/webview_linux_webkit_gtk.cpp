@@ -9,6 +9,10 @@
 #include "base/platform/linux/base_linux_gtk_integration.h"
 #include "base/platform/linux/base_linux_gtk_integration_p.h"
 
+extern "C" {
+#include <gdk/gdkx.h>
+} // extern "C"
+
 namespace Webview::WebkitGtk {
 namespace {
 
@@ -17,8 +21,15 @@ using BaseGtkIntegration = base::Platform::GtkIntegration;
 } // namespace
 
 bool Resolve() {
-	if (!BaseGtkIntegration::Instance()
-		|| !BaseGtkIntegration::Instance()->loaded()
+	if (!BaseGtkIntegration::Instance()) {
+		return false;
+	}
+
+	if (!BaseGtkIntegration::Instance()->loaded()) {
+		BaseGtkIntegration::Instance()->load("x11", true);
+	}
+
+	if (!BaseGtkIntegration::Instance()->loaded()
 		|| !BaseGtkIntegration::Instance()->checkVersion(3, 0, 0)) {
 		return false;
 	}

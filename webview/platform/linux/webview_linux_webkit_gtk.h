@@ -6,15 +6,10 @@
 //
 #pragma once
 
-#include <QtCore/QMetaType>
-
 extern "C" {
-#undef signals
 #include <JavaScriptCore/JavaScript.h>
-#include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
-#define signals public
 } // extern "C"
 
 namespace Webview::WebkitGtk {
@@ -32,7 +27,10 @@ inline void (*gtk_widget_hide)(GtkWidget *widget);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
-inline Window (*gdk_x11_window_get_xid)(GdkWindow *window);
+
+// returns Window that is a typedef to unsigned long,
+// but we avoid to include Xlib.h here
+inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSStringRef (*JSValueToStringCopy)(
