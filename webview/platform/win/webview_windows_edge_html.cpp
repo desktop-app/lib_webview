@@ -16,13 +16,14 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Web.UI.Interop.h>
 
+namespace Webview::EdgeHtml {
+namespace {
+
 using namespace winrt;
 using namespace Windows::Foundation;
 using namespace Windows::Web::UI;
 using namespace Windows::Web::UI::Interop;
-
-namespace Webview::EdgeHtml {
-namespace {
+using namespace base::WinRT;
 
 class Instance final : public Interface {
 public:
@@ -109,37 +110,39 @@ void Instance::resizeToWindow() {
 } // namespace
 
 bool Supported() {
-	static const auto resolved = base::Platform::ResolveWinRT();
-	return resolved && (WebViewControlProcess() != nullptr);
+	return Try([&] {
+		return (WebViewControlProcess() != nullptr);
+	}).value_or(false);
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (!Supported()) {
-		return nullptr;
-	}
-	init_apartment(winrt::apartment_type::single_threaded);
-	auto process = WebViewControlProcess();
-	auto op = process.CreateWebViewControlAsync(
-		reinterpret_cast<int64_t>(config.window),
-		Rect());
-	if (op.Status() == AsyncStatus::Started) {
-		const auto event = handle(
-			CreateEvent(nullptr, false, false, nullptr));
-		op.Completed([handle = event.get()](auto, auto) {
-			SetEvent(handle);
-		});
-		HANDLE handles[] = { event.get() };
-		auto index = DWORD{};
-		const auto flags = COWAIT_DISPATCH_WINDOW_MESSAGES |
-			COWAIT_DISPATCH_CALLS |
-			COWAIT_INPUTAVAILABLE;
-		CoWaitForMultipleHandles(flags, INFINITE, 1, handles, &index);
-	}
-	auto webview = op.GetResults();
-	if (!webview) {
-		return nullptr;
-	}
-	return std::make_unique<Instance>(std::move(config), std::move(webview));
+	return Try([&]() -> std::unique_ptr<Interface> {
+		init_apartment(apartment_type::single_threaded);
+		auto process = WebViewControlProcess();
+		auto op = process.CreateWebViewControlAsync(
+			reinterpret_cast<int64_t>(config.window),
+			Rect());
+		if (op.Status() == AsyncStatus::Started) {
+			const auto event = handle(
+				CreateEvent(nullptr, false, false, nullptr));
+			op.Completed([handle = event.get()](auto, auto) {
+				SetEvent(handle);
+			});
+			HANDLE handles[] = { event.get() };
+			auto index = DWORD{};
+			const auto flags = COWAIT_DISPATCH_WINDOW_MESSAGES |
+				COWAIT_DISPATCH_CALLS |
+				COWAIT_INPUTAVAILABLE;
+			CoWaitForMultipleHandles(flags, INFINITE, 1, handles, &index);
+		}
+		auto webview = op.GetResults();
+		if (!webview) {
+			return nullptr;
+		}
+		return std::make_unique<Instance>(
+			std::move(config),
+			std::move(webview));
+	}).value_or(nullptr);
 }
 
 } // namespace Webview::EdgeHtml
