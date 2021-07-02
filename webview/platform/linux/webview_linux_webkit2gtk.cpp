@@ -360,6 +360,9 @@ bool Instance::decidePolicy(
 			const auto context = Glib::MainContext::create();
 			const auto loop = Glib::MainLoop::create(context);
 			g_main_context_push_thread_default(context->gobj());
+			const auto contextGuard = gsl::finally([&] {
+				g_main_context_pop_thread_default(context->gobj());
+			});
 			bool result = false;
 
 			const auto resultId = _dbusConnection->signal_subscribe(
@@ -400,8 +403,10 @@ bool Instance::decidePolicy(
 					Glib::ustring(uri),
 				}));
 
-			loop->run();
-			g_main_context_pop_thread_default(context->gobj());
+			if (resultId != 0) {
+				loop->run();
+			}
+
 			return !result;
 		} catch (...) {
 		}
@@ -735,6 +740,9 @@ void Instance::runProcess() {
 	const auto context = Glib::MainContext::create();
 	const auto loop = Glib::MainLoop::create(context);
 	g_main_context_push_thread_default(context->gobj());
+	const auto contextGuard = gsl::finally([&] {
+		g_main_context_pop_thread_default(context->gobj());
+	});
 
 	const auto serviceWatcherId = base::Platform::DBus::RegisterServiceWatcher(
 		_dbusConnection,
@@ -755,6 +763,10 @@ void Instance::runProcess() {
 		}
 	});
 
+	if (serviceWatcherId == 0) {
+		return;
+	}
+
 	QProcess::startDetached(
 		base::Integration::Instance().executablePath(),
 		{
@@ -767,7 +779,6 @@ void Instance::runProcess() {
 		&_servicePid);
 
 	loop->run();
-	g_main_context_pop_thread_default(context->gobj());
 }
 
 void Instance::handleMethodCall(
