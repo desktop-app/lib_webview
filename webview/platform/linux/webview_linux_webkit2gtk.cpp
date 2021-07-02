@@ -642,6 +642,10 @@ void Instance::resizeToWindow() {
 }
 
 void Instance::connectToRemoteSignals() {
+	if (!_dbusConnection) {
+		return;
+	}
+
 	_serviceWatcherId = base::Platform::DBus::RegisterServiceWatcher(
 		_dbusConnection,
 		_serviceName,
@@ -737,6 +741,10 @@ void Instance::connectToRemoteSignals() {
 }
 
 void Instance::runProcess() {
+	if (!_dbusConnection) {
+		return;
+	}
+
 	const auto context = Glib::MainContext::create();
 	const auto loop = Glib::MainLoop::create(context);
 	g_main_context_push_thread_default(context->gobj());
