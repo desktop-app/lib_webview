@@ -21,6 +21,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QProcess>
 #include <giomm.h>
+#include <crl/crl_async.h>
 
 namespace Webview::WebKit2Gtk {
 namespace {
@@ -774,6 +775,15 @@ void Instance::runProcess() {
 	if (serviceWatcherId == 0) {
 		return;
 	}
+
+	// timeout in case something goes wrong
+	crl::async([=] {
+		usleep(5 * 1000 * 1000);
+		if (!loop->is_running()) {
+			return;
+		}
+		loop->quit();
+	});
 
 	QProcess::startDetached(
 		base::Integration::Instance().executablePath(),
