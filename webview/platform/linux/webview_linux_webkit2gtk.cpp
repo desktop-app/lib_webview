@@ -18,7 +18,6 @@
 #include "base/const_string.h"
 #include "base/integration.h"
 
-#include <QtCore/QCoreApplication>
 #include <QtCore/QProcess>
 #include <giomm.h>
 
@@ -27,7 +26,6 @@ namespace {
 
 using namespace WebkitGtk;
 
-constexpr auto kService = "org.desktop-app.GtkIntegration.WebviewHelper-%1-%2"_cs;
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/WebviewHelper"_cs;
 constexpr auto kInterface = "org.desktop_app.GtkIntegration.WebviewHelper"_cs;
 constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties"_cs;
@@ -59,17 +57,16 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 	</interface>
 </node>)INTROSPECTION"_cs;
 
+Glib::ustring ServiceName;
 std::atomic<uint> ServiceCounter = 0;
+bool Remoting = true;
 
 class Instance final : public Interface {
 public:
 	Instance(Config config);
 	~Instance();
 
-	int exec(
-		const std::string &parentDBusName,
-		int ppid,
-		uint serviceNumber) override;
+	int exec(const std::string &parentDBusName);
 
 	bool resolve();
 
@@ -123,11 +120,9 @@ private:
 	const Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
 	Glib::RefPtr<Gio::DBus::NodeInfo> _introspectionData;
-	const uint _serviceNumber = 0;
-	Glib::ustring _serviceName;
+	const Glib::ustring _serviceName;
 	Glib::ustring _parentDBusName;
 	int64 _servicePid = 0;
-	const bool _remoting = false;
 	uint _registerId = 0;
 	uint _serviceWatcherId = 0;
 	uint _parentServiceWatcherId = 0;
@@ -156,13 +151,16 @@ Instance::Instance(Config config)
 , _interfaceVTable(
 	sigc::mem_fun(this, &Instance::handleMethodCall),
 	sigc::mem_fun(this, &Instance::handleGetProperty))
-, _serviceNumber(ServiceCounter++)
-, _serviceName(kService.utf16().arg(getpid()).arg(_serviceNumber).toStdString())
-, _remoting(QCoreApplication::instance())
+, _serviceName(Remoting
+	? Glib::ustring(
+		QString::fromStdString(
+			ServiceName).arg(
+			ServiceCounter++).toStdString())
+	: ServiceName)
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler)) {
-	if (_remoting) {
+	if (Remoting) {
 		connectToRemoteSignals();
 		runProcess();
 	} else if (Resolve()) {
@@ -415,8 +413,7 @@ bool Instance::decidePolicy(
 	return true;
 }
 
-int Instance::exec(const std::string &parentDBusName, int ppid, uint serviceNumber) {
-	_serviceName = kService.utf16().arg(ppid).arg(serviceNumber).toStdString();
+int Instance::exec(const std::string &parentDBusName) {
 	_parentDBusName = parentDBusName;
 
 	_introspectionData = Gio::DBus::NodeInfo::create_for_xml(
@@ -445,7 +442,7 @@ int Instance::exec(const std::string &parentDBusName, int ppid, uint serviceNumb
 }
 
 bool Instance::resolve() {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return false;
 		}
@@ -467,7 +464,7 @@ bool Instance::resolve() {
 }
 
 bool Instance::finishEmbedding() {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return false;
 		}
@@ -501,7 +498,7 @@ bool Instance::finishEmbedding() {
 }
 
 void Instance::navigate(std::string url) {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -525,7 +522,7 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::init(std::string js) {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -559,7 +556,7 @@ void Instance::init(std::string js) {
 }
 
 void Instance::eval(std::string js) {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -588,7 +585,7 @@ void Instance::eval(std::string js) {
 }
 
 void *Instance::winId() {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return nullptr;
 		}
@@ -622,7 +619,7 @@ void *Instance::winId() {
 }
 
 void Instance::resizeToWindow() {
-	if (_remoting) {
+	if (Remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -790,8 +787,7 @@ void Instance::runProcess() {
 		{
 			"-webviewhelper",
 			QString::fromStdString(_dbusConnection->get_unique_name()),
-			QString::number(getpid()),
-			QString::number(_serviceNumber),
+			QString::fromStdString(_serviceName),
 		},
 		{},
 		&_servicePid);
@@ -889,7 +885,7 @@ void Instance::handleGetProperty(
 }
 
 bool Resolve() {
-	if (QCoreApplication::instance()) {
+	if (Remoting) {
 		static const auto result = Instance({}).resolve();
 		return result;
 	} else {
@@ -925,10 +921,19 @@ Available Availability() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (!Supported() && QCoreApplication::instance()) {
+	if (!Supported()) {
 		return nullptr;
 	}
 	return std::make_unique<Instance>(std::move(config));
+}
+
+int Exec(const std::string &parentDBusName) {
+	Remoting = false;
+	return Instance({}).exec(parentDBusName);
+}
+
+void SetServiceName(const std::string &serviceName) {
+	ServiceName = serviceName;
 }
 
 } // namespace Webview::WebKit2Gtk
