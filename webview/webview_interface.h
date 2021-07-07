@@ -10,8 +10,6 @@
 #include <string>
 #include <functional>
 
-#include "base/assertion.h"
-
 // Inspired by https://github.com/webview/webview.
 
 namespace Webview {
@@ -19,13 +17,6 @@ namespace Webview {
 class Interface {
 public:
 	virtual ~Interface() = default;
-
-	virtual int exec(
-			const std::string &parentDBusName,
-			int ppid,
-			unsigned int serviceCount) {
-		Unexpected("Unimplemented.");
-	}
 
 	virtual bool finishEmbedding() = 0;
 
