@@ -6,11 +6,9 @@
 //
 #pragma once
 
-extern "C" {
 #include <JavaScriptCore/JavaScript.h>
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
-} // extern "C"
 
 namespace Webview::WebkitGtk {
 
