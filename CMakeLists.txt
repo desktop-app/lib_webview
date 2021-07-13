@@ -59,10 +59,10 @@ elseif (LINUX)
             target_link_libraries(lib_webview PUBLIC PkgConfig::WEBKIT)
         else()
             pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
-            target_include_directories(lib_webview PUBLIC ${GTK3_INCLUDE_DIRS})
+            target_include_directories(lib_webview SYSTEM PUBLIC ${GTK3_INCLUDE_DIRS})
 
             pkg_check_modules(WEBKIT REQUIRED webkit2gtk-4.0)
-            target_include_directories(lib_webview PUBLIC ${WEBKIT_INCLUDE_DIRS})
+            target_include_directories(lib_webview SYSTEM PUBLIC ${WEBKIT_INCLUDE_DIRS})
         endif()
     else()
         remove_target_sources(lib_webview ${src_loc}
