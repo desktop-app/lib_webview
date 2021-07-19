@@ -809,6 +809,7 @@ void Instance::handleMethodCall(
 			"Access denied.");
 
 		invocation->return_error(error);
+		return;
 	}
 
 	try {
