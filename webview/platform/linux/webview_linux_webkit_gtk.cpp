@@ -7,7 +7,7 @@
 #include "webview/platform/linux/webview_linux_webkit_gtk.h"
 
 #ifdef DESKTOP_APP_DISABLE_GTK_INTEGRATION
-#error "WebKitGtk support depends on GTK integration."
+#error "WebKitGTK support depends on GTK integration."
 #endif // DESKTOP_APP_DISABLE_GTK_INTEGRATION
 
 #include "base/platform/linux/base_linux_gtk_integration.h"
