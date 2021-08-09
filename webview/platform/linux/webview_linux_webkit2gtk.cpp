@@ -14,11 +14,9 @@
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/base_platform_info.h"
-#include "base/basic_types.h"
 #include "base/const_string.h"
 #include "base/integration.h"
 
-#include <QtCore/QProcess>
 #include <giomm.h>
 
 namespace Webview::WebKit2Gtk {
@@ -122,7 +120,7 @@ private:
 	Glib::RefPtr<Gio::DBus::NodeInfo> _introspectionData;
 	const Glib::ustring _serviceName;
 	Glib::ustring _parentDBusName;
-	int64 _servicePid = 0;
+	int _servicePid = 0;
 	uint _registerId = 0;
 	uint _serviceWatcherId = 0;
 	uint _parentServiceWatcherId = 0;
@@ -151,12 +149,17 @@ Instance::Instance(Config config)
 , _interfaceVTable(
 	sigc::mem_fun(this, &Instance::handleMethodCall),
 	sigc::mem_fun(this, &Instance::handleGetProperty))
-, _serviceName(Remoting
-	? Glib::ustring(
-		QString::fromStdString(
-			ServiceName).arg(
-			ServiceCounter++).toStdString())
-	: ServiceName)
+, _serviceName(Remoting ? [] {
+	try {
+		return Glib::Regex::create("%1")->replace(
+			ServiceName,
+			0,
+			std::to_string(ServiceCounter++),
+			static_cast<Glib::RegexMatchFlags>(0));
+	} catch (...) {
+		return Glib::ustring();
+	}
+}() : ServiceName)
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler)) {
@@ -782,14 +785,16 @@ void Instance::runProcess() {
 	});
 	timeout->attach(context);
 
-	QProcess::startDetached(
-		base::Integration::Instance().executablePath(),
-		{
+	Glib::spawn_async(
+		"",
+		std::vector<std::string>{
+			base::Integration::Instance().executablePath().toStdString(),
 			"-webviewhelper",
-			QString::fromStdString(_dbusConnection->get_unique_name()),
-			QString::fromStdString(_serviceName),
+			_dbusConnection->get_unique_name(),
+			_serviceName,
 		},
-		{},
+		Glib::SPAWN_DEFAULT,
+		sigc::slot<void>(),
 		&_servicePid);
 
 	loop->run();
