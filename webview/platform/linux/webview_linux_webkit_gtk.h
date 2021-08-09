@@ -12,6 +12,8 @@
 
 namespace Webview::WebkitGtk {
 
+inline gboolean (*gtk_init_check)(int *argc, char ***argv);
+inline void (*gdk_set_allowed_backends)(const gchar *backends);
 inline GType (*gtk_widget_get_type)(void);
 inline void (*gtk_widget_grab_focus)(GtkWidget *widget);
 inline GType (*gtk_container_get_type)(void);

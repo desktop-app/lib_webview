@@ -7,7 +7,7 @@
 #include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
 #ifdef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#error "GTK integration depends on D-Bus integration."
+#error "WebKitGTK support depends on D-Bus integration."
 #endif // DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 #include "webview/platform/linux/webview_linux_webkit_gtk.h"
