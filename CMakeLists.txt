@@ -56,6 +56,8 @@ elseif (LINUX)
 
         pkg_check_modules(WEBKIT REQUIRED webkit2gtk-4.0)
         target_include_directories(lib_webview SYSTEM PUBLIC ${WEBKIT_INCLUDE_DIRS})
+
+        target_link_libraries(lib_webview PUBLIC ${CMAKE_DL_LIBS})
     else()
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_webkit_gtk.cpp
