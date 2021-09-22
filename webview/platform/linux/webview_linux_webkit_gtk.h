@@ -10,6 +10,9 @@
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
+// Let it build with older WebKitGTK
+typedef struct _JSCValue JSCValue;
+
 namespace Webview::WebkitGtk {
 
 inline gboolean (*gtk_init_check)(int *argc, char ***argv);
