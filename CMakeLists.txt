@@ -24,6 +24,7 @@ PRIVATE
     webview/platform/linux/webview_linux_webkit_gtk.cpp
     webview/platform/linux/webview_linux_webkit_gtk.h
     webview/platform/linux/webview_linux_webkit2gtk.cpp
+    webview/platform/linux/webview_linux_webkit2gtk_dummy.cpp
     webview/platform/linux/webview_linux_webkit2gtk.h
 
     webview/platform/win/webview_win.cpp
@@ -48,22 +49,13 @@ if (WIN32)
     nuget_add_webview(lib_webview)
     nuget_add_winrt(lib_webview)
 elseif (LINUX)
-    if (NOT DESKTOP_APP_DISABLE_WEBKITGTK)
-        find_package(PkgConfig REQUIRED)
-
-        pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
-        target_include_directories(lib_webview SYSTEM PUBLIC ${GTK3_INCLUDE_DIRS})
-
-        pkg_check_modules(WEBKIT REQUIRED webkit2gtk-4.0)
-        target_include_directories(lib_webview SYSTEM PUBLIC ${WEBKIT_INCLUDE_DIRS})
-
-        target_link_libraries(lib_webview PUBLIC ${CMAKE_DL_LIBS})
+    if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
+        remove_target_sources(lib_webview ${src_loc}
+            webview/platform/linux/webview_linux_webkit2gtk.cpp
+        )
     else()
         remove_target_sources(lib_webview ${src_loc}
-            webview/platform/linux/webview_linux_webkit_gtk.cpp
-            webview/platform/linux/webview_linux_webkit_gtk.h
-            webview/platform/linux/webview_linux_webkit2gtk.cpp
-            webview/platform/linux/webview_linux_webkit2gtk.h
+            webview/platform/linux/webview_linux_webkit2gtk_dummy.cpp
         )
     endif()
 endif()

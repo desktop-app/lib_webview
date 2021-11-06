@@ -6,12 +6,71 @@
 //
 #pragma once
 
-#include <JavaScriptCore/JavaScript.h>
-#include <gtk/gtk.h>
-#include <webkit2/webkit2.h>
+#include <gio/gio.h>
 
-// Let it build with older WebKitGTK
+#define GTK_TYPE_CONTAINER (gtk_container_get_type ())
+#define GTK_CONTAINER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_CONTAINER, GtkContainer))
+
+#define GTK_TYPE_WIDGET (gtk_widget_get_type ())
+#define GTK_WIDGET(widget) (G_TYPE_CHECK_INSTANCE_CAST ((widget), GTK_TYPE_WIDGET, GtkWidget))
+
+#define GTK_TYPE_WINDOW (gtk_window_get_type ())
+#define GTK_WINDOW(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_WINDOW, GtkWindow))
+
+#define WEBKIT_TYPE_NAVIGATION_POLICY_DECISION (webkit_navigation_policy_decision_get_type())
+#define WEBKIT_NAVIGATION_POLICY_DECISION(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_NAVIGATION_POLICY_DECISION, WebKitNavigationPolicyDecision))
+
+#define WEBKIT_TYPE_WEB_VIEW (webkit_web_view_get_type())
+#define WEBKIT_WEB_VIEW(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_WEB_VIEW, WebKitWebView))
+
+typedef struct _GdkWindow GdkWindow;
+typedef struct _GtkContainer GtkContainer;
+typedef struct _GtkWidget GtkWidget;
+typedef struct _GtkWindow GtkWindow;
+
 typedef struct _JSCValue JSCValue;
+typedef const struct OpaqueJSContext *JSContextRef;
+typedef struct OpaqueJSContext *JSGlobalContextRef;
+typedef struct OpaqueJSString *JSStringRef;
+typedef const struct OpaqueJSValue* JSValueRef;
+
+typedef struct _WebKitJavascriptResult WebKitJavascriptResult;
+typedef struct _WebKitNavigationAction WebKitNavigationAction;
+typedef struct _WebKitNavigationPolicyDecision WebKitNavigationPolicyDecision;
+typedef struct _WebKitPolicyDecision WebKitPolicyDecision;
+typedef struct _WebKitURIRequest WebKitURIRequest;
+typedef struct _WebKitUserContentManager WebKitUserContentManager;
+typedef struct _WebKitUserScript WebKitUserScript;
+typedef struct _WebKitWebView WebKitWebView;
+typedef struct _WebKitSettings WebKitSettings;
+
+typedef enum {
+	GTK_WINDOW_TOPLEVEL,
+	GTK_WINDOW_POPUP,
+} GtkWindowType;
+
+typedef enum {
+	WEBKIT_LOAD_STARTED,
+	WEBKIT_LOAD_REDIRECTED,
+	WEBKIT_LOAD_COMMITTED,
+	WEBKIT_LOAD_FINISHED,
+} WebKitLoadEvent;
+
+typedef enum {
+	WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION,
+	WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION,
+	WEBKIT_POLICY_DECISION_TYPE_RESPONSE,
+} WebKitPolicyDecisionType;
+
+typedef enum {
+	WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+	WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+} WebKitUserContentInjectedFrames;
+
+typedef enum {
+	WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
+	WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END,
+} WebKitUserScriptInjectionTime;
 
 namespace Webview::WebkitGtk {
 
