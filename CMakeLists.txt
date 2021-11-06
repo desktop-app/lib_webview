@@ -51,6 +51,8 @@ if (WIN32)
 elseif (LINUX)
     if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
         remove_target_sources(lib_webview ${src_loc}
+            webview/platform/linux/webview_linux_webkit_gtk.cpp
+            webview/platform/linux/webview_linux_webkit_gtk.h
             webview/platform/linux/webview_linux_webkit2gtk.cpp
         )
     else()
