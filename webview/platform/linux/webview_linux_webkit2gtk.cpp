@@ -6,10 +6,6 @@
 //
 #include "webview/platform/linux/webview_linux_webkit2gtk.h"
 
-#ifdef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#error "WebKitGTK support depends on D-Bus integration."
-#endif // DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-
 #include "webview/platform/linux/webview_linux_webkit_gtk.h"
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
