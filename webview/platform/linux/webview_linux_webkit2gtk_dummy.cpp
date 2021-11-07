@@ -20,6 +20,7 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 }
 
 int Exec(const std::string &parentDBusName) {
+	return 1;
 }
 
 void SetServiceName(const std::string &serviceName) {
