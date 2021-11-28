@@ -13,7 +13,7 @@ namespace Webview::WebKit2Gtk {
 [[nodiscard]] Available Availability();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
-int Exec(const std::string &parentDBusName);
-void SetServiceName(const std::string &serviceName);
+int Exec();
+void SetSocketPath(const std::string &socketPath);
 
 } // namespace Webview::WebKit2Gtk

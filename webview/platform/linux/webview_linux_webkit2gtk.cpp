@@ -8,7 +8,6 @@
 
 #include "webview/platform/linux/webview_linux_webkit_gtk.h"
 #include "base/platform/linux/base_linux_glibmm_helper.h"
-#include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
 #include "base/integration.h"
@@ -22,10 +21,10 @@ using namespace WebkitGtk;
 
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/WebviewHelper"_cs;
 constexpr auto kInterface = "org.desktop_app.GtkIntegration.WebviewHelper"_cs;
-constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties"_cs;
 
 constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 	<interface name='org.desktop_app.GtkIntegration.WebviewHelper'>
+		<method name='Create'/>
 		<method name='Resolve'/>
 		<method name='FinishEmbedding'/>
 		<method name='Navigate'>
@@ -38,6 +37,9 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 		<method name='Eval'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>
+		<method name='GetWinId'>
+			<arg type='t' name='result' direction='out'/>
+		</method>
 		<signal name='MessageReceived'>
 			<arg type='ay' name='message' direction='out'/>
 		</signal>
@@ -47,20 +49,31 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 		<signal name='NavigationDone'>
 			<arg type='b' name='success' direction='out'/>
 		</signal>
-		<property name='WinId' type='t' access='read'/>
 	</interface>
 </node>)INTROSPECTION"_cs;
 
-Glib::ustring ServiceName;
-std::atomic<uint> ServiceCounter = 0;
-bool Remoting = true;
+template <typename T>
+struct GObjectDeleter {
+	void operator()(T *value) {
+		g_object_unref(value);
+	}
+};
+
+template <typename T>
+using GObjectPtr = std::unique_ptr<T, GObjectDeleter<T>>;
+
+std::string SocketPath;
+
+inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
+	return "unix:path=" + socketPath;
+}
 
 class Instance final : public Interface {
 public:
-	Instance(Config config);
+	Instance(Config config = {}, bool remoting = true);
 	~Instance();
 
-	int exec(const std::string &parentDBusName);
+	void create();
 
 	bool resolve();
 
@@ -75,9 +88,9 @@ public:
 
 	void *winId() override;
 
-private:
-	void initGtk();
+	int exec();
 
+private:
 	void scriptMessageReceived(WebKitJavascriptResult *result);
 
 	bool loadFailed(
@@ -91,8 +104,8 @@ private:
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType);
 
+	void startProcess();
 	void connectToRemoteSignals();
-	void runProcess();
 
 	void handleMethodCall(
 		const Glib::RefPtr<Gio::DBus::Connection> &connection,
@@ -103,23 +116,14 @@ private:
 		const Glib::VariantContainerBase &parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
 
-	void handleGetProperty(
-		Glib::VariantBase &property,
-		const Glib::RefPtr<Gio::DBus::Connection> &connection,
-		const Glib::ustring &sender,
-		const Glib::ustring &object_path,
-		const Glib::ustring &interface_name,
-		const Glib::ustring &property_name);
-
-	const Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
+	bool _remoting = false;
+	std::string _socketPath;
+	Glib::RefPtr<Gio::DBus::Server> _dbusServer;
+	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
 	Glib::RefPtr<Gio::DBus::NodeInfo> _introspectionData;
-	const Glib::ustring _serviceName;
-	Glib::ustring _parentDBusName;
-	int _servicePid = 0;
+	GObjectPtr<GSubprocess> _serviceProcess;
 	uint _registerId = 0;
-	uint _serviceWatcherId = 0;
-	uint _parentServiceWatcherId = 0;
 	uint _messageHandlerId = 0;
 	uint _navigationStartHandlerId = 0;
 	uint _navigationDoneHandlerId = 0;
@@ -133,43 +137,20 @@ private:
 
 };
 
-Instance::Instance(Config config)
-: _dbusConnection([] {
-	try {
-		return Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
-	} catch (...) {
-		return Glib::RefPtr<Gio::DBus::Connection>();
-	}
-}())
-, _interfaceVTable(
-	sigc::mem_fun(this, &Instance::handleMethodCall),
-	sigc::mem_fun(this, &Instance::handleGetProperty))
-, _serviceName(Remoting ? [] {
-	try {
-		return Glib::Regex::create("%1")->replace(
-			ServiceName,
-			0,
-			std::to_string(ServiceCounter++),
-			static_cast<Glib::RegexMatchFlags>(0));
-	} catch (...) {
-		return Glib::ustring();
-	}
-}() : ServiceName)
+Instance::Instance(Config config, bool remoting)
+: _remoting(remoting)
+, _interfaceVTable(sigc::mem_fun(this, &Instance::handleMethodCall))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler)) {
-	if (Remoting) {
-		connectToRemoteSignals();
-		runProcess();
-	} else if (Resolve()) {
-		initGtk();
+	if (_remoting) {
+		startProcess();
 	}
 }
 
 Instance::~Instance() {
-	if (_servicePid != 0) {
-		kill(_servicePid, SIGTERM);
+	if (_serviceProcess) {
+		g_subprocess_send_signal(_serviceProcess.get(), SIGTERM);
 	}
 	if (_dbusConnection) {
 		if (_navigationDoneHandlerId != 0) {
@@ -184,14 +165,6 @@ Instance::~Instance() {
 			_dbusConnection->signal_unsubscribe(
 				_messageHandlerId);
 		}
-		if (_parentServiceWatcherId != 0) {
-			_dbusConnection->signal_unsubscribe(
-				_parentServiceWatcherId);
-		}
-		if (_serviceWatcherId != 0) {
-			_dbusConnection->signal_unsubscribe(
-				_serviceWatcherId);
-		}
 		if (_registerId != 0) {
 			_dbusConnection->unregister_object(
 				_registerId);
@@ -205,7 +178,28 @@ Instance::~Instance() {
 	}
 }
 
-void Instance::initGtk() {
+void Instance::create() {
+	if (_remoting) {
+		if (!_dbusConnection) {
+			return;
+		}
+
+		try {
+			auto reply = _dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"Create",
+				{});
+
+			return;
+		} catch (...) {
+		}
+	}
+
+	if (!resolve()) {
+		return;
+	}
+
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
 	gtk_widget_show_all(_window);
@@ -295,7 +289,7 @@ void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
 			std::string(kObjectPath),
 			std::string(kInterface),
 			"MessageReceived",
-			_parentDBusName,
+			{},
 			base::Platform::MakeGlibVariant(std::tuple{
 				message,
 			}));
@@ -323,7 +317,7 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"NavigationDone",
-				_parentDBusName,
+				{},
 				base::Platform::MakeGlibVariant(std::tuple{
 					success,
 				}));
@@ -354,12 +348,7 @@ bool Instance::decidePolicy(
 	const gchar *uri = webkit_uri_request_get_uri(request);
 	if (_dbusConnection) {
 		try {
-			const auto context = Glib::MainContext::create();
-			const auto loop = Glib::MainLoop::create(context);
-			g_main_context_push_thread_default(context->gobj());
-			const auto contextGuard = gsl::finally([&] {
-				g_main_context_pop_thread_default(context->gobj());
-			});
+			const auto loop = Glib::MainLoop::create();
 			bool result = false;
 
 			const auto resultId = _dbusConnection->signal_subscribe(
@@ -380,7 +369,7 @@ bool Instance::decidePolicy(
 
 					loop->quit();
 				},
-				_parentDBusName,
+				{},
 				std::string(kInterface),
 				"NavigationStartedResult",
 				std::string(kObjectPath));
@@ -395,7 +384,7 @@ bool Instance::decidePolicy(
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"NavigationStarted",
-				_parentDBusName,
+				{},
 				base::Platform::MakeGlibVariant(std::tuple{
 					Glib::ustring(uri),
 				}));
@@ -412,36 +401,8 @@ bool Instance::decidePolicy(
 	return true;
 }
 
-int Instance::exec(const std::string &parentDBusName) {
-	_parentDBusName = parentDBusName;
-
-	_introspectionData = Gio::DBus::NodeInfo::create_for_xml(
-		std::string(kIntrospectionXML));
-
-	_registerId = _dbusConnection->register_object(
-		std::string(kObjectPath),
-		_introspectionData->lookup_interface(),
-		_interfaceVTable);
-
-	const auto app = Gio::Application::create(_serviceName);
-	app->hold();
-	_parentServiceWatcherId = base::Platform::DBus::RegisterServiceWatcher(
-		_dbusConnection,
-		parentDBusName,
-		[=](
-			const Glib::ustring &service,
-			const Glib::ustring &oldOwner,
-			const Glib::ustring &newOwner) {
-			if (!newOwner.empty()) {
-				return;
-			}
-			app->quit();
-		});
-	return app->run(0, nullptr);
-}
-
 bool Instance::resolve() {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return false;
 		}
@@ -451,19 +412,18 @@ bool Instance::resolve() {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Resolve",
-				{},
-				_serviceName);
+				{});
 
 			return true;
 		} catch (...) {
 		}
 	}
 
-	return false;
+	return Resolve();
 }
 
 bool Instance::finishEmbedding() {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return false;
 		}
@@ -473,8 +433,7 @@ bool Instance::finishEmbedding() {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"FinishEmbedding",
-				{},
-				_serviceName);
+				{});
 
 			return true;
 		} catch (...) {
@@ -497,7 +456,7 @@ bool Instance::finishEmbedding() {
 }
 
 void Instance::navigate(std::string url) {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -509,8 +468,7 @@ void Instance::navigate(std::string url) {
 				"Navigate",
 				base::Platform::MakeGlibVariant(std::tuple{
 					Glib::ustring(url),
-				}),
-				_serviceName);
+				}));
 		} catch (...) {
 		}
 
@@ -521,7 +479,7 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::init(std::string js) {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -533,8 +491,7 @@ void Instance::init(std::string js) {
 				"Init",
 				base::Platform::MakeGlibVariant(std::tuple{
 					js,
-				}),
-				_serviceName);
+				}));
 		} catch (...) {
 		}
 
@@ -555,7 +512,7 @@ void Instance::init(std::string js) {
 }
 
 void Instance::eval(std::string js) {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -567,8 +524,7 @@ void Instance::eval(std::string js) {
 				"Eval",
 				base::Platform::MakeGlibVariant(std::tuple{
 					js,
-				}),
-				_serviceName);
+				}));
 		} catch (...) {
 		}
 
@@ -584,7 +540,7 @@ void Instance::eval(std::string js) {
 }
 
 void *Instance::winId() {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return nullptr;
 		}
@@ -592,18 +548,13 @@ void *Instance::winId() {
 		try {
 			auto reply = _dbusConnection->call_sync(
 				std::string(kObjectPath),
-				std::string(kPropertiesInterface),
-				"Get",
-				base::Platform::MakeGlibVariant(std::tuple{
-					Glib::ustring(std::string(kInterface)),
-					Glib::ustring("WinId"),
-				}),
-				_serviceName);
+				std::string(kInterface),
+				"GetWinId",
+				{});
 
 			return reinterpret_cast<void*>(
 				base::Platform::GlibVariantCast<guint64>(
-					base::Platform::GlibVariantCast<Glib::VariantBase>(
-						reply.get_child(0))));
+					reply.get_child(0)));
 		} catch (...) {
 		}
 
@@ -618,7 +569,7 @@ void *Instance::winId() {
 }
 
 void Instance::resizeToWindow() {
-	if (Remoting) {
+	if (_remoting) {
 		if (!_dbusConnection) {
 			return;
 		}
@@ -628,8 +579,7 @@ void Instance::resizeToWindow() {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"ResizeToWindow",
-				{},
-				_serviceName);
+				{});
 		} catch (...) {
 		}
 
@@ -637,23 +587,84 @@ void Instance::resizeToWindow() {
 	}
 }
 
+void Instance::startProcess() {
+	const auto executablePath = base::Integration::Instance()
+		.executablePath()
+		.toUtf8();
+
+	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_new(
+		G_SUBPROCESS_FLAGS_NONE,
+		nullptr,
+		executablePath.constData(),
+		"-webviewhelper",
+		SocketPath.c_str(),
+		nullptr));
+
+	_socketPath = [&]() -> std::string {
+		try {
+			return Glib::Regex::create("%1")->replace(
+				SocketPath,
+				0,
+				g_subprocess_get_identifier(_serviceProcess.get()),
+				static_cast<Glib::RegexMatchFlags>(0));
+		} catch (...) {
+			return {};
+		}
+	}();
+
+	const auto socketFile = Gio::File::create_for_path(_socketPath);
+	
+	try {
+		socketFile->remove();
+	} catch (...) {
+	}
+
+	const auto loop = Glib::MainLoop::create();
+	const auto socketMonitor = socketFile->monitor();
+	socketMonitor->signal_changed().connect([&](
+		const Glib::RefPtr<Gio::File> &file,
+		const Glib::RefPtr<Gio::File> &otherFile,
+		Gio::FileMonitorEvent eventType) {
+		if (eventType == Gio::FILE_MONITOR_EVENT_CREATED) {
+			loop->quit();
+		}
+	});
+
+	// timeout in case something goes wrong
+	const auto timeout = Glib::TimeoutSource::create(5000);
+	timeout->connect([=] {
+		if (loop->is_running()) {
+			loop->quit();
+		}
+		return false;
+	});
+	timeout->attach();
+
+	loop->run();
+
+	_dbusConnection = [&] {
+		try {
+			return Gio::DBus::Connection::create_for_address_sync(
+				SocketPathToDBusAddress(_socketPath),
+				Gio::DBus::CONNECTION_FLAGS_AUTHENTICATION_CLIENT);
+		} catch (...) {
+			return Glib::RefPtr<Gio::DBus::Connection>();
+		}
+	}();
+
+	connectToRemoteSignals();
+}
+
 void Instance::connectToRemoteSignals() {
 	if (!_dbusConnection) {
 		return;
 	}
 
-	_serviceWatcherId = base::Platform::DBus::RegisterServiceWatcher(
-		_dbusConnection,
-		_serviceName,
-		[=](
-			const Glib::ustring &service,
-			const Glib::ustring &oldOwner,
-			const Glib::ustring &newOwner) {
-			if (!newOwner.empty()) {
-				return;
-			}
-			runProcess();
-		});
+	_dbusConnection->signal_closed().connect([=](
+		bool remotePeerVanished,
+		const Glib::Error &error) {
+		startProcess();
+	});
 
 	_messageHandlerId = _dbusConnection->signal_subscribe(
 		[=](
@@ -673,7 +684,7 @@ void Instance::connectToRemoteSignals() {
 			} catch (...) {
 			}
 		},
-		_serviceName,
+		{},
 		std::string(kInterface),
 		"MessageReceived",
 		std::string(kObjectPath));
@@ -697,14 +708,14 @@ void Instance::connectToRemoteSignals() {
 						std::string(kObjectPath),
 						std::string(kInterface),
 						"NavigationStartedResult",
-						_serviceName,
+						{},
 						base::Platform::MakeGlibVariant(std::tuple{
 							_navigationStartHandler(uri),
 						}));
 				} catch (...) {
 				}
 			},
-			_serviceName,
+			{},
 			std::string(kInterface),
 			"NavigationStarted",
 			std::string(kObjectPath));
@@ -729,71 +740,63 @@ void Instance::connectToRemoteSignals() {
 				} catch (...) {
 				}
 			},
-			_serviceName,
+			{},
 			std::string(kInterface),
 			"NavigationDone",
 			std::string(kObjectPath));
 	}
 }
 
-void Instance::runProcess() {
-	if (!_dbusConnection) {
-		return;
-	}
+int Instance::exec() {
+	_socketPath = Glib::Regex::create("%1")->replace(
+		SocketPath,
+		0,
+		std::to_string(getpid()),
+		static_cast<Glib::RegexMatchFlags>(0));
 
-	const auto context = Glib::MainContext::create();
-	const auto loop = Glib::MainLoop::create(context);
-	g_main_context_push_thread_default(context->gobj());
-	const auto contextGuard = gsl::finally([&] {
-		g_main_context_pop_thread_default(context->gobj());
+	const auto authObserver = Gio::DBus::AuthObserver::create();
+	authObserver->signal_authorize_authenticated_peer().connect([](
+		const Glib::RefPtr<const Gio::IOStream> &stream,
+		const Glib::RefPtr<const Gio::Credentials> &credentials) {
+		return credentials->get_unix_pid() == getppid();
 	});
 
-	const auto serviceWatcherId = base::Platform::DBus::RegisterServiceWatcher(
-		_dbusConnection,
-		_serviceName,
-		[&](
-			const Glib::ustring &service,
-			const Glib::ustring &oldOwner,
-			const Glib::ustring &newOwner) {
-			if (newOwner.empty()) {
-				return;
-			}
-			loop->quit();
+	_dbusServer = Gio::DBus::Server::create_sync(
+		SocketPathToDBusAddress(_socketPath),
+		Gio::DBus::generate_guid(),
+		authObserver);
+
+	_dbusServer->start();
+
+	_introspectionData = Gio::DBus::NodeInfo::create_for_xml(
+		std::string(kIntrospectionXML));
+
+	const auto app = Gio::Application::create();
+	app->hold();
+
+	_dbusServer->signal_new_connection().connect([=](
+		const Glib::RefPtr<Gio::DBus::Connection> &connection) {
+		if (_dbusConnection) {
+			return false;
+		}
+
+		_dbusConnection = connection;
+
+		_registerId = _dbusConnection->register_object(
+			std::string(kObjectPath),
+			_introspectionData->lookup_interface(),
+			_interfaceVTable);
+
+		_dbusConnection->signal_closed().connect([=](
+			bool remotePeerVanished,
+			const Glib::Error &error) {
+			app->quit();
 		});
 
-	const auto serviceWatcherGuard = gsl::finally([&] {
-		if (serviceWatcherId != 0) {
-			_dbusConnection->signal_unsubscribe(serviceWatcherId);
-		}
+		return true;
 	});
 
-	if (serviceWatcherId == 0) {
-		return;
-	}
-
-	// timeout in case something goes wrong
-	const auto timeout = Glib::TimeoutSource::create(5000);
-	timeout->connect([=] {
-		if (loop->is_running()) {
-			loop->quit();
-		}
-		return false;
-	});
-	timeout->attach(context);
-
-	Glib::spawn_async(
-		"",
-		std::vector<std::string>{
-			base::Integration::Instance().executablePath().toStdString(),
-			"-webviewhelper",
-			_dbusConnection->get_unique_name(),
-			_serviceName,
-		},
-		Glib::SPAWN_DEFAULT,
-		sigc::slot<void>(),
-		&_servicePid);
-
-	loop->run();
+	return app->run(0, nullptr);
 }
 
 void Instance::handleMethodCall(
@@ -804,20 +807,15 @@ void Instance::handleMethodCall(
 		const Glib::ustring &method_name,
 		const Glib::VariantContainerBase &parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation) {
-	if (sender != _parentDBusName) {
-		Gio::DBus::Error error(
-			Gio::DBus::Error::ACCESS_DENIED,
-			"Access denied.");
-
-		invocation->return_error(error);
-		return;
-	}
-
 	try {
 		auto parametersCopy = parameters;
 
-		if (method_name == "Resolve") {
-			if (Resolve()) {
+		if (method_name == "Create") {
+			create();
+			invocation->return_value({});
+			return;
+		} else if (method_name == "Resolve") {
+			if (resolve()) {
 				invocation->return_value({});
 				return;
 			}
@@ -851,6 +849,13 @@ void Instance::handleMethodCall(
 			eval(js);
 			invocation->return_value({});
 			return;
+		} else if (method_name == "GetWinId") {
+			invocation->return_value(
+				Glib::VariantContainerBase::create_tuple(
+					Glib::Variant<guint64>::create(
+						reinterpret_cast<guint64>(winId()))));
+
+			return;
 		}
 	} catch (...) {
 	}
@@ -860,39 +865,6 @@ void Instance::handleMethodCall(
 		"Method does not exist.");
 
 	invocation->return_error(error);
-}
-
-void Instance::handleGetProperty(
-		Glib::VariantBase &property,
-		const Glib::RefPtr<Gio::DBus::Connection> &connection,
-		const Glib::ustring &sender,
-		const Glib::ustring &object_path,
-		const Glib::ustring &interface_name,
-		const Glib::ustring &property_name) {
-	if (sender != _parentDBusName) {
-		throw Gio::DBus::Error(
-			Gio::DBus::Error::ACCESS_DENIED,
-			"Access denied.");
-	}
-
-	if (property_name == "WinId") {
-		property = Glib::Variant<guint64>::create(
-			reinterpret_cast<guint64>(winId()));
-		return;
-	}
-
-	throw Gio::DBus::Error(
-		Gio::DBus::Error::NO_REPLY,
-		"No reply.");
-}
-
-bool Resolve() {
-	if (Remoting) {
-		static const auto result = Instance({}).resolve();
-		return result;
-	} else {
-		return WebkitGtk::Resolve();
-	}
 }
 
 } // namespace
@@ -912,7 +884,7 @@ Available Availability() {
 			"with Mutter window manager. Please switch to another "
 			"window manager or desktop environment."
 		};
-	} else if (!Resolve()) {
+	} else if (!Instance().resolve()) {
 		return Available{
 			.error = Available::Error::NoGtkOrWebkit2Gtk,
 			.details = "Please install WebKitGTK 4 (webkit2gtk-4.0) "
@@ -926,16 +898,17 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;
 	}
-	return std::make_unique<Instance>(std::move(config));
+	auto result = std::make_unique<Instance>(std::move(config));
+	result->create();
+	return result;
 }
 
-int Exec(const std::string &parentDBusName) {
-	Remoting = false;
-	return Instance({}).exec(parentDBusName);
+int Exec() {
+	return Instance({}, false).exec();
 }
 
-void SetServiceName(const std::string &serviceName) {
-	ServiceName = serviceName;
+void SetSocketPath(const std::string &socketPath) {
+	SocketPath = socketPath;
 }
 
 } // namespace Webview::WebKit2Gtk
