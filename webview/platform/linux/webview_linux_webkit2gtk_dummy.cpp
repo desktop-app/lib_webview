@@ -19,11 +19,11 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	return nullptr;
 }
 
-int Exec(const std::string &parentDBusName) {
+int Exec() {
 	return 1;
 }
 
-void SetServiceName(const std::string &serviceName) {
+void SetSocketPath(const std::string &socketPath) {
 }
 
 } // namespace Webview::WebKit2Gtk
