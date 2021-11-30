@@ -117,11 +117,8 @@ private:
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
 
 	bool _remoting = false;
-	std::string _socketPath;
-	Glib::RefPtr<Gio::DBus::Server> _dbusServer;
 	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
-	Glib::RefPtr<Gio::DBus::NodeInfo> _introspectionData;
 	GObjectPtr<GSubprocess> _serviceProcess;
 	uint _registerId = 0;
 	uint _messageHandlerId = 0;
@@ -600,7 +597,7 @@ void Instance::startProcess() {
 		SocketPath.c_str(),
 		nullptr));
 
-	_socketPath = [&]() -> std::string {
+	const auto socketPath = [&]() -> std::string {
 		try {
 			return Glib::Regex::create("%1")->replace(
 				SocketPath,
@@ -612,7 +609,7 @@ void Instance::startProcess() {
 		}
 	}();
 
-	const auto socketFile = Gio::File::create_for_path(_socketPath);
+	const auto socketFile = Gio::File::create_for_path(socketPath);
 	
 	try {
 		socketFile->remove();
@@ -645,7 +642,7 @@ void Instance::startProcess() {
 	_dbusConnection = [&] {
 		try {
 			return Gio::DBus::Connection::create_for_address_sync(
-				SocketPathToDBusAddress(_socketPath),
+				SocketPathToDBusAddress(socketPath),
 				Gio::DBus::CONNECTION_FLAGS_AUTHENTICATION_CLIENT);
 		} catch (...) {
 			return Glib::RefPtr<Gio::DBus::Connection>();
@@ -748,7 +745,13 @@ void Instance::connectToRemoteSignals() {
 }
 
 int Instance::exec() {
-	_socketPath = Glib::Regex::create("%1")->replace(
+	const auto app = Gio::Application::create();
+	app->hold();
+
+	const auto introspectionData = Gio::DBus::NodeInfo::create_for_xml(
+		std::string(kIntrospectionXML));
+
+	const auto socketPath = Glib::Regex::create("%1")->replace(
 		SocketPath,
 		0,
 		std::to_string(getpid()),
@@ -761,20 +764,13 @@ int Instance::exec() {
 		return credentials->get_unix_pid() == getppid();
 	});
 
-	_dbusServer = Gio::DBus::Server::create_sync(
-		SocketPathToDBusAddress(_socketPath),
+	const auto dbusServer = Gio::DBus::Server::create_sync(
+		SocketPathToDBusAddress(socketPath),
 		Gio::DBus::generate_guid(),
 		authObserver);
 
-	_dbusServer->start();
-
-	_introspectionData = Gio::DBus::NodeInfo::create_for_xml(
-		std::string(kIntrospectionXML));
-
-	const auto app = Gio::Application::create();
-	app->hold();
-
-	_dbusServer->signal_new_connection().connect([=](
+	dbusServer->start();
+	dbusServer->signal_new_connection().connect([=](
 		const Glib::RefPtr<Gio::DBus::Connection> &connection) {
 		if (_dbusConnection) {
 			return false;
@@ -784,7 +780,7 @@ int Instance::exec() {
 
 		_registerId = _dbusConnection->register_object(
 			std::string(kObjectPath),
-			_introspectionData->lookup_interface(),
+			introspectionData->lookup_interface(),
 			_interfaceVTable);
 
 		_dbusConnection->signal_closed().connect([=](
