@@ -168,10 +168,18 @@ Instance::~Instance() {
 		}
 	}
 	if (_webview) {
-		gtk_widget_destroy(_webview);
+		if (!gtk_widget_destroy) {
+			g_object_unref(_webview);
+		} else {
+			gtk_widget_destroy(_webview);
+		}
 	}
 	if (_window) {
-		gtk_widget_destroy(_window);
+		if (gtk_window_destroy) {
+			gtk_window_destroy(GTK_WINDOW(_window));
+		} else {
+			gtk_widget_destroy(_window);
+		}
 	}
 }
 
@@ -199,7 +207,11 @@ void Instance::create() {
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
-	gtk_widget_show_all(_window);
+	if (gtk_widget_show) {
+		gtk_widget_show(_window);
+	} else {
+		gtk_widget_show_all(_window);
+	}
 	_webview = webkit_web_view_new();
 	WebKitUserContentManager *manager =
 		webkit_web_view_get_user_content_manager(WEBKIT_WEB_VIEW(_webview));
@@ -266,12 +278,9 @@ void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
 		message = s;
 		g_free(s);
 	} else {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 		JSGlobalContextRef ctx
 			= webkit_javascript_result_get_global_context(result);
 		JSValueRef value = webkit_javascript_result_get_value(result);
-#pragma GCC diagnostic pop
 		JSStringRef js = JSValueToStringCopy(ctx, value, NULL);
 		size_t n = JSStringGetMaximumUTF8CStringSize(js);
 		message.resize(n, char(0));
@@ -439,14 +448,22 @@ bool Instance::finishEmbedding() {
 		return false;
 	}
 
-	gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
+	if (gtk_window_set_child) {
+		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
+	} else {
+		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
+	}
 
 	// WebKitSettings *settings = webkit_web_view_get_settings(
 	// 	WEBKIT_WEB_VIEW(_webview));
 	//webkit_settings_set_javascript_can_access_clipboard(settings, true);
 
 	gtk_widget_hide(_window);
-	gtk_widget_show_all(_window);
+	if (gtk_widget_show) {
+		gtk_widget_show(_window);
+	} else {
+		gtk_widget_show_all(_window);
+	}
 	gtk_widget_grab_focus(GTK_WIDGET(_webview));
 
 	return true;
@@ -558,11 +575,16 @@ void *Instance::winId() {
 		return nullptr;
 	}
 
-	const auto window = gtk_widget_get_window(_window);
-	const auto result = window
-		? reinterpret_cast<void*>(gdk_x11_window_get_xid(window))
-		: nullptr;
-	return result;
+	if (gdk_x11_surface_get_xid
+		&& gtk_widget_get_native
+		&& gtk_native_get_surface) {
+		return reinterpret_cast<void*>(gdk_x11_surface_get_xid(
+			gtk_native_get_surface(
+				gtk_widget_get_native(_window))));
+	} else {
+		return reinterpret_cast<void*>(gdk_x11_window_get_xid(
+			gtk_widget_get_window(_window)));
+	}
 }
 
 void Instance::resizeToWindow() {
@@ -883,7 +905,8 @@ Available Availability() {
 	} else if (!Instance().resolve()) {
 		return Available{
 			.error = Available::Error::NoGtkOrWebkit2Gtk,
-			.details = "Please install WebKitGTK 4 (webkit2gtk-4.0) "
+			.details = "Please install WebKitGTK "
+			"(webkit2gtk-5.0/webkit2gtk-4.1/webkit2gtk-4.0) "
 			"from your package manager.",
 		};
 	}
