@@ -23,16 +23,18 @@
 #define WEBKIT_TYPE_WEB_VIEW (webkit_web_view_get_type())
 #define WEBKIT_WEB_VIEW(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_WEB_VIEW, WebKitWebView))
 
+typedef struct _GdkSurface GdkSurface;
 typedef struct _GdkWindow GdkWindow;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
+typedef struct _GtkNative GtkNative;
 
 typedef struct _JSCValue JSCValue;
 typedef const struct OpaqueJSContext *JSContextRef;
 typedef struct OpaqueJSContext *JSGlobalContextRef;
 typedef struct OpaqueJSString *JSStringRef;
-typedef const struct OpaqueJSValue* JSValueRef;
+typedef const struct OpaqueJSValue *JSValueRef;
 
 typedef struct _WebKitJavascriptResult WebKitJavascriptResult;
 typedef struct _WebKitNavigationAction WebKitNavigationAction;
@@ -82,10 +84,17 @@ inline GType (*gtk_container_get_type)(void);
 inline void (*gtk_container_add)(
 	GtkContainer *container,
 	GtkWidget *widget);
+inline void (*gtk_window_set_child)(
+	GtkWindow* window,
+	GtkWidget* child);
 inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
+inline GtkNative *(*gtk_widget_get_native)(GtkWidget *widget);
+inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
+inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_hide)(GtkWidget *widget);
+inline void (*gtk_widget_show)(GtkWidget *widget);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
@@ -93,6 +102,7 @@ inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here
 inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
+inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *window);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSStringRef (*JSValueToStringCopy)(
