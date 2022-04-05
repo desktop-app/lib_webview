@@ -8,6 +8,9 @@
 
 #include "base/basic_types.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
+
 #include <string>
 #include <locale>
 #include <shlwapi.h>
@@ -64,7 +67,8 @@ class Handler final
 	, public ICoreWebView2WebMessageReceivedEventHandler
 	, public ICoreWebView2PermissionRequestedEventHandler
 	, public ICoreWebView2NavigationStartingEventHandler
-	, public ICoreWebView2NavigationCompletedEventHandler {
+	, public ICoreWebView2NavigationCompletedEventHandler
+	, public ICoreWebView2NewWindowRequestedEventHandler {
 
 public:
 	Handler(
@@ -92,11 +96,14 @@ public:
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2NavigationCompletedEventArgs *args);
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NewWindowRequestedEventArgs *args);
 
 private:
 	HWND _window = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<bool(std::string)> _navigationStartHandler;
+	std::function<bool(std::string, bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<void(ICoreWebView2Controller*)> _readyHandler;
 
@@ -158,6 +165,8 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	webview->add_WebMessageReceived(this, &token);
 	webview->add_PermissionRequested(this, &token);
 	webview->add_NavigationStarting(this, &token);
+	webview->add_NavigationCompleted(this, &token);
+	webview->add_NewWindowRequested(this, &token);
 	return S_OK;
 }
 
@@ -196,7 +205,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_Uri(&uri);
 
 	if (result == S_OK && uri) {
-		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri))) {
+		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri), false)) {
 			args->put_Cancel(TRUE);
 		}
 	}
@@ -215,6 +224,26 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		_navigationDoneHandler(result == S_OK && isSuccess);
 	}
 
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NewWindowRequestedEventArgs *args) {
+	auto uri = LPWSTR{};
+	const auto result = args->get_Uri(&uri);
+	auto isUserInitiated = BOOL{};
+	args->get_IsUserInitiated(&isUserInitiated);
+	args->put_Handled(TRUE);
+
+	if (result == S_OK && uri && isUserInitiated) {
+		const auto url = FromWide(uri);
+		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
+			QDesktopServices::openUrl(QString::fromStdString(url));
+		}
+	}
+
+	CoTaskMemFree(uri);
 	return S_OK;
 }
 

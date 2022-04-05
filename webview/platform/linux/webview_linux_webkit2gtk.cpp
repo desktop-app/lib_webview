@@ -128,7 +128,7 @@ private:
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<bool(std::string)> _navigationStartHandler;
+	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	bool _loadFailed = false;
 
@@ -632,7 +632,7 @@ void Instance::startProcess() {
 	}();
 
 	const auto socketFile = Gio::File::create_for_path(socketPath);
-	
+
 	try {
 		socketFile->remove();
 	} catch (...) {
@@ -729,7 +729,7 @@ void Instance::connectToRemoteSignals() {
 						"NavigationStartedResult",
 						{},
 						base::Platform::MakeGlibVariant(std::tuple{
-							_navigationStartHandler(uri),
+							_navigationStartHandler(uri, false),
 						}));
 				} catch (...) {
 				}

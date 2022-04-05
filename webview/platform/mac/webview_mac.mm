@@ -13,7 +13,7 @@
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate> {
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback;
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string,bool)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
@@ -24,7 +24,7 @@
 
 @implementation Handler {
 	std::function<void(std::string)> _messageCallback;
-	std::function<bool(std::string)> _navigationStartCallback;
+	std::function<bool(std::string,bool)> _navigationStartCallback;
 	std::function<void(bool)> _navigationDoneCallback;
 }
 

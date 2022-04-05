@@ -151,13 +151,13 @@ Fn<void(std::string)> Window::messageHandler() const {
 	};
 }
 
-void Window::setNavigationStartHandler(Fn<bool(QString)> handler) {
+void Window::setNavigationStartHandler(Fn<bool(QString,bool)> handler) {
 	if (!handler) {
 		_navigationStartHandler = nullptr;
 		return;
 	}
-	_navigationStartHandler = [=](std::string uri) {
-		return handler(QString::fromStdString(uri));
+	_navigationStartHandler = [=](std::string uri, bool newWindow) {
+		return handler(QString::fromStdString(uri), newWindow);
 	};
 }
 
@@ -165,12 +165,14 @@ void Window::setNavigationDoneHandler(Fn<void(bool)> handler) {
 	_navigationDoneHandler = std::move(handler);
 }
 
-Fn<bool(std::string)> Window::navigationStartHandler() const {
-	return [=](std::string message) {
+Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
+	return [=](std::string message, bool newWindow) {
 		auto result = true;
 		if (_navigationStartHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
-				result = _navigationStartHandler(std::move(message));
+				result = _navigationStartHandler(
+					std::move(message),
+					newWindow);
 			});
 		}
 		return result;

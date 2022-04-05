@@ -34,7 +34,7 @@ public:
 struct Config {
 	void *window = nullptr;
 	std::function<void(std::string)> messageHandler;
-	std::function<bool(std::string)> navigationStartHandler;
+	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
 	std::string userDataPath;
 };
