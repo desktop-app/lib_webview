@@ -21,9 +21,10 @@
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
+- (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
 - (void) dealloc;
 
-@end // @interface ChooseApplicationDelegate
+@end // @interface Handler
 
 @implementation Handler {
 	std::function<void(std::string)> _messageCallback;
@@ -87,6 +88,25 @@
 		QDesktopServices::openUrl(QString::fromUtf8(url));
 	}
 	return nil;
+}
+
+- (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
+
+	NSOpenPanel *openPanel = [NSOpenPanel openPanel];
+
+	if (@available(macOS 10.13.4, *)) {
+		[openPanel setCanChooseDirectories:parameters.allowsDirectories];
+	}
+	[openPanel setCanChooseFiles:YES];
+	[openPanel setAllowsMultipleSelection:parameters.allowsMultipleSelection];
+	[openPanel setResolvesAliases:YES];
+
+	[openPanel beginWithCompletionHandler:^(NSInteger result){
+		if (result == NSFileHandlingPanelOKButton) {
+			completionHandler([openPanel URLs]);
+		}
+	}];
+
 }
 
 - (void) dealloc {
