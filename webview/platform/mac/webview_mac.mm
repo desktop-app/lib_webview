@@ -6,11 +6,13 @@
 //
 #include "webview/platform/mac/webview_mac.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
+
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
 
-
-@interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate> {
+@interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 }
 
 - (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string,bool)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback;
@@ -18,6 +20,7 @@
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+- (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
 - (void) dealloc;
 
 @end // @interface ChooseApplicationDelegate
@@ -28,7 +31,7 @@
 	std::function<void(bool)> _navigationDoneCallback;
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback {
+- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string,bool)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback {
 	if (self = [super init]) {
 		_messageCallback = std::move(messageCallback);
 		_navigationStartCallback = std::move(navigationStartCallback);
@@ -46,12 +49,22 @@
 	}
 }
 
-- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+- (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
-	if (_navigationStartCallback && !_navigationStartCallback([string UTF8String])) {
+	WKFrameInfo *target = [navigationAction targetFrame];
+	const auto newWindow = !target || ![target isMainFrame];
+	const auto url = [string UTF8String];
+	if (newWindow) {
+		if (_navigationStartCallback && _navigationStartCallback(url, true)) {
+			QDesktopServices::openUrl(QString::fromUtf8(url));
+		}
 		decisionHandler(WKNavigationActionPolicyCancel);
 	} else {
-		decisionHandler(WKNavigationActionPolicyAllow);
+		if (_navigationStartCallback && !_navigationStartCallback(url, false)) {
+			decisionHandler(WKNavigationActionPolicyCancel);
+		} else {
+			decisionHandler(WKNavigationActionPolicyAllow);
+		}
 	}
 }
 
@@ -66,6 +79,16 @@
 		_navigationDoneCallback(false);
 	}
 }
+
+- (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
+	NSString *string = [[[navigationAction request] URL] absoluteString];
+	const auto url = [string UTF8String];
+	if (_navigationStartCallback && _navigationStartCallback(url, true)) {
+		QDesktopServices::openUrl(QString::fromUtf8(url));
+	}
+	return nil;
+}
+
 - (void) dealloc {
 	[super dealloc];
 }
@@ -105,6 +128,7 @@ Instance::Instance(Config config) {
 	_handler = [[Handler alloc] initWithMessageCallback:config.messageHandler navigationStartCallback:config.navigationStartHandler navigationDoneCallback:config.navigationDoneHandler];
 	[_manager addScriptMessageHandler:_handler name:@"external"];
 	[_webview setNavigationDelegate:_handler];
+	[_webview setUIDelegate:_handler];
 	[configuration release];
 
 	init(R"(
