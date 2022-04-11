@@ -107,6 +107,7 @@ private:
 	bool decidePolicy(
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType);
+	GtkWidget *createAnother(WebKitNavigationAction *action);
 
 	void startProcess();
 	void connectToRemoteSignals();
@@ -261,6 +262,15 @@ void Instance::create() {
 			return instance->decidePolicy(decision, decisionType);
 		}),
 		this);
+	g_signal_connect_swapped(
+		_webview,
+		"create",
+		G_CALLBACK(+[](
+			Instance *instance,
+			WebKitNavigationAction *action) -> GtkWidget* {
+			return instance->createAnother(action);
+		}),
+		this);
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external");
@@ -337,11 +347,9 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 bool Instance::decidePolicy(
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType) {
-	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION
-		&& decisionType != WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
+	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
 		return false;
 	}
-	const auto newWindow = (decisionType == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION);
 	WebKitURIRequest *request = nullptr;
 	WebKitNavigationPolicyDecision *navigationDecision
 		= WEBKIT_NAVIGATION_POLICY_DECISION(decision);
@@ -397,7 +405,7 @@ bool Instance::decidePolicy(
 				{},
 				base::Platform::MakeGlibVariant(std::tuple{
 					Glib::ustring(uri),
-					newWindow
+					false
 				}));
 
 			if (resultId != 0) {
@@ -410,6 +418,26 @@ bool Instance::decidePolicy(
 	}
 	webkit_policy_decision_ignore(decision);
 	return true;
+}
+
+GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
+	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
+	const gchar *uri = webkit_uri_request_get_uri(request);
+	if (_dbusConnection) {
+		try {
+			_dbusConnection->emit_signal(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"NavigationStarted",
+				{},
+				base::Platform::MakeGlibVariant(std::tuple{
+					Glib::ustring(uri),
+					true
+				}));
+		} catch (...) {
+		}
+	}
+	return nullptr;
 }
 
 bool Instance::resolve() {
