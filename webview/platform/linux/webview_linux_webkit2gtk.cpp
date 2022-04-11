@@ -12,6 +12,9 @@
 #include "base/const_string.h"
 #include "base/integration.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
+
 #include <giomm.h>
 
 namespace Webview::WebKit2Gtk {
@@ -45,6 +48,7 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 		</signal>
 		<signal name='NavigationStarted'>
 			<arg type='s' name='uri' direction='out'/>
+			<arg type='b' name='newWindow' direction='out'/>
 		</signal>
 		<signal name='NavigationDone'>
 			<arg type='b' name='success' direction='out'/>
@@ -254,9 +258,7 @@ void Instance::create() {
 			Instance *instance,
 			WebKitPolicyDecision *decision,
 			WebKitPolicyDecisionType decisionType) -> gboolean {
-			return instance->decidePolicy(
-				decision,
-				decisionType);
+			return instance->decidePolicy(decision, decisionType);
 		}),
 		this);
 	webkit_user_content_manager_register_script_message_handler(
@@ -335,9 +337,11 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 bool Instance::decidePolicy(
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType) {
-	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
+	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION
+		&& decisionType != WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
 		return false;
 	}
+	const auto newWindow = (decisionType == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION);
 	WebKitURIRequest *request = nullptr;
 	WebKitNavigationPolicyDecision *navigationDecision
 		= WEBKIT_NAVIGATION_POLICY_DECISION(decision);
@@ -393,6 +397,7 @@ bool Instance::decidePolicy(
 				{},
 				base::Platform::MakeGlibVariant(std::tuple{
 					Glib::ustring(uri),
+					newWindow
 				}));
 
 			if (resultId != 0) {
@@ -722,6 +727,20 @@ void Instance::connectToRemoteSignals() {
 
 					const auto uri = base::Platform::GlibVariantCast<
 						Glib::ustring>(parametersCopy.get_child(0));
+					const auto newWindow = base::Platform::GlibVariantCast<
+						bool>(parametersCopy.get_child(1));
+					const auto result = [&] {
+						if (newWindow) {
+							if (_navigationStartHandler
+								&& _navigationStartHandler(uri, true)) {
+								QDesktopServices::openUrl(
+									QString::fromUtf8(uri.c_str()));
+							}
+							return false;
+						}
+						return !_navigationStartHandler
+							|| _navigationStartHandler(uri, false);
+					}();
 
 					_dbusConnection->emit_signal(
 						std::string(kObjectPath),
@@ -729,7 +748,7 @@ void Instance::connectToRemoteSignals() {
 						"NavigationStartedResult",
 						{},
 						base::Platform::MakeGlibVariant(std::tuple{
-							_navigationStartHandler(uri, false),
+							result,
 						}));
 				} catch (...) {
 				}
