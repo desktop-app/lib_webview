@@ -6,6 +6,7 @@
 //
 #include "webview/platform/win/webview_win.h"
 
+#include "base/platform/base_platform_info.h"
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 #include "webview/platform/win/webview_windows_edge_html.h"
 
@@ -27,6 +28,11 @@ bool SupportsEmbedAfterCreate() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
+	if (Platform::IsWindows11OrGreater()) {
+		if (auto result = EdgeChromium::CreateInstance(std::move(config))) {
+			return result;
+		}
+	}
 	if (auto result = EdgeHtml::CreateInstance(config)) {
 		return result;
 	}
