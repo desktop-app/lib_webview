@@ -10,9 +10,19 @@
 #include <string>
 #include <functional>
 
+#include <QtGui/QColor>
+
 // Inspired by https://github.com/webview/webview.
 
 namespace Webview {
+
+struct ThemeParams {
+	QColor scrollBg;
+	QColor scrollBgOver;
+	QColor scrollBarBg;
+	QColor scrollBarBgOver;
+	QByteArray json;
+};
 
 class Interface {
 public:

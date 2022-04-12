@@ -103,6 +103,55 @@ bool Window::finishWebviewEmbedding() {
 	return false;
 }
 
+void Window::updateTheme(
+		QColor scrollBg,
+		QColor scrollBgOver,
+		QColor scrollBarBg,
+		QColor scrollBarBgOver) {
+	if (!_webview) {
+		return;
+	}
+	const auto wrap = [](QColor color) {
+		return u"rgba(%1, %2, %3, %4)"_q
+			.arg(color.red())
+			.arg(color.green())
+			.arg(color.blue())
+			.arg(color.alphaF()).toStdString();
+	};
+	const auto function = R"(
+function() {
+	const style = document.createElement('style');
+	style.textContent = ' \
+::-webkit-scrollbar { \
+	border-radius: 5px !important; \
+	border: 3px solid transparent !important; \
+	background-color: )" + wrap(scrollBg) + R"( !important; \
+	background-clip: content-box !important; \
+	width: 10px !important; \
+} \
+::-webkit-scrollbar:hover { \
+	background-color: )" + wrap(scrollBgOver) + R"( !important; \
+} \
+::-webkit-scrollbar-thumb { \
+	border-radius: 5px !important; \
+	border: 3px solid transparent !important; \
+	background-color: )" + wrap(scrollBarBg) + R"( !important; \
+	background-clip: content-box !important; \
+} \
+::-webkit-scrollbar-thumb:hover { \
+	background-color: )" + wrap(scrollBarBgOver) + R"( !important; \
+} \
+';
+  document.head.append(style);
+}
+)";
+	_webview->init(
+		"document.addEventListener('DOMContentLoaded', "
+		+ function
+		+ ", false);");
+	_webview->eval("(" + function + "());");
+}
+
 void Window::navigate(const QString &url) {
 	Expects(_webview != nullptr);
 

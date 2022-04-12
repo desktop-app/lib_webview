@@ -34,6 +34,11 @@ public:
 		return _widget.get();
 	}
 
+	void updateTheme(
+		QColor scrollBg,
+		QColor scrollBgOver,
+		QColor scrollBarBg,
+		QColor scrollBarBgOver);
 	void navigate(const QString &url);
 	void setMessageHandler(Fn<void(std::string)> handler);
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
