@@ -56,6 +56,7 @@ struct Available {
 		NoGtkOrWebkit2Gtk,
 		MutterWM,
 		Wayland,
+		OldWindows,
 	};
 	Error error = Error::None;
 	std::string details;

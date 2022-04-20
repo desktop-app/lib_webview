@@ -13,6 +13,12 @@
 namespace Webview {
 
 Available Availability() {
+	if (!Platform::IsWindows8Point1OrGreater()) {
+		return Available{
+			.error = Available::Error::OldWindows,
+			.details = "Please update your system to Windows 8.1 or later.",
+		};
+	}
 	if (EdgeHtml::Supported() || EdgeChromium::Supported()) {
 		return Available{};
 	}
@@ -20,7 +26,6 @@ Available Availability() {
 		.error = Available::Error::NoWebview2,
 		.details = "Please install Microsoft Edge Webview2 Runtime.",
 	};
-	// WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {
@@ -28,7 +33,9 @@ bool SupportsEmbedAfterCreate() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (Platform::IsWindows11OrGreater()) {
+	if (!Platform::IsWindows8Point1OrGreater()) {
+		return nullptr;
+	} else if (Platform::IsWindows11OrGreater()) {
 		if (auto result = EdgeChromium::CreateInstance(std::move(config))) {
 			return result;
 		}
