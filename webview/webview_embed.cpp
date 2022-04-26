@@ -216,6 +216,10 @@ void Window::setNavigationDoneHandler(Fn<void(bool)> handler) {
 
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
+		const auto lower = QString::fromStdString(message).toLower();
+		if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+			return false;
+		}
 		auto result = true;
 		if (_navigationStartHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
