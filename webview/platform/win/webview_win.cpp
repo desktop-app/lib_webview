@@ -36,7 +36,7 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Platform::IsWindows8Point1OrGreater()) {
 		return nullptr;
 	} else if (Platform::IsWindows11OrGreater()) {
-		if (auto result = EdgeChromium::CreateInstance(std::move(config))) {
+		if (auto result = EdgeChromium::CreateInstance(config)) {
 			return result;
 		}
 	}
