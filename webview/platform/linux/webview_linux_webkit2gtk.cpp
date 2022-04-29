@@ -135,6 +135,7 @@ private:
 	std::function<void(std::string)> _messageHandler;
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
+	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	bool _loadFailed = false;
 
 };
@@ -144,7 +145,8 @@ Instance::Instance(Config config, bool remoting)
 , _interfaceVTable(sigc::mem_fun(this, &Instance::handleMethodCall))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
-, _navigationDoneHandler(std::move(config.navigationDoneHandler)) {
+, _navigationDoneHandler(std::move(config.navigationDoneHandler))
+, _dialogHandler(std::move(config.dialogHandler)) {
 	if (_remoting) {
 		startProcess();
 	}

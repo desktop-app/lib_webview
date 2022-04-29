@@ -12,6 +12,8 @@ get_filename_component(src_loc . REALPATH)
 
 nice_target_sources(lib_webview ${src_loc}
 PRIVATE
+    webview/webview_dialog.cpp
+    webview/webview_dialog.h
     webview/webview_embed.cpp
     webview/webview_embed.h
     webview/webview_interface.h
@@ -42,6 +44,7 @@ PUBLIC
 
 target_link_libraries(lib_webview
 PUBLIC
+    desktop-app::lib_ui
     desktop-app::lib_base
 )
 

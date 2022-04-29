@@ -15,7 +15,7 @@
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string,bool)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback;
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<DialogResult(DialogArgs)>)dialogHandler;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
@@ -27,16 +27,18 @@
 @end // @interface Handler
 
 @implementation Handler {
-	std::function<void(std::string)> _messageCallback;
-	std::function<bool(std::string,bool)> _navigationStartCallback;
-	std::function<void(bool)> _navigationDoneCallback;
+	std::function<void(std::string)> _messageHandler;
+	std::function<bool(std::string,bool)> _navigationStartHandler;
+	std::function<void(bool)> _navigationDoneHandler;
+	std::function<DialogResult(DialogArgs)> _dialogHandler;
 }
 
-- (id) initWithMessageCallback:(std::function<void(std::string)>)messageCallback navigationStartCallback:(std::function<bool(std::string,bool)>)navigationStartCallback navigationDoneCallback:(std::function<void(bool)>)navigationDoneCallback {
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<DialogResult(DialogArgs)>)dialogHandler {
 	if (self = [super init]) {
-		_messageCallback = std::move(messageCallback);
-		_navigationStartCallback = std::move(navigationStartCallback);
-		_navigationDoneCallback = std::move(navigationDoneCallback);
+		_messageHandler = std::move(messageHandler);
+		_navigationStartHandler = std::move(navigationStartHandler);
+		_navigationDoneHandler = std::move(navigationDoneHandler);
+		_dialogHandler = std::move(dialogHandler);
 	}
 	return self;
 }
@@ -46,7 +48,7 @@
 	id body = [message body];
 	if ([body isKindOfClass:[NSString class]]) {
 		NSString *string = (NSString*)body;
-		_messageCallback([string UTF8String]);
+		_messageHandler([string UTF8String]);
 	}
 }
 
@@ -56,12 +58,12 @@
 	const auto newWindow = !target || ![target isMainFrame];
 	const auto url = [string UTF8String];
 	if (newWindow) {
-		if (_navigationStartCallback && _navigationStartCallback(url, true)) {
+		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
 			QDesktopServices::openUrl(QString::fromUtf8(url));
 		}
 		decisionHandler(WKNavigationActionPolicyCancel);
 	} else {
-		if (_navigationStartCallback && !_navigationStartCallback(url, false)) {
+		if (_navigationStartHandler && !_navigationStartHandler(url, false)) {
 			decisionHandler(WKNavigationActionPolicyCancel);
 		} else {
 			decisionHandler(WKNavigationActionPolicyAllow);
@@ -70,21 +72,21 @@
 }
 
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-	if (_navigationDoneCallback) {
-		_navigationDoneCallback(true);
+	if (_navigationDoneHandler) {
+		_navigationDoneHandler(true);
 	}
 }
 
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-	if (_navigationDoneCallback) {
-		_navigationDoneCallback(false);
+	if (_navigationDoneHandler) {
+		_navigationDoneHandler(false);
 	}
 }
 
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
 	const auto url = [string UTF8String];
-	if (_navigationStartCallback && _navigationStartCallback(url, true)) {
+	if (_navigationStartHandler && _navigationStartHandler(url, true)) {
 		QDesktopServices::openUrl(QString::fromUtf8(url));
 	}
 	return nil;
@@ -145,7 +147,7 @@ Instance::Instance(Config config) {
 	WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
 	_manager = configuration.userContentController;
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
-	_handler = [[Handler alloc] initWithMessageCallback:config.messageHandler navigationStartCallback:config.navigationStartHandler navigationDoneCallback:config.navigationDoneHandler];
+	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler];
 	[_manager addScriptMessageHandler:_handler name:@"external"];
 	[_webview setNavigationDelegate:_handler];
 	[_webview setUIDelegate:_handler];

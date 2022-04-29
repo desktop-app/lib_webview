@@ -7,6 +7,7 @@
 #include "webview/webview_embed.h"
 
 #include "webview/webview_interface.h"
+#include "webview/webview_dialog.h"
 #include "base/event_filter.h"
 #include "base/invoke_queued.h"
 #include "base/platform/base_platform_info.h"
@@ -65,6 +66,7 @@ Window::Window(QWidget *parent, WindowConfig config)
 		}
 		return base::EventFilterResult::Continue;
 	});
+	setDialogHandler(nullptr);
 }
 
 Window::~Window() = default;
@@ -76,7 +78,9 @@ bool Window::createWebView(const WindowConfig &config) {
 			.messageHandler = messageHandler(),
 			.navigationStartHandler = navigationStartHandler(),
 			.navigationDoneHandler = navigationDoneHandler(),
+			.dialogHandler = dialogHandler(),
 			.userDataPath = config.userDataPath.toStdString(),
+			.debug = !base::Integration::Instance().logSkipDebug(),
 		});
 	}
 	if (_webview) {
@@ -214,6 +218,10 @@ void Window::setNavigationDoneHandler(Fn<void(bool)> handler) {
 	_navigationDoneHandler = std::move(handler);
 }
 
+void Window::setDialogHandler(Fn<DialogResult(DialogArgs)> handler) {
+	_dialogHandler = handler ? handler : DefaultDialogHandler;
+}
+
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
@@ -239,6 +247,18 @@ Fn<void(bool)> Window::navigationDoneHandler() const {
 				_navigationDoneHandler(success);
 			});
 		}
+	};
+}
+
+Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
+	return [=](DialogArgs args) {
+		auto result = DialogResult();
+		if (_dialogHandler) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				result = _dialogHandler(std::move(args));
+			});
+		}
+		return result;
 	};
 }
 

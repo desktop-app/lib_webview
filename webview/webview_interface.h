@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <string>
+#include <optional>
 #include <functional>
 
 #include <QtGui/QColor>
@@ -41,12 +42,32 @@ public:
 
 };
 
+enum class DialogType {
+	Alert,
+	Confirm,
+	Prompt,
+};
+
+struct DialogArgs {
+	DialogType type = DialogType::Alert;
+	std::string value;
+	std::string text;
+	std::string url;
+};
+
+struct DialogResult {
+	std::string text;
+	bool accepted = false;
+};
+
 struct Config {
 	void *window = nullptr;
 	std::function<void(std::string)> messageHandler;
 	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
+	std::function<DialogResult(DialogArgs)> dialogHandler;
 	std::string userDataPath;
+	bool debug = false;
 };
 
 struct Available {

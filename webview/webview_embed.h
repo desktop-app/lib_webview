@@ -15,6 +15,8 @@ class QWindow;
 
 namespace Webview {
 
+struct DialogArgs;
+struct DialogResult;
 class Interface;
 struct Config;
 
@@ -44,6 +46,7 @@ public:
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
 	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
 	void setNavigationDoneHandler(Fn<void(bool)> handler);
+	void setDialogHandler(Fn<DialogResult(DialogArgs)> handler);
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
 
@@ -53,6 +56,7 @@ private:
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
+	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
 
 	QWindow *_window = nullptr;
 	std::unique_ptr<Interface> _webview;
@@ -60,6 +64,7 @@ private:
 	Fn<void(std::string)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
+	Fn<DialogResult(DialogArgs)> _dialogHandler;
 
 };
 
