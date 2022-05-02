@@ -9,6 +9,7 @@
 #include "webview/webview_interface.h"
 #include "webview/webview_dialog.h"
 #include "base/event_filter.h"
+#include "base/options.h"
 #include "base/invoke_queued.h"
 #include "base/platform/base_platform_info.h"
 #include "base/integration.h"
@@ -35,7 +36,16 @@ namespace {
 	return id ? QWindow::fromWinId(WId(id)) : nullptr;
 }
 
+base::options::toggle OptionWebviewDebugEnabled({
+	.id = kOptionWebviewDebugEnabled,
+	.name = "Enable webview inspecting",
+	.description = "Right click and choose Inspect in the webview windows.",
+	.scope = base::options::windows | base::options::linux,
+});
+
 } // namespace
+
+const char kOptionWebviewDebugEnabled[] = "webview-debug-enabled";
 
 Window::Window(QWidget *parent, WindowConfig config)
 : _window(CreateContainerWindow()) {
@@ -80,7 +90,7 @@ bool Window::createWebView(const WindowConfig &config) {
 			.navigationDoneHandler = navigationDoneHandler(),
 			.dialogHandler = dialogHandler(),
 			.userDataPath = config.userDataPath.toStdString(),
-			.debug = !base::Integration::Instance().logSkipDebug(),
+			.debug = OptionWebviewDebugEnabled.value(),
 		});
 	}
 	if (_webview) {
@@ -255,9 +265,7 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 		auto result = DialogResult();
 		if (_dialogHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
-#ifndef Q_OS_MAC
 				args.parent = _widget ? _widget->window() : nullptr;
-#endif
 				result = _dialogHandler(std::move(args));
 			});
 		}

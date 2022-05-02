@@ -15,6 +15,8 @@ class QWindow;
 
 namespace Webview {
 
+extern const char kOptionWebviewDebugEnabled[];
+
 struct DialogArgs;
 struct DialogResult;
 class Interface;
