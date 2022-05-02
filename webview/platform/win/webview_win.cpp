@@ -19,7 +19,7 @@ Available Availability() {
 			.details = "Please update your system to Windows 8.1 or later.",
 		};
 	}
-	if (EdgeHtml::Supported() || EdgeChromium::Supported()) {
+	if (EdgeChromium::Supported() || EdgeHtml::Supported()) {
 		return Available{};
 	}
 	return Available{
@@ -29,21 +29,17 @@ Available Availability() {
 }
 
 bool SupportsEmbedAfterCreate() {
-	return EdgeHtml::Supported();
+	return !EdgeChromium::Supported() && EdgeHtml::Supported();
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Platform::IsWindows8Point1OrGreater()) {
 		return nullptr;
-	} else if (Platform::IsWindows11OrGreater()) {
-		if (auto result = EdgeChromium::CreateInstance(config)) {
-			return result;
-		}
 	}
-	if (auto result = EdgeHtml::CreateInstance(config)) {
+	if (auto result = EdgeChromium::CreateInstance(config)) {
 		return result;
 	}
-	return EdgeChromium::CreateInstance(std::move(config));
+	return EdgeHtml::CreateInstance(config);
 }
 
 } // namespace Webview
