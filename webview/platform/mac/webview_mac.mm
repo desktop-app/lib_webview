@@ -15,13 +15,16 @@
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<DialogResult(DialogArgs)>)dialogHandler;
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
 - (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
+- (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
+- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler;
+- (void)webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler;
 - (void) dealloc;
 
 @end // @interface Handler
@@ -30,10 +33,10 @@
 	std::function<void(std::string)> _messageHandler;
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
-	std::function<DialogResult(DialogArgs)> _dialogHandler;
+	std::function<Webview::DialogResult(Webview::DialogArgs)> _dialogHandler;
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<DialogResult(DialogArgs)>)dialogHandler {
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationStartHandler = std::move(navigationStartHandler);
@@ -109,6 +112,48 @@
 		}
 	}];
 
+}
+
+- (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
+	auto text = [message UTF8String];
+	auto uri = [[[frame request] URL] absoluteString];
+	auto url = [uri UTF8String];
+	const auto result = _dialogHandler(Webview::DialogArgs{
+		.type = Webview::DialogType::Alert,
+		.text = text,
+		.url = url,
+	});
+	completionHandler();
+}
+
+- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
+	auto text = [message UTF8String];
+	auto uri = [[[frame request] URL] absoluteString];
+	auto url = [uri UTF8String];
+	const auto result = _dialogHandler(Webview::DialogArgs{
+		.type = Webview::DialogType::Confirm,
+		.text = text,
+		.url = url,
+	});
+	completionHandler(result.accepted ? YES : NO);
+}
+
+- (void)webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler {
+	auto text = [prompt UTF8String];
+	auto value = [defaultText UTF8String];
+	auto uri = [[[frame request] URL] absoluteString];
+	auto url = [uri UTF8String];
+	const auto result = _dialogHandler(Webview::DialogArgs{
+		.type = Webview::DialogType::Prompt,
+		.value = value,
+		.text = text,
+		.url = url,
+	});
+	if (result.accepted) {
+		completionHandler([NSString stringWithUTF8String:result.text.c_str()]);
+	} else {
+		completionHandler(nil);
+	}
 }
 
 - (void) dealloc {

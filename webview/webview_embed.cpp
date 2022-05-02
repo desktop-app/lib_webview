@@ -255,7 +255,9 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 		auto result = DialogResult();
 		if (_dialogHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
+#ifndef Q_OS_MAC
 				args.parent = _widget ? _widget->window() : nullptr;
+#endif
 				result = _dialogHandler(std::move(args));
 			});
 		}
