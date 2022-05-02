@@ -76,7 +76,12 @@ bool Resolve() {
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_run_javascript)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_uri_request_get_uri)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_policy_decision_ignore)
-		&& LOAD_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_type);
+		&& LOAD_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_type)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_get_dialog_type)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_get_message)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_confirm_set_confirmed)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_prompt_get_default_text)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_prompt_set_text);
 	if (!result) {
 		return false;
 	}

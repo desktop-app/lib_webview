@@ -50,6 +50,11 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 			<arg type='s' name='uri' direction='out'/>
 			<arg type='b' name='newWindow' direction='out'/>
 		</signal>
+		<signal name='ScriptDialog'>
+			<arg type='i' name='type' direction='out'/>
+			<arg type='s' name='text' direction='out'/>
+			<arg type='s' name='value' direction='out'/>
+		</signal>
 		<signal name='NavigationDone'>
 			<arg type='b' name='success' direction='out'/>
 		</signal>
@@ -67,6 +72,7 @@ template <typename T>
 using GObjectPtr = std::unique_ptr<T, GObjectDeleter<T>>;
 
 std::string SocketPath;
+bool DebugMode/* = false*/;
 
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
@@ -108,6 +114,7 @@ private:
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType);
 	GtkWidget *createAnother(WebKitNavigationAction *action);
+	bool scriptDialog(WebKitScriptDialog *dialog);
 
 	void startProcess();
 	void connectToRemoteSignals();
@@ -121,6 +128,7 @@ private:
 		const Glib::VariantContainerBase &parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
 
+	bool _debug = false;
 	bool _remoting = false;
 	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
@@ -129,6 +137,7 @@ private:
 	uint _messageHandlerId = 0;
 	uint _navigationStartHandlerId = 0;
 	uint _navigationDoneHandlerId = 0;
+	uint _scriptDialogHandlerId = 0;
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
@@ -141,7 +150,8 @@ private:
 };
 
 Instance::Instance(Config config, bool remoting)
-: _remoting(remoting)
+: _debug(DebugMode || config.debug)
+, _remoting(remoting)
 , _interfaceVTable(sigc::mem_fun(this, &Instance::handleMethodCall))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
@@ -157,21 +167,20 @@ Instance::~Instance() {
 		g_subprocess_send_signal(_serviceProcess.get(), SIGTERM);
 	}
 	if (_dbusConnection) {
+		if (_scriptDialogHandlerId != 0) {
+			_dbusConnection->signal_unsubscribe(_scriptDialogHandlerId);
+		}
 		if (_navigationDoneHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(
-				_navigationDoneHandlerId);
+			_dbusConnection->signal_unsubscribe(_navigationDoneHandlerId);
 		}
 		if (_navigationStartHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(
-				_navigationStartHandlerId);
+			_dbusConnection->signal_unsubscribe(_navigationStartHandlerId);
 		}
 		if (_messageHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(
-				_messageHandlerId);
+			_dbusConnection->signal_unsubscribe(_messageHandlerId);
 		}
 		if (_registerId != 0) {
-			_dbusConnection->unregister_object(
-				_registerId);
+			_dbusConnection->unregister_object(_registerId);
 		}
 	}
 	if (_webview) {
@@ -271,6 +280,15 @@ void Instance::create() {
 			Instance *instance,
 			WebKitNavigationAction *action) -> GtkWidget* {
 			return instance->createAnother(action);
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
+		"script-dialog",
+		G_CALLBACK(+[](
+			Instance *instance,
+			WebKitScriptDialog *dialog) -> gboolean {
+			return instance->scriptDialog(dialog);
 		}),
 		this);
 	webkit_user_content_manager_register_script_message_handler(
@@ -442,6 +460,83 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 	return nullptr;
 }
 
+bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
+	const auto type = webkit_script_dialog_get_dialog_type(dialog);
+	const auto text = webkit_script_dialog_get_message(dialog);
+	const auto value = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
+		? webkit_script_dialog_prompt_get_default_text(dialog)
+		: nullptr;
+	if (_dbusConnection) {
+		try {
+			const auto loop = Glib::MainLoop::create();
+			bool accepted = false;
+			Glib::ustring result;
+
+			const auto resultId = _dbusConnection->signal_subscribe(
+				[&](
+					const Glib::RefPtr<Gio::DBus::Connection> &connection,
+					const Glib::ustring &sender_name,
+					const Glib::ustring &object_path,
+					const Glib::ustring &interface_name,
+					const Glib::ustring &signal_name,
+					Glib::VariantContainerBase parameters) {
+					try {
+						auto parametersCopy = parameters;
+
+						accepted = base::Platform::GlibVariantCast<
+							bool>(parametersCopy.get_child(0));
+						result = base::Platform::GlibVariantCast<
+							Glib::ustring>(parametersCopy.get_child(1));
+					} catch (...) {
+					}
+
+					loop->quit();
+				},
+				{},
+				std::string(kInterface),
+				"ScriptDialogResult",
+				std::string(kObjectPath));
+
+			const auto resultGuard = gsl::finally([&] {
+				if (resultId != 0) {
+					_dbusConnection->signal_unsubscribe(resultId);
+				}
+			});
+
+			_dbusConnection->emit_signal(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"ScriptDialog",
+				{},
+				base::Platform::MakeGlibVariant(std::tuple{
+					std::int32_t(type),
+					Glib::ustring(text ? text : ""),
+					Glib::ustring(value ? value : "")
+				}));
+
+			if (resultId != 0) {
+				loop->run();
+			}
+
+			if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
+				webkit_script_dialog_prompt_set_text(
+					dialog,
+					accepted ? result.c_str() : nullptr);
+			} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
+				webkit_script_dialog_confirm_set_confirmed(dialog, accepted);
+			}
+			return true;
+		} catch (...) {
+		}
+	}
+	if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
+		webkit_script_dialog_prompt_set_text(dialog, nullptr);
+	} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
+		webkit_script_dialog_confirm_set_confirmed(dialog, false);
+	}
+	return true;
+}
+
 bool Instance::resolve() {
 	if (_remoting) {
 		if (!_dbusConnection) {
@@ -489,10 +584,16 @@ bool Instance::finishEmbedding() {
 		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
 
-	// WebKitSettings *settings = webkit_web_view_get_settings(
-	// 	WEBKIT_WEB_VIEW(_webview));
-	//webkit_settings_set_javascript_can_access_clipboard(settings, true);
-
+	if (_debug) {
+		WebKitSettings *settings = webkit_web_view_get_settings(
+			WEBKIT_WEB_VIEW(_webview));
+		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
+		g_object_set(
+			G_OBJECT(settings),
+			"enable-developer-extras",
+			TRUE,
+			NULL);
+	}
 	gtk_widget_hide(_window);
 	if (gtk_widget_show) {
 		gtk_widget_show(_window);
@@ -651,6 +752,7 @@ void Instance::startProcess() {
 		nullptr,
 		executablePath.constData(),
 		"-webviewhelper",
+		_debug ? "1" : "0",
 		SocketPath.c_str(),
 		nullptr));
 
@@ -811,6 +913,52 @@ void Instance::connectToRemoteSignals() {
 			{},
 			std::string(kInterface),
 			"NavigationDone",
+			std::string(kObjectPath));
+	}
+	if (_dialogHandler) {
+		_scriptDialogHandlerId = _dbusConnection->signal_subscribe(
+			[=](
+				const Glib::RefPtr<Gio::DBus::Connection> &connection,
+				const Glib::ustring &sender_name,
+				const Glib::ustring &object_path,
+				const Glib::ustring &interface_name,
+				const Glib::ustring &signal_name,
+				Glib::VariantContainerBase parameters) {
+				try {
+					auto parametersCopy = parameters;
+
+					const auto type = base::Platform::GlibVariantCast<
+						int>(parametersCopy.get_child(0));
+					const auto text = base::Platform::GlibVariantCast<
+						Glib::ustring>(parametersCopy.get_child(1));
+					const auto value = base::Platform::GlibVariantCast<
+						Glib::ustring>(parametersCopy.get_child(2));
+
+					const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
+						? DialogType::Prompt
+						: (type == WEBKIT_SCRIPT_DIALOG_ALERT)
+						? DialogType::Alert
+						: DialogType::Confirm;
+					const auto result = _dialogHandler(DialogArgs{
+						.type = dialogType,
+						.value = value,
+						.text = text,
+					});
+					_dbusConnection->emit_signal(
+						std::string(kObjectPath),
+						std::string(kInterface),
+						"ScriptDialogResult",
+						{},
+						base::Platform::MakeGlibVariant(std::tuple{
+							result.accepted,
+							Glib::ustring(result.text),
+						}));
+				} catch (...) {
+				}
+			},
+			{},
+			std::string(kInterface),
+			"ScriptDialog",
 			std::string(kObjectPath));
 	}
 }
@@ -977,6 +1125,10 @@ int Exec() {
 
 void SetSocketPath(const std::string &socketPath) {
 	SocketPath = socketPath;
+}
+
+void SetDebug(const std::string &debug) {
+	DebugMode = !debug.empty() && (debug[0] == '1');
 }
 
 } // namespace Webview::WebKit2Gtk
