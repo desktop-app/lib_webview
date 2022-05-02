@@ -15,6 +15,8 @@
 
 // Inspired by https://github.com/webview/webview.
 
+class QWidget;
+
 namespace Webview {
 
 struct ThemeParams {
@@ -49,6 +51,7 @@ enum class DialogType {
 };
 
 struct DialogArgs {
+	QWidget *parent = nullptr;
 	DialogType type = DialogType::Alert;
 	std::string value;
 	std::string text;

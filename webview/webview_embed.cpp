@@ -255,6 +255,7 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 		auto result = DialogResult();
 		if (_dialogHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
+				args.parent = _widget ? _widget->window() : nullptr;
 				result = _dialogHandler(std::move(args));
 			});
 		}

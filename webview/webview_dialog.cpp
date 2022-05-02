@@ -36,7 +36,7 @@ DialogResult DefaultDialogHandler(DialogArgs args) {
 	auto running = true;
 	auto widget = base::unique_qptr<Ui::SeparatePanel>();
 	InvokeQueued(&context, [&] {
-		widget = base::make_unique_q<Ui::SeparatePanel>();
+		widget = base::make_unique_q<Ui::SeparatePanel>(args.parent);
 		const auto raw = widget.get();
 
 		raw->setTitle(
@@ -102,9 +102,18 @@ DialogResult DefaultDialogHandler(DialogArgs args) {
 		raw->setInnerSize({ st::boxWideWidth, height });
 		container->resizeToWidth(st::boxWideWidth);
 
+		const auto confirm = [=, &result] {
+			result.accepted = true;
+			if (input) {
+				result.text = input->getLastText().toStdString();
+			}
+			raw->hideGetDuration();
+		};
+
 		if (input) {
 			input->selectAll();
 			input->setFocusFast();
+			QObject::connect(input, &Ui::InputField::submitted, confirm);
 		}
 		container->events(
 		) | rpl::start_with_next([=](not_null<QEvent*> event) {
@@ -121,13 +130,7 @@ DialogResult DefaultDialogHandler(DialogArgs args) {
 			raw->hideGetDuration();
 		}, raw->lifetime());
 
-		submit->setClickedCallback([=, &result] {
-			result.accepted = true;
-			if (input) {
-				result.text = input->getLastText().toStdString();
-			}
-			raw->hideGetDuration();
-		});
+		submit->setClickedCallback(confirm);
 
 		if (cancel) {
 			cancel->setClickedCallback([=] {
