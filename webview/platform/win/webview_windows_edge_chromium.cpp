@@ -324,6 +324,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -368,11 +369,14 @@ void Instance::navigate(std::string url) {
 	_webview->Navigate(wide.c_str());
 }
 
+void Instance::reload() {
+	_webview->Reload();
+}
+
 void Instance::resizeToWindow() {
 	auto bounds = RECT{};
 	GetClientRect(_window, &bounds);
-	const auto result = _controller->put_Bounds(bounds);
-	int a = (int)result;
+	_controller->put_Bounds(bounds);
 }
 
 void Instance::init(std::string js) {

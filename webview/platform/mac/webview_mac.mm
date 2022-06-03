@@ -173,6 +173,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -221,6 +222,10 @@ void Instance::navigate(std::string url) {
 	NSString *string = [NSString stringWithUTF8String:url.c_str()];
 	NSURL *native = [NSURL URLWithString:string];
 	[_webview loadRequest:[NSURLRequest requestWithURL:native]];
+}
+
+void Instance::reload() {
+	[_webview reload];
 }
 
 void Instance::init(std::string js) {

@@ -35,6 +35,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -95,6 +96,10 @@ bool Instance::finishEmbedding() {
 
 void Instance::navigate(std::string url) {
 	_webview.Navigate(Uri(winrt::to_hstring(url)));
+}
+
+void Instance::reload() {
+	_webview.Refresh();
 }
 
 void Instance::init(std::string js) {

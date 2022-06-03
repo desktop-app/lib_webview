@@ -172,6 +172,12 @@ void Window::navigate(const QString &url) {
 	_webview->navigate(url.toStdString());
 }
 
+void Window::reload() {
+	Expects(_webview != nullptr);
+
+	_webview->reload();
+}
+
 void Window::init(const QByteArray &js) {
 	Expects(_webview != nullptr);
 

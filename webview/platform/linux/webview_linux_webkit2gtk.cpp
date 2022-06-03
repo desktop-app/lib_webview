@@ -28,6 +28,7 @@ constexpr auto kInterface = "org.desktop_app.GtkIntegration.WebviewHelper"_cs;
 constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 	<interface name='org.desktop_app.GtkIntegration.WebviewHelper'>
 		<method name='Create'/>
+		<method name='Reload'/>
 		<method name='Resolve'/>
 		<method name='FinishEmbedding'/>
 		<method name='Navigate'>
@@ -90,6 +91,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -628,6 +630,27 @@ void Instance::navigate(std::string url) {
 	webkit_web_view_load_uri(WEBKIT_WEB_VIEW(_webview), url.c_str());
 }
 
+void Instance::reload() {
+	if (_remoting) {
+		if (!_dbusConnection) {
+			return;
+		}
+
+		try {
+			auto reply = _dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"Reload",
+				{});
+		} catch (...) {
+		}
+
+		return;
+	}
+
+	webkit_web_view_reload_bypass_cache(WEBKIT_WEB_VIEW(_webview));
+}
+
 void Instance::init(std::string js) {
 	if (_remoting) {
 		if (!_dbusConnection) {
@@ -1027,6 +1050,10 @@ void Instance::handleMethodCall(
 
 		if (method_name == "Create") {
 			create();
+			invocation->return_value({});
+			return;
+		} else if (method_name == "Reload") {
+			reload();
 			invocation->return_value({});
 			return;
 		} else if (method_name == "Resolve") {

@@ -169,6 +169,7 @@ inline void (*webkit_settings_set_javascript_can_access_clipboard)(
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
 	const gchar *uri);
+inline void (*webkit_web_view_reload_bypass_cache)(WebKitWebView *web_view);
 inline WebKitUserScript *(*webkit_user_script_new)(
 	const gchar *source,
 	WebKitUserContentInjectedFrames injected_frames,

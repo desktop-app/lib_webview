@@ -34,6 +34,7 @@ public:
 	virtual bool finishEmbedding() = 0;
 
 	virtual void navigate(std::string url) = 0;
+	virtual void reload() = 0;
 
 	virtual void resizeToWindow() = 0;
 

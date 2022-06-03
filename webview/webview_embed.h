@@ -44,6 +44,7 @@ public:
 		QColor scrollBarBg,
 		QColor scrollBarBgOver);
 	void navigate(const QString &url);
+	void reload();
 	void setMessageHandler(Fn<void(std::string)> handler);
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
 	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
