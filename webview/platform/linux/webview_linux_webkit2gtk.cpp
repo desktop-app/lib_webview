@@ -127,7 +127,7 @@ private:
 		const Glib::ustring &object_path,
 		const Glib::ustring &interface_name,
 		const Glib::ustring &method_name,
-		const Glib::VariantContainerBase &parameters,
+		Glib::VariantContainerBase parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
 
 	bool _debug = false;
@@ -400,10 +400,8 @@ bool Instance::decidePolicy(
 					const Glib::ustring &signal_name,
 					Glib::VariantContainerBase parameters) {
 					try {
-						auto parametersCopy = parameters;
-
 						result = base::Platform::GlibVariantCast<
-							bool>(parametersCopy.get_child(0));
+							bool>(parameters.get_child(0));
 					} catch (...) {
 					}
 
@@ -483,12 +481,10 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 					const Glib::ustring &signal_name,
 					Glib::VariantContainerBase parameters) {
 					try {
-						auto parametersCopy = parameters;
-
 						accepted = base::Platform::GlibVariantCast<
-							bool>(parametersCopy.get_child(0));
+							bool>(parameters.get_child(0));
 						result = base::Platform::GlibVariantCast<
-							Glib::ustring>(parametersCopy.get_child(1));
+							Glib::ustring>(parameters.get_child(1));
 					} catch (...) {
 					}
 
@@ -854,10 +850,8 @@ void Instance::connectToRemoteSignals() {
 			const Glib::ustring &signal_name,
 			Glib::VariantContainerBase parameters) {
 			try {
-				auto parametersCopy = parameters;
-
 				const auto message = base::Platform::GlibVariantCast<
-					std::string>(parametersCopy.get_child(0));
+					std::string>(parameters.get_child(0));
 
 				_messageHandler(message);
 			} catch (...) {
@@ -878,12 +872,10 @@ void Instance::connectToRemoteSignals() {
 				const Glib::ustring &signal_name,
 				Glib::VariantContainerBase parameters) {
 				try {
-					auto parametersCopy = parameters;
-
 					const auto uri = base::Platform::GlibVariantCast<
-						Glib::ustring>(parametersCopy.get_child(0));
+						Glib::ustring>(parameters.get_child(0));
 					const auto newWindow = base::Platform::GlibVariantCast<
-						bool>(parametersCopy.get_child(1));
+						bool>(parameters.get_child(1));
 					const auto result = [&] {
 						if (newWindow) {
 							if (_navigationStartHandler
@@ -924,10 +916,8 @@ void Instance::connectToRemoteSignals() {
 				const Glib::ustring &signal_name,
 				Glib::VariantContainerBase parameters) {
 				try {
-					auto parametersCopy = parameters;
-
 					const auto success = base::Platform::GlibVariantCast<
-						bool>(parametersCopy.get_child(0));
+						bool>(parameters.get_child(0));
 
 					_navigationDoneHandler(success);
 				} catch (...) {
@@ -948,14 +938,12 @@ void Instance::connectToRemoteSignals() {
 				const Glib::ustring &signal_name,
 				Glib::VariantContainerBase parameters) {
 				try {
-					auto parametersCopy = parameters;
-
 					const auto type = base::Platform::GlibVariantCast<
-						int>(parametersCopy.get_child(0));
+						int>(parameters.get_child(0));
 					const auto text = base::Platform::GlibVariantCast<
-						Glib::ustring>(parametersCopy.get_child(1));
+						Glib::ustring>(parameters.get_child(1));
 					const auto value = base::Platform::GlibVariantCast<
-						Glib::ustring>(parametersCopy.get_child(2));
+						Glib::ustring>(parameters.get_child(2));
 
 					const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
 						? DialogType::Prompt
@@ -1043,11 +1031,9 @@ void Instance::handleMethodCall(
 		const Glib::ustring &object_path,
 		const Glib::ustring &interface_name,
 		const Glib::ustring &method_name,
-		const Glib::VariantContainerBase &parameters,
+		Glib::VariantContainerBase parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation) {
 	try {
-		auto parametersCopy = parameters;
-
 		if (method_name == "Create") {
 			create();
 			invocation->return_value({});
@@ -1068,7 +1054,7 @@ void Instance::handleMethodCall(
 			}
 		} else if (method_name == "Navigate") {
 			const auto url = base::Platform::GlibVariantCast<
-				Glib::ustring>(parametersCopy.get_child(0));
+				Glib::ustring>(parameters.get_child(0));
 
 			navigate(url);
 			invocation->return_value({});
@@ -1079,14 +1065,14 @@ void Instance::handleMethodCall(
 			return;
 		} else if (method_name == "Init") {
 			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parametersCopy.get_child(0));
+				std::string>(parameters.get_child(0));
 
 			init(js);
 			invocation->return_value({});
 			return;
 		} else if (method_name == "Eval") {
 			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parametersCopy.get_child(0));
+				std::string>(parameters.get_child(0));
 
 			eval(js);
 			invocation->return_value({});
