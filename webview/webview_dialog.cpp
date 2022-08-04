@@ -69,19 +69,29 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		widget = base::make_unique_q<Ui::SeparatePanel>(args.parent);
 		const auto raw = widget.get();
 
-		raw->setTitle(rpl::single(args.title));
+		const auto titleHeight = args.title.isEmpty()
+			? st::separatePanelNoTitleHeight
+			: st::separatePanelTitleHeight;
+		if (!args.title.isEmpty()) {
+			raw->setTitle(rpl::single(args.title));
+		}
+		raw->setTitleHeight(titleHeight);
 		auto layout = base::make_unique_q<Ui::VerticalLayout>(raw);
 		const auto skip = st::boxDividerHeight;
 		const auto container = layout.get();
+		const auto addedRightPadding = args.title.isEmpty()
+			? (st::separatePanelClose.width - st::boxRowPadding.right())
+			: 0;
 		const auto label = container->add(
 			object_ptr<Ui::FlatLabel>(
 				container,
 				rpl::single(args.text),
 				st::boxLabel),
-			st::boxRowPadding);
+			st::boxRowPadding + QMargins(0, 0, addedRightPadding, 0));
 		label->resizeToWidth(st::boxWideWidth
 			- st::boxRowPadding.left()
-			- st::boxRowPadding.right());
+			- st::boxRowPadding.right()
+			- addedRightPadding);
 		const auto input = args.value
 			? container->add(
 				object_ptr<Ui::InputField>(
@@ -137,10 +147,11 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		) | rpl::start_with_next([=](int width) {
 			const auto count = list->size();
 			const auto skip = st::webviewDialogPadding.right();
-			const auto vertical = (count > 2)
-				|| (count == 2
-					&& (list->at(0)->width() + skip + list->at(1)->width()
-						> width));
+			auto buttonsWidth = 0;
+			for (const auto &button : *list) {
+				buttonsWidth += button->width() + (buttonsWidth ? skip : 0);
+			}
+			const auto vertical = (count > 1) && (buttonsWidth > width);
 			const auto single = st::webviewDialogSubmit.height;
 			auto top = 0;
 			auto right = 0;
@@ -160,7 +171,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 
 		buttons->heightValue(
 		) | rpl::start_with_next([=](int height) {
-			const auto full = st::separatePanelTitleHeight
+			const auto full = titleHeight
 				+ label->height()
 				+ (input ? (skip + input->height()) : 0)
 				+ buttonPadding.top()
