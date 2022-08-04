@@ -66,7 +66,9 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	auto running = true;
 	auto widget = base::unique_qptr<Ui::SeparatePanel>();
 	InvokeQueued(&context, [&] {
-		widget = base::make_unique_q<Ui::SeparatePanel>(args.parent);
+		widget = base::make_unique_q<Ui::SeparatePanel>(Ui::SeparatePanelArgs{
+			.parent = args.parent,
+		});
 		const auto raw = widget.get();
 
 		const auto titleHeight = args.title.isEmpty()
