@@ -58,7 +58,7 @@
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
 	WKFrameInfo *target = [navigationAction targetFrame];
-	const auto newWindow = !target || ![target isMainFrame];
+	const auto newWindow = !target;
 	const auto url = [string UTF8String];
 	if (newWindow) {
 		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
@@ -66,7 +66,9 @@
 		}
 		decisionHandler(WKNavigationActionPolicyCancel);
 	} else {
-		if (_navigationStartHandler && !_navigationStartHandler(url, false)) {
+		if ([target isMainFrame]
+			&& _navigationStartHandler
+			&& !_navigationStartHandler(url, false)) {
 			decisionHandler(WKNavigationActionPolicyCancel);
 		} else {
 			decisionHandler(WKNavigationActionPolicyAllow);
