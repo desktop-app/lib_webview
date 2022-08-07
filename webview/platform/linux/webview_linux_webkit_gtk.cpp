@@ -40,7 +40,7 @@ inline bool LoadSymbol(const Handle &handle, const char *name, Function &func) {
 
 } // namespace
 
-bool Resolve() {
+bool Resolve(bool wayland) {
 	auto webkit2gtk = Handle();
 	const auto result = (LoadLibrary(webkit2gtk, "libwebkit2gtk-5.0.so.0")
 			|| LoadLibrary(webkit2gtk, "libwebkit2gtk-4.1.so.0")
@@ -111,7 +111,7 @@ bool Resolve() {
 		}
 	}
 	if (LOAD_SYMBOL(webkit2gtk, gdk_set_allowed_backends)) {
-		gdk_set_allowed_backends("x11");
+		gdk_set_allowed_backends(wayland ? "wayland" : "x11");
 	}
 	return gtk_init_check(0, 0);
 }

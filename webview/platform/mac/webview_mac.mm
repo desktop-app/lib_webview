@@ -258,6 +258,10 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
+bool ProvidesQWindget() {
+	return false;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;

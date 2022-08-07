@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/webview">
+    <file alias="main.qml">webview_linux_compositor.qml</file>
+    <file alias="CompositorScreen.qml">webview_linux_output.qml</file>
+    <file alias="Chrome.qml">webview_linux_chrome.qml</file>
+  </qresource>
+</RCC>

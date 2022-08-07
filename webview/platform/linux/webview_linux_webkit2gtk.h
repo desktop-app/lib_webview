@@ -11,6 +11,7 @@
 namespace Webview::WebKit2Gtk {
 
 [[nodiscard]] Available Availability();
+[[nodiscard]] bool ProvidesQWidget();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
 int Exec();

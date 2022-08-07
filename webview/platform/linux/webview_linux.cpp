@@ -18,6 +18,10 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
+bool ProvidesQWidget() {
+	return WebKit2Gtk::ProvidesQWidget();
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return WebKit2Gtk::CreateInstance(std::move(config));
 }

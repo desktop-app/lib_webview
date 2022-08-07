@@ -11,8 +11,31 @@
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
 #include "base/integration.h"
+#include "base/unique_qptr.h"
+
+#include <QtCore/QtPlugin>
+#include <QtGui/QWindow>
+#include <QtQml/QQmlApplicationEngine>
+#include <QtQml/QQmlContext>
+#include <QtQuick/QQuickItem>
+#include <QtQuickWidgets/QQuickWidget>
+#include <QtWaylandCompositor/QWaylandOutput>
 
 #include <giomm.h>
+
+#ifndef DESKTOP_APP_USE_PACKAGED
+Q_IMPORT_PLUGIN(QtQmlPlugin)
+Q_IMPORT_PLUGIN(QtQmlModelsPlugin)
+Q_IMPORT_PLUGIN(QtQmlWorkerScriptPlugin)
+Q_IMPORT_PLUGIN(QtQuick2Plugin)
+Q_IMPORT_PLUGIN(QtQuick_WindowPlugin)
+Q_IMPORT_PLUGIN(QWaylandCompositorPlugin)
+Q_IMPORT_PLUGIN(QWaylandCompositorXdgShellPlugin)
+#endif // !DESKTOP_APP_USE_PACKAGED
+
+inline void InitResources() {
+	Q_INIT_RESOURCE(webview_linux);
+}
 
 namespace Webview::WebKit2Gtk {
 namespace {
@@ -43,6 +66,7 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 		<method name='GetWinId'>
 			<arg type='t' name='result' direction='out'/>
 		</method>
+		<method name='SetWayland'/>
 		<signal name='MessageReceived'>
 			<arg type='ay' name='message' direction='out'/>
 		</signal>
@@ -76,6 +100,15 @@ std::string SocketPath;
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
+
+class Bridge final : public QObject {
+	Q_OBJECT
+public:
+	Q_INVOKABLE QRect widgetGlobalGeometry(QWidget *widget) {
+		const auto rect = widget->rect();
+		return QRect(widget->mapToGlobal(rect.topLeft()), rect.size());
+	}
+};
 
 class Instance final : public Interface {
 public:
@@ -138,6 +171,12 @@ private:
 	uint _navigationDoneHandlerId = 0;
 	uint _scriptDialogHandlerId = 0;
 
+	bool _wayland = false;
+	std::unique_ptr<QQmlApplicationEngine> _qmlEngine;
+	std::unique_ptr<Bridge> _qmlBridge;
+	base::unique_qptr<QQuickWidget> _compositorWidget;
+	std::string _waylandSocket;
+
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
 
@@ -154,6 +193,27 @@ Instance::Instance(bool remoting)
 : _remoting(remoting)
 , _interfaceVTable(sigc::mem_fun(this, &Instance::handleMethodCall)) {
 	if (_remoting) {
+		if ((_wayland = ProvidesQWidget())) {
+			[[maybe_unused]] static const auto Inited = [] {
+				InitResources();
+				return true;
+			}();
+
+			_qmlEngine = std::make_unique<QQmlApplicationEngine>(
+				QUrl("qrc:///webview/main.qml"));
+
+			_qmlBridge = std::make_unique<Bridge>();
+			_qmlEngine->rootContext()->setContextProperty(
+				"bridge",
+				_qmlBridge.get());
+
+			_waylandSocket = _qmlEngine
+				->rootObjects()[0]
+				->property("socketName")
+				.toString()
+				.toStdString();
+		}
+
 		startProcess();
 	}
 }
@@ -203,21 +263,55 @@ void Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 
 	if (_remoting) {
+		if (_qmlEngine && !_compositorWidget) {
+			const auto parent = reinterpret_cast<QWidget*>(config.window);
+
+			_compositorWidget = base::make_unique_q<QQuickWidget>(
+				_qmlEngine.get(),
+				parent);
+
+			if (parent) {
+				_compositorWidget->quickWindow()->setTransientParent(
+					parent->window()->windowHandle());
+			}
+
+			_qmlEngine->rootContext()->setContextProperty(
+				"widget",
+				_compositorWidget.get());
+
+			_qmlEngine->rootContext()->setContextProperty(
+				"widgetWindow",
+				_compositorWidget->quickWindow());
+
+			const auto mainOutput = _qmlEngine
+				->rootObjects()[0]
+				->findChild<QWaylandOutput*>("mainOutput");
+
+			_compositorWidget->rootContext()->setContextProperty(
+				"mainOutput",
+				mainOutput);
+
+			_compositorWidget->setSource(
+				QUrl("qrc:///webview/Chrome.qml"));
+		}
+
 		if (!_dbusConnection) {
 			return;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Create",
-				base::Platform::MakeGlibVariant(std::tuple{
-					_debug,
-				}));
-		} catch (...) {
-		}
+		const auto loop = Glib::MainLoop::create();
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"Create",
+			base::Platform::MakeGlibVariant(std::tuple{
+				_debug,
+			}),
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				loop->quit();
+			});
 
+		loop->run();
 		return;
 	}
 
@@ -543,21 +637,27 @@ bool Instance::resolve() {
 			return false;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Resolve",
-				{});
+		const auto loop = Glib::MainLoop::create();
+		auto success = false;
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"Resolve",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				try {
+					_dbusConnection->call_finish(result);
+					success = true;
+				} catch (...) {
+				}
+				loop->quit();
+			});
 
-			return true;
-		} catch (...) {
-		}
-
-		return false;
+		loop->run();
+		return success;
 	}
 
-	return Resolve();
+	return Resolve(_wayland);
 }
 
 bool Instance::finishEmbedding() {
@@ -566,18 +666,27 @@ bool Instance::finishEmbedding() {
 			return false;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"FinishEmbedding",
-				{});
+		const auto loop = Glib::MainLoop::create();
+		auto success = false;
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"FinishEmbedding",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				try {
+					_dbusConnection->call_finish(result);
+					success = true;
+				} catch (...) {
+				}
+				loop->quit();
+			});
 
-			return true;
-		} catch (...) {
+		loop->run();
+		if (success && _compositorWidget) {
+			_compositorWidget->show();
 		}
-
-		return false;
+		return success;
 	}
 
 	if (gtk_window_set_child) {
@@ -614,13 +723,19 @@ void Instance::navigate(std::string url) {
 		}
 
 		try {
-			auto reply = _dbusConnection->call_sync(
+			const auto loop = Glib::MainLoop::create();
+			_dbusConnection->call(
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Navigate",
 				base::Platform::MakeGlibVariant(std::tuple{
 					Glib::ustring(url),
-				}));
+				}),
+				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+					loop->quit();
+				});
+
+			loop->run();
 		} catch (...) {
 		}
 
@@ -636,15 +751,17 @@ void Instance::reload() {
 			return;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Reload",
-				{});
-		} catch (...) {
-		}
+		const auto loop = Glib::MainLoop::create();
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"Reload",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				loop->quit();
+			});
 
+		loop->run();
 		return;
 	}
 
@@ -658,13 +775,19 @@ void Instance::init(std::string js) {
 		}
 
 		try {
-			auto reply = _dbusConnection->call_sync(
+			const auto loop = Glib::MainLoop::create();
+			_dbusConnection->call(
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Init",
 				base::Platform::MakeGlibVariant(std::tuple{
 					js,
-				}));
+				}),
+				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+					loop->quit();
+				});
+
+			loop->run();
 		} catch (...) {
 		}
 
@@ -691,13 +814,19 @@ void Instance::eval(std::string js) {
 		}
 
 		try {
-			auto reply = _dbusConnection->call_sync(
+			const auto loop = Glib::MainLoop::create();
+			_dbusConnection->call(
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Eval",
 				base::Platform::MakeGlibVariant(std::tuple{
 					js,
-				}));
+				}),
+				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+					loop->quit();
+				});
+
+			loop->run();
 		} catch (...) {
 		}
 
@@ -714,24 +843,31 @@ void Instance::eval(std::string js) {
 
 void *Instance::winId() {
 	if (_remoting) {
+		if (_compositorWidget) {
+			return reinterpret_cast<void*>(_compositorWidget.get());
+		}
+
 		if (!_dbusConnection) {
 			return nullptr;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"GetWinId",
-				{});
+		const auto loop = Glib::MainLoop::create();
+		void *ret = nullptr;
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"GetWinId",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				auto reply = _dbusConnection->call_finish(result);
+				ret = reinterpret_cast<void*>(
+					base::Platform::GlibVariantCast<guint64>(
+						reply.get_child(0)));
+				loop->quit();
+			});
 
-			return reinterpret_cast<void*>(
-				base::Platform::GlibVariantCast<guint64>(
-					reply.get_child(0)));
-		} catch (...) {
-		}
-
-		return nullptr;
+		loop->run();
+		return ret;
 	}
 
 	if (gdk_x11_surface_get_xid
@@ -752,15 +888,17 @@ void Instance::resizeToWindow() {
 			return;
 		}
 
-		try {
-			auto reply = _dbusConnection->call_sync(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"ResizeToWindow",
-				{});
-		} catch (...) {
-		}
+		const auto loop = Glib::MainLoop::create();
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"ResizeToWindow",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				loop->quit();
+			});
 
+		loop->run();
 		return;
 	}
 }
@@ -770,8 +908,17 @@ void Instance::startProcess() {
 		.executablePath()
 		.toUtf8();
 
-	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_new(
-		G_SUBPROCESS_FLAGS_NONE,
+	const auto serviceLauncher = GObjectPtr<GSubprocessLauncher>(
+		g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE));
+
+	g_subprocess_launcher_setenv(
+		serviceLauncher.get(),
+		"WAYLAND_DISPLAY",
+		_waylandSocket.c_str(),
+		true);
+
+	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_launcher_spawn(
+		serviceLauncher.get(),
 		nullptr,
 		executablePath.constData(),
 		"-webviewhelper",
@@ -830,6 +977,20 @@ void Instance::startProcess() {
 			return Glib::RefPtr<Gio::DBus::Connection>();
 		}
 	}();
+
+	if (_wayland && _dbusConnection) {
+		const auto loop = Glib::MainLoop::create();
+		_dbusConnection->call(
+			std::string(kObjectPath),
+			std::string(kInterface),
+			"SetWayland",
+			{},
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				loop->quit();
+			});
+
+		loop->run();
+	}
 
 	connectToRemoteSignals();
 }
@@ -1102,6 +1263,10 @@ void Instance::handleMethodCall(
 						reinterpret_cast<guint64>(winId()))));
 
 			return;
+		} else if (method_name == "SetWayland") {
+			_wayland = true;
+			invocation->return_value({});
+			return;
 		}
 	} catch (...) {
 	}
@@ -1116,21 +1281,7 @@ void Instance::handleMethodCall(
 } // namespace
 
 Available Availability() {
-	if (Platform::IsWayland()) {
-		return Available{
-			.error = Available::Error::Wayland,
-			.details = "There is no way to embed WebView window "
-			"on Wayland. Please switch to X11."
-		};
-	} else if (const auto platform = Platform::GetWindowManager().toLower()
-		; platform.contains("mutter") || platform.contains("gnome")) {
-		return Available{
-			.error = Available::Error::MutterWM,
-			.details = "Qt's window embedding doesn't work well "
-			"with Mutter window manager. Please switch to another "
-			"window manager or desktop environment."
-		};
-	} else if (!Instance().resolve()) {
+	if (!Instance().resolve()) {
 		return Available{
 			.error = Available::Error::NoGtkOrWebkit2Gtk,
 			.details = "Please install WebKitGTK "
@@ -1139,6 +1290,14 @@ Available Availability() {
 		};
 	}
 	return Available{};
+}
+
+bool ProvidesQWidget() {
+	if (!Platform::IsX11()) {
+		return true;
+	}
+	const auto platform = Platform::GetWindowManager().toLower();
+	return platform.contains("mutter") || platform.contains("gnome");
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
@@ -1159,3 +1318,5 @@ void SetSocketPath(const std::string &socketPath) {
 }
 
 } // namespace Webview::WebKit2Gtk
+
+#include "webview_linux_webkit2gtk.moc"
