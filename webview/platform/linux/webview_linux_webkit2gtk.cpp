@@ -213,10 +213,10 @@ void Instance::create() {
 				std::string(kInterface),
 				"Create",
 				{});
-
-			return;
 		} catch (...) {
 		}
+
+		return;
 	}
 
 	if (!resolve()) {
@@ -551,6 +551,8 @@ bool Instance::resolve() {
 			return true;
 		} catch (...) {
 		}
+
+		return false;
 	}
 
 	return Resolve();
