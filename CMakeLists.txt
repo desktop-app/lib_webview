@@ -10,6 +10,8 @@ init_target(lib_webview)
 
 get_filename_component(src_loc . REALPATH)
 
+set_target_properties(lib_webview PROPERTIES AUTOMOC ON)
+
 nice_target_sources(lib_webview ${src_loc}
 PRIVATE
     webview/webview_dialog.cpp
@@ -23,6 +25,7 @@ PRIVATE
 
     webview/platform/linux/webview_linux.h
     webview/platform/linux/webview_linux.cpp
+    webview/platform/linux/webview_linux.qrc
     webview/platform/linux/webview_linux_webkit_gtk.cpp
     webview/platform/linux/webview_linux_webkit_gtk.h
     webview/platform/linux/webview_linux_webkit2gtk.cpp
@@ -52,7 +55,7 @@ if (WIN32)
     nuget_add_webview(lib_webview)
     nuget_add_winrt(lib_webview)
 elseif (LINUX)
-    if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
+    if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION OR DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_webkit_gtk.cpp
             webview/platform/linux/webview_linux_webkit_gtk.h
@@ -62,5 +65,9 @@ elseif (LINUX)
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_webkit2gtk_dummy.cpp
         )
+
+        find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Qml Quick QuickWidgets WaylandCompositor REQUIRED)
     endif()
 endif()
+
+target_prepare_qrc(lib_webview)

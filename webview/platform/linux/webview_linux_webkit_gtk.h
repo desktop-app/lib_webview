@@ -186,6 +186,6 @@ inline void (*webkit_web_view_run_javascript)(
 	GAsyncReadyCallback callback,
 	gpointer user_data);
 
-[[nodiscard]] bool Resolve();
+[[nodiscard]] bool Resolve(bool wayland);
 
 } // namespace Webview::WebkitGtk

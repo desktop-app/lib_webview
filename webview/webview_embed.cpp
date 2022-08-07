@@ -48,25 +48,32 @@ base::options::toggle OptionWebviewDebugEnabled({
 const char kOptionWebviewDebugEnabled[] = "webview-debug-enabled";
 
 Window::Window(QWidget *parent, WindowConfig config)
-: _window(CreateContainerWindow()) {
+: _providesQWidget(ProvidesQWidget()) {
+	if (!_providesQWidget) {
+		_window.reset(CreateContainerWindow());
+	}
 	if (SupportsEmbedAfterCreate()) {
-		if (!createWebView(config)) {
+		if (!createWebView(parent, config)) {
 			return;
 		}
-		if (!_window) {
-			_window = CreateContainerWindow(_webview.get());
+		if (!_providesQWidget && !_window) {
+			_window.reset(CreateContainerWindow(_webview.get()));
 		}
 	}
-	if (!_window) {
-		return;
+	if (_providesQWidget) {
+		_widget.reset(reinterpret_cast<QWidget*>(_webview->winId()));
+	} else {
+		if (!_window) {
+			return;
+		}
+		_widget.reset(
+			QWidget::createWindowContainer(
+				_window,
+				parent,
+				Qt::FramelessWindowHint));
+		_widget->show();
 	}
-	_widget.reset(
-		QWidget::createWindowContainer(
-			_window,
-			parent,
-			Qt::FramelessWindowHint));
-	_widget->show();
-	if (!createWebView(config) || !finishWebviewEmbedding()) {
+	if (!createWebView(parent, config) || !finishWebviewEmbedding()) {
 		return;
 	}
 	_webview->resizeToWindow();
@@ -81,10 +88,12 @@ Window::Window(QWidget *parent, WindowConfig config)
 
 Window::~Window() = default;
 
-bool Window::createWebView(const WindowConfig &config) {
+bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 	if (!_webview) {
 		_webview = CreateInstance({
-			.window = _window ? (void*)_window->winId() : nullptr,
+			.window = _providesQWidget
+				? (void*)parent
+				: (_window ? (void*)_window->winId() : nullptr),
 			.messageHandler = messageHandler(),
 			.navigationStartHandler = navigationStartHandler(),
 			.navigationDoneHandler = navigationDoneHandler(),
@@ -96,7 +105,6 @@ bool Window::createWebView(const WindowConfig &config) {
 	if (_webview) {
 		return true;
 	}
-	delete _window;
 	_window = nullptr;
 	_widget = nullptr;
 	return false;
@@ -105,12 +113,11 @@ bool Window::createWebView(const WindowConfig &config) {
 bool Window::finishWebviewEmbedding() {
 	Expects(_webview != nullptr);
 	Expects(_widget != nullptr);
-	Expects(_window != nullptr);
+	Expects(_providesQWidget || _window != nullptr);
 
 	if (_webview->finishEmbedding()) {
 		return true;
 	}
-	delete _window;
 	_window = nullptr;
 	_widget = nullptr;
 	_webview = nullptr;

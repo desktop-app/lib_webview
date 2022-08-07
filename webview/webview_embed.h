@@ -54,16 +54,17 @@ public:
 	void eval(const QByteArray &js);
 
 private:
-	bool createWebView(const WindowConfig &config);
+	bool createWebView(QWidget *parent, const WindowConfig &config);
 	bool finishWebviewEmbedding();
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
 	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
 
-	QWindow *_window = nullptr;
+	bool _providesQWidget = false;
 	std::unique_ptr<Interface> _webview;
 	base::unique_qptr<QWidget> _widget;
+	base::unique_qptr<QWindow> _window;
 	Fn<void(std::string)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
