@@ -807,7 +807,7 @@ void Instance::startProcess() {
 
 	// timeout in case something goes wrong
 	const auto timeout = Glib::TimeoutSource::create(5000);
-	timeout->connect([=] {
+	timeout->connect([&] {
 		if (loop->is_running()) {
 			loop->quit();
 		}
@@ -816,6 +816,7 @@ void Instance::startProcess() {
 	timeout->attach();
 
 	loop->run();
+	timeout->destroy();
 
 	_dbusConnection = [&] {
 		try {
