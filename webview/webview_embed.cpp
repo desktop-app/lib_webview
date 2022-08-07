@@ -33,7 +33,11 @@ namespace {
 
 [[nodiscard]] QWindow *CreateContainerWindow(not_null<Interface*> webview) {
 	const auto id = webview->winId();
-	return id ? QWindow::fromWinId(WId(id)) : nullptr;
+	return id
+		? ProvidesQWindow()
+			? reinterpret_cast<QWindow*>(id)
+			: QWindow::fromWinId(WId(id))
+		: nullptr;
 }
 
 base::options::toggle OptionWebviewDebugEnabled({

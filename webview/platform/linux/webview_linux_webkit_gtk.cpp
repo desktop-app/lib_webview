@@ -47,23 +47,16 @@ bool Resolve() {
 			|| LoadLibrary(webkit2gtk, "libwebkit2gtk-4.0.so.37"))
 		&& LOAD_SYMBOL(webkit2gtk, gtk_init_check)
 		&& LOAD_SYMBOL(webkit2gtk, gtk_widget_get_type)
-		&& LOAD_SYMBOL(webkit2gtk, gtk_widget_grab_focus)
 		&& (LOAD_SYMBOL(webkit2gtk, gtk_window_set_child)
 			|| (LOAD_SYMBOL(webkit2gtk, gtk_container_get_type)
 				&& LOAD_SYMBOL(webkit2gtk, gtk_container_add)))
-		&& ((LOAD_SYMBOL(webkit2gtk, gtk_widget_get_native)
-				&& LOAD_SYMBOL(webkit2gtk, gtk_native_get_surface))
-			|| LOAD_SYMBOL(webkit2gtk, gtk_widget_get_window))
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_new)
 		&& (LOAD_SYMBOL(webkit2gtk, gtk_window_destroy)
 			|| LOAD_SYMBOL(webkit2gtk, gtk_widget_destroy))
-		&& LOAD_SYMBOL(webkit2gtk, gtk_widget_hide)
 		&& (LOAD_SYMBOL(webkit2gtk, gtk_widget_show_all)
 			|| LOAD_SYMBOL(webkit2gtk, gtk_widget_show))
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_get_type)
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_set_decorated)
-		&& (LOAD_SYMBOL(webkit2gtk, gdk_x11_surface_get_xid)
-			|| LOAD_SYMBOL(webkit2gtk, gdk_x11_window_get_xid))
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_new)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_get_type)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_get_user_content_manager)
@@ -111,7 +104,7 @@ bool Resolve() {
 		}
 	}
 	if (LOAD_SYMBOL(webkit2gtk, gdk_set_allowed_backends)) {
-		gdk_set_allowed_backends("x11");
+		gdk_set_allowed_backends("wayland");
 	}
 	return gtk_init_check(0, 0);
 }

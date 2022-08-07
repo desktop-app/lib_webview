@@ -18,6 +18,10 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
+bool ProvidesQWindow() {
+	return true;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return WebKit2Gtk::CreateInstance(std::move(config));
 }

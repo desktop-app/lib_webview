@@ -79,8 +79,6 @@ struct Available {
 		None,
 		NoWebview2,
 		NoGtkOrWebkit2Gtk,
-		MutterWM,
-		Wayland,
 		OldWindows,
 	};
 	Error error = Error::None;
@@ -92,6 +90,7 @@ struct Available {
 	return Availability().error == Available::Error::None;
 }
 [[nodiscard]] bool SupportsEmbedAfterCreate();
+[[nodiscard]] bool ProvidesQWindow();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
