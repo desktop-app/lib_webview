@@ -12,9 +12,6 @@
 #include "base/const_string.h"
 #include "base/integration.h"
 
-#include <QtCore/QUrl>
-#include <QtGui/QDesktopServices>
-
 #include <giomm.h>
 
 namespace Webview::WebKit2Gtk {
@@ -883,8 +880,10 @@ void Instance::connectToRemoteSignals() {
 						if (newWindow) {
 							if (_navigationStartHandler
 								&& _navigationStartHandler(uri, true)) {
-								QDesktopServices::openUrl(
-									QString::fromUtf8(uri.c_str()));
+								try {
+									Gio::AppInfo::launch_default_for_uri(uri);
+								} catch (...) {
+								}
 							}
 							return false;
 						}
