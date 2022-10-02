@@ -26,7 +26,4 @@ int Exec() {
 void SetSocketPath(const std::string &socketPath) {
 }
 
-void SetDebug(const std::string &debug) {
-}
-
 } // namespace Webview::WebKit2Gtk
