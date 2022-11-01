@@ -258,7 +258,7 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
-bool ProvidesQWindget() {
+bool ProvidesQWidget() {
 	return false;
 }
 
