@@ -191,7 +191,7 @@ private:
 
 Instance::Instance(bool remoting)
 : _remoting(remoting)
-, _interfaceVTable(sigc::mem_fun(this, &Instance::handleMethodCall)) {
+, _interfaceVTable(sigc::mem_fun(*this, &Instance::handleMethodCall)) {
 	if (_remoting) {
 		if ((_wayland = ProvidesQWidget())) {
 			[[maybe_unused]] static const auto Inited = [] {
@@ -928,10 +928,10 @@ void Instance::startProcess() {
 	const auto socketPath = [&]() -> std::string {
 		try {
 			return Glib::Regex::create("%1")->replace(
-				SocketPath,
+				Glib::UStringView(SocketPath),
 				0,
 				g_subprocess_get_identifier(_serviceProcess.get()),
-				static_cast<Glib::RegexMatchFlags>(0));
+				Glib::Regex::MatchFlags());
 		} catch (...) {
 			return {};
 		}
@@ -949,8 +949,8 @@ void Instance::startProcess() {
 	socketMonitor->signal_changed().connect([&](
 		const Glib::RefPtr<Gio::File> &file,
 		const Glib::RefPtr<Gio::File> &otherFile,
-		Gio::FileMonitorEvent eventType) {
-		if (eventType == Gio::FILE_MONITOR_EVENT_CREATED) {
+		Gio::FileMonitor::Event eventType) {
+		if (eventType == Gio::FileMonitor::Event::CREATED) {
 			loop->quit();
 		}
 	});
@@ -972,7 +972,7 @@ void Instance::startProcess() {
 		try {
 			return Gio::DBus::Connection::create_for_address_sync(
 				SocketPathToDBusAddress(socketPath),
-				Gio::DBus::CONNECTION_FLAGS_AUTHENTICATION_CLIENT);
+				Gio::DBus::ConnectionFlags::AUTHENTICATION_CLIENT);
 		} catch (...) {
 			return Glib::RefPtr<Gio::DBus::Connection>();
 		}
@@ -1158,17 +1158,17 @@ int Instance::exec() {
 		std::string(kIntrospectionXML));
 
 	const auto socketPath = Glib::Regex::create("%1")->replace(
-		SocketPath,
+		Glib::UStringView(SocketPath),
 		0,
-		std::to_string(getpid()),
-		static_cast<Glib::RegexMatchFlags>(0));
+		Glib::UStringView(std::to_string(getpid())),
+		Glib::Regex::MatchFlags());
 
 	const auto authObserver = Gio::DBus::AuthObserver::create();
 	authObserver->signal_authorize_authenticated_peer().connect([](
 		const Glib::RefPtr<const Gio::IOStream> &stream,
 		const Glib::RefPtr<const Gio::Credentials> &credentials) {
 		return credentials->get_unix_pid() == getppid();
-	});
+	}, true);
 
 	const auto dbusServer = Gio::DBus::Server::create_sync(
 		SocketPathToDBusAddress(socketPath),
@@ -1196,7 +1196,7 @@ int Instance::exec() {
 		});
 
 		return true;
-	});
+	}, true);
 
 	return app->run(0, nullptr);
 }
