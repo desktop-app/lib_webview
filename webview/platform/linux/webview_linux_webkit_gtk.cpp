@@ -51,7 +51,8 @@ bool Resolve(bool wayland) {
 		&& (LOAD_SYMBOL(webkit2gtk, gtk_window_set_child)
 			|| (LOAD_SYMBOL(webkit2gtk, gtk_container_get_type)
 				&& LOAD_SYMBOL(webkit2gtk, gtk_container_add)))
-		&& ((LOAD_SYMBOL(webkit2gtk, gtk_widget_get_native)
+		&& (wayland
+			|| (LOAD_SYMBOL(webkit2gtk, gtk_widget_get_native)
 				&& LOAD_SYMBOL(webkit2gtk, gtk_native_get_surface))
 			|| LOAD_SYMBOL(webkit2gtk, gtk_widget_get_window))
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_new)
@@ -62,7 +63,8 @@ bool Resolve(bool wayland) {
 			|| LOAD_SYMBOL(webkit2gtk, gtk_widget_show))
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_get_type)
 		&& LOAD_SYMBOL(webkit2gtk, gtk_window_set_decorated)
-		&& (LOAD_SYMBOL(webkit2gtk, gdk_x11_surface_get_xid)
+		&& (wayland
+			|| LOAD_SYMBOL(webkit2gtk, gdk_x11_surface_get_xid)
 			|| LOAD_SYMBOL(webkit2gtk, gdk_x11_window_get_xid))
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_new)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_get_type)
