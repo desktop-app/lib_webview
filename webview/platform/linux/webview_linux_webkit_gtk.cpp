@@ -72,6 +72,7 @@ bool Resolve(bool wayland) {
 		&& LOAD_SYMBOL(webkit2gtk, webkit_user_content_manager_register_script_message_handler)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_get_settings)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_settings_set_javascript_can_access_clipboard)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_settings_set_enable_developer_extras)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_load_uri)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_reload_bypass_cache)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_user_script_new)

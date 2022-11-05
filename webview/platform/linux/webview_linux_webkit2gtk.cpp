@@ -699,11 +699,7 @@ bool Instance::finishEmbedding() {
 		WebKitSettings *settings = webkit_web_view_get_settings(
 			WEBKIT_WEB_VIEW(_webview));
 		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
-		g_object_set(
-			G_OBJECT(settings),
-			"enable-developer-extras",
-			TRUE,
-			NULL);
+		webkit_settings_set_enable_developer_extras(settings, true);
 	}
 	gtk_widget_hide(_window);
 	if (gtk_widget_show) {
