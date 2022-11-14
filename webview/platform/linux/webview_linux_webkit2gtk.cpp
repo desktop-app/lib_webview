@@ -857,7 +857,7 @@ void *Instance::winId() {
 			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
 				auto reply = _dbusConnection->call_finish(result);
 				ret = reinterpret_cast<void*>(
-					base::Platform::GlibVariantCast<guint64>(
+					base::Platform::GlibVariantCast<uint64>(
 						reply.get_child(0)));
 				loop->quit();
 			});
@@ -1255,8 +1255,8 @@ void Instance::handleMethodCall(
 		} else if (method_name == "GetWinId") {
 			invocation->return_value(
 				Glib::VariantContainerBase::create_tuple(
-					Glib::Variant<guint64>::create(
-						reinterpret_cast<guint64>(winId()))));
+					Glib::Variant<uint64>::create(
+						reinterpret_cast<uint64>(winId()))));
 
 			return;
 		} else if (method_name == "SetWayland") {
