@@ -12,6 +12,7 @@
 #include "base/const_string.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
+#include "ui/gl/gl_detection.h"
 
 #include <QtCore/QtPlugin>
 #include <QtGui/QWindow>
@@ -196,6 +197,18 @@ Instance::Instance(bool remoting)
 		if ((_wayland = ProvidesQWidget())) {
 			[[maybe_unused]] static const auto Inited = [] {
 				InitResources();
+				const auto backend = Ui::GL::ChooseBackendDefault(
+					Ui::GL::CheckCapabilities(nullptr));
+				switch (backend) {
+				case Ui::GL::Backend::Raster:
+					QQuickWindow::setGraphicsApi(
+						QSGRendererInterface::Software);
+					break;
+				case Ui::GL::Backend::OpenGL:
+					QQuickWindow::setGraphicsApi(
+						QSGRendererInterface::OpenGL);
+					break;
+				}
 				return true;
 			}();
 
