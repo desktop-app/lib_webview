@@ -13,7 +13,6 @@
 #include "base/integration.h"
 #include "base/unique_qptr.h"
 
-#include <QtCore/QtPlugin>
 #include <QtGui/QWindow>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlContext>
@@ -22,16 +21,6 @@
 #include <QtWaylandCompositor/QWaylandOutput>
 
 #include <giomm.h>
-
-#ifndef DESKTOP_APP_USE_PACKAGED
-Q_IMPORT_PLUGIN(QtQmlPlugin)
-Q_IMPORT_PLUGIN(QtQmlModelsPlugin)
-Q_IMPORT_PLUGIN(QtQmlWorkerScriptPlugin)
-Q_IMPORT_PLUGIN(QtQuick2Plugin)
-Q_IMPORT_PLUGIN(QtQuick_WindowPlugin)
-Q_IMPORT_PLUGIN(QWaylandCompositorPlugin)
-Q_IMPORT_PLUGIN(QWaylandCompositorXdgShellPlugin)
-#endif // !DESKTOP_APP_USE_PACKAGED
 
 inline void InitResources() {
 	Q_INIT_RESOURCE(webview_linux);
