@@ -26,11 +26,11 @@ PRIVATE
     webview/platform/linux/webview_linux.h
     webview/platform/linux/webview_linux.cpp
     webview/platform/linux/webview_linux.qrc
-    webview/platform/linux/webview_linux_webkit_gtk.cpp
-    webview/platform/linux/webview_linux_webkit_gtk.h
-    webview/platform/linux/webview_linux_webkit2gtk.cpp
-    webview/platform/linux/webview_linux_webkit2gtk_dummy.cpp
-    webview/platform/linux/webview_linux_webkit2gtk.h
+    webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
+    webview/platform/linux/webview_linux_webkitgtk_library.cpp
+    webview/platform/linux/webview_linux_webkitgtk_library.h
+    webview/platform/linux/webview_linux_webkitgtk.cpp
+    webview/platform/linux/webview_linux_webkitgtk.h
 
     webview/platform/win/webview_win.cpp
     webview/platform/win/webview_win.h
@@ -57,13 +57,13 @@ if (WIN32)
 elseif (LINUX)
     if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION OR DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         remove_target_sources(lib_webview ${src_loc}
-            webview/platform/linux/webview_linux_webkit_gtk.cpp
-            webview/platform/linux/webview_linux_webkit_gtk.h
-            webview/platform/linux/webview_linux_webkit2gtk.cpp
+            webview/platform/linux/webview_linux_webkitgtk_library.cpp
+            webview/platform/linux/webview_linux_webkitgtk_library.h
+            webview/platform/linux/webview_linux_webkitgtk.cpp
         )
     else()
         remove_target_sources(lib_webview ${src_loc}
-            webview/platform/linux/webview_linux_webkit2gtk_dummy.cpp
+            webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
         )
 
         find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Qml Quick QuickWidgets WaylandCompositor REQUIRED)

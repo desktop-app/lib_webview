@@ -8,7 +8,7 @@
 
 #include "webview/platform/linux/webview_linux.h"
 
-namespace Webview::WebKit2Gtk {
+namespace Webview::WebKitGTK {
 
 [[nodiscard]] Available Availability();
 [[nodiscard]] bool ProvidesQWidget();
@@ -17,4 +17,4 @@ namespace Webview::WebKit2Gtk {
 int Exec();
 void SetSocketPath(const std::string &socketPath);
 
-} // namespace Webview::WebKit2Gtk
+} // namespace Webview::WebKitGTK
