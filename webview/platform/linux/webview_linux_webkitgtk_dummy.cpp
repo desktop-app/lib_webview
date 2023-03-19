@@ -4,13 +4,13 @@
 // For license and copyright information please follow this link:
 // https://github.com/desktop-app/legal/blob/master/LEGAL
 //
-#include "webview/platform/linux/webview_linux_webkit2gtk.h"
+#include "webview/platform/linux/webview_linux_webkitgtk.h"
 
-namespace Webview::WebKit2Gtk {
+namespace Webview::WebKitGTK {
 
 Available Availability() {
 	return Available{
-		.error = Available::Error::NoGtkOrWebkit2Gtk,
+		.error = Available::Error::NoWebKitGTK,
 		.details = "This feature was disabled at build time.",
 	};
 }
@@ -30,4 +30,4 @@ int Exec() {
 void SetSocketPath(const std::string &socketPath) {
 }
 
-} // namespace Webview::WebKit2Gtk
+} // namespace Webview::WebKitGTK

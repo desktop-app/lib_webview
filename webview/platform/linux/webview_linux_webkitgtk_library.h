@@ -82,7 +82,7 @@ typedef enum {
     WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM
 } WebKitScriptDialogType;
 
-namespace Webview::WebkitGtk {
+namespace Webview::WebKitGTK::Library {
 
 inline gboolean (*gtk_init_check)(int *argc, char ***argv);
 inline void (*gdk_set_allowed_backends)(const gchar *backends);
@@ -101,8 +101,7 @@ inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
-inline void (*gtk_widget_hide)(GtkWidget *widget);
-inline void (*gtk_widget_show)(GtkWidget *widget);
+inline void (*gtk_widget_set_visible)(GtkWidget* widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
@@ -160,7 +159,8 @@ inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
 	WebKitWebView *web_view);
 inline gboolean (*webkit_user_content_manager_register_script_message_handler)(
 	WebKitUserContentManager *manager,
-	const gchar *name);
+	const gchar *name,
+	const gchar *world_name);
 inline WebKitSettings *(*webkit_web_view_get_settings)(
 	WebKitWebView *web_view);
 inline void (*webkit_settings_set_javascript_can_access_clipboard)(
@@ -182,6 +182,15 @@ inline WebKitUserScript *(*webkit_user_script_new)(
 inline void (*webkit_user_content_manager_add_script)(
 	WebKitUserContentManager *manager,
 	WebKitUserScript *script);
+inline void (*webkit_web_view_evaluate_javascript)(
+	WebKitWebView *web_view,
+	const gchar *script,
+	gssize length,
+	const gchar *world_name,
+	const gchar *source_uri,
+	GCancellable *cancellable,
+	GAsyncReadyCallback callback,
+	gpointer user_data);
 inline void (*webkit_web_view_run_javascript)(
 	WebKitWebView *web_view,
 	const gchar *script,
@@ -191,4 +200,4 @@ inline void (*webkit_web_view_run_javascript)(
 
 [[nodiscard]] bool Resolve(bool wayland);
 
-} // namespace Webview::WebkitGtk
+} // namespace Webview::WebKitGTK::Library

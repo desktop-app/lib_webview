@@ -4,9 +4,9 @@
 // For license and copyright information please follow this link:
 // https://github.com/desktop-app/legal/blob/master/LEGAL
 //
-#include "webview/platform/linux/webview_linux_webkit2gtk.h"
+#include "webview/platform/linux/webview_linux_webkitgtk.h"
 
-#include "webview/platform/linux/webview_linux_webkit_gtk.h"
+#include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
@@ -14,6 +14,7 @@
 #include "base/unique_qptr.h"
 #include "ui/gl/gl_detection.h"
 
+#include <QtGui/QGuiApplication>
 #include <QtGui/QWindow>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlContext>
@@ -27,10 +28,10 @@ inline void InitResources() {
 	Q_INIT_RESOURCE(webview_linux);
 }
 
-namespace Webview::WebKit2Gtk {
+namespace Webview::WebKitGTK {
 namespace {
 
-using namespace WebkitGtk;
+using namespace Library;
 
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/WebviewHelper"_cs;
 constexpr auto kInterface = "org.desktop_app.GtkIntegration.WebviewHelper"_cs;
@@ -124,7 +125,7 @@ public:
 	int exec();
 
 private:
-	void scriptMessageReceived(WebKitJavascriptResult *result);
+	void scriptMessageReceived(void *message);
 
 	bool loadFailed(
 		WebKitLoadEvent loadEvent,
@@ -323,8 +324,8 @@ void Instance::create(Config config) {
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
-	if (gtk_widget_show) {
-		gtk_widget_show(_window);
+	if (!gtk_widget_show_all) {
+		gtk_widget_set_visible(_window, true);
 	} else {
 		gtk_widget_show_all(_window);
 	}
@@ -336,8 +337,8 @@ void Instance::create(Config config) {
 		"script-message-received::external",
 		G_CALLBACK(+[](
 			Instance *instance,
-			WebKitJavascriptResult *result) {
-			instance->scriptMessageReceived(result);
+			void *message) {
+			instance->scriptMessageReceived(message);
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -393,7 +394,8 @@ void Instance::create(Config config) {
 		this);
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
-		"external");
+		"external",
+		nullptr);
 	init(R"(
 window.external = {
 	invoke: function(s) {
@@ -402,21 +404,28 @@ window.external = {
 };)");
 }
 
-void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
-	auto message = std::string();
-	if (webkit_javascript_result_get_js_value && jsc_value_to_string) {
-		JSCValue *value = webkit_javascript_result_get_js_value(result);
-		const auto s = jsc_value_to_string(value);
-		message = s;
+void Instance::scriptMessageReceived(void *message) {
+	auto result = std::string();
+	if (!webkit_javascript_result_get_js_value && jsc_value_to_string) {
+		const auto s = jsc_value_to_string(
+			reinterpret_cast<JSCValue*>(message));
+		result = s;
+		g_free(s);
+	} else if (webkit_javascript_result_get_js_value && jsc_value_to_string) {
+		const auto s = jsc_value_to_string(
+			webkit_javascript_result_get_js_value(
+				reinterpret_cast<WebKitJavascriptResult*>(message)));
+		result = s;
 		g_free(s);
 	} else {
+		auto jsResult = reinterpret_cast<WebKitJavascriptResult*>(message);
 		JSGlobalContextRef ctx
-			= webkit_javascript_result_get_global_context(result);
-		JSValueRef value = webkit_javascript_result_get_value(result);
+			= webkit_javascript_result_get_global_context(jsResult);
+		JSValueRef value = webkit_javascript_result_get_value(jsResult);
 		JSStringRef js = JSValueToStringCopy(ctx, value, NULL);
 		size_t n = JSStringGetMaximumUTF8CStringSize(js);
-		message.resize(n, char(0));
-		JSStringGetUTF8CString(js, message.data(), n);
+		result.resize(n, char(0));
+		JSStringGetUTF8CString(js, result.data(), n);
 		JSStringRelease(js);
 	}
 	if (!_dbusConnection) {
@@ -429,7 +438,7 @@ void Instance::scriptMessageReceived(WebKitJavascriptResult *result) {
 			"MessageReceived",
 			{},
 			base::Platform::MakeGlibVariant(std::tuple{
-				message,
+				result,
 			}));
 	} catch (...) {
 	}
@@ -696,9 +705,9 @@ bool Instance::finishEmbedding() {
 		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
 		webkit_settings_set_enable_developer_extras(settings, true);
 	}
-	gtk_widget_hide(_window);
-	if (gtk_widget_show) {
-		gtk_widget_show(_window);
+	gtk_widget_set_visible(_window, false);
+	if (!gtk_widget_show_all) {
+		gtk_widget_set_visible(_window, true);
 	} else {
 		gtk_widget_show_all(_window);
 	}
@@ -824,12 +833,24 @@ void Instance::eval(std::string js) {
 		return;
 	}
 
-	webkit_web_view_run_javascript(
-		WEBKIT_WEB_VIEW(_webview),
-		js.c_str(),
-		nullptr,
-		nullptr,
-		nullptr);
+	if (webkit_web_view_evaluate_javascript) {
+		webkit_web_view_evaluate_javascript(
+			WEBKIT_WEB_VIEW(_webview),
+			js.c_str(),
+			-1,
+			nullptr,
+			nullptr,
+			nullptr,
+			nullptr,
+			nullptr);
+	} else {
+		webkit_web_view_run_javascript(
+			WEBKIT_WEB_VIEW(_webview),
+			js.c_str(),
+			nullptr,
+			nullptr,
+			nullptr);
+	}
 }
 
 void *Instance::winId() {
@@ -969,18 +990,45 @@ void Instance::startProcess() {
 		}
 	}();
 
-	if (_wayland && _dbusConnection) {
-		const auto loop = Glib::MainLoop::create();
-		_dbusConnection->call(
+	if (_dbusConnection) {
+		_dbusConnection->emit_signal(
 			std::string(kObjectPath),
 			std::string(kInterface),
-			"SetWayland",
+			"AppId",
 			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				loop->quit();
-			});
+			base::Platform::MakeGlibVariant(std::tuple{
+				[] {
+					if (const auto app = Gio::Application::get_default()
+						; app && !app->get_id().empty()) {
+						return app->get_id();
+					}
 
-		loop->run();
+					const auto qtAppId = Glib::ustring(
+						QGuiApplication::desktopFileName()
+							.chopped(8)
+							.toStdString());
+					
+					if (Gio::Application::id_is_valid(qtAppId)) {
+						return qtAppId;
+					}
+
+					return Glib::ustring();
+				}(),
+			}));
+
+		if (_wayland) {
+			const auto loop = Glib::MainLoop::create();
+			_dbusConnection->call(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"SetWayland",
+				{},
+				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+					loop->quit();
+				});
+
+			loop->run();
+		}
 	}
 
 	connectToRemoteSignals();
@@ -1143,7 +1191,10 @@ void Instance::connectToRemoteSignals() {
 
 int Instance::exec() {
 	const auto app = Gio::Application::create();
+	app->set_flags(Gio::Application::Flags::NON_UNIQUE);
 	app->hold();
+
+	const auto loop = Glib::MainLoop::create();
 
 	const auto introspectionData = Gio::DBus::NodeInfo::create_for_xml(
 		std::string(kIntrospectionXML));
@@ -1186,9 +1237,41 @@ int Instance::exec() {
 			app->quit();
 		});
 
+		if (app->is_registered()) {
+			return true;
+		}
+
+		const auto appIdSignalId = std::make_shared<uint>(0);
+		*appIdSignalId = _dbusConnection->signal_subscribe(
+			[=](
+				const Glib::RefPtr<Gio::DBus::Connection> &connection,
+				const Glib::ustring &sender_name,
+				const Glib::ustring &object_path,
+				const Glib::ustring &interface_name,
+				const Glib::ustring &signal_name,
+				Glib::VariantContainerBase parameters) {
+				try {
+					app->set_id(
+						base::Platform::GlibVariantCast<
+							Glib::ustring>(parameters.get_child(0)));
+				} catch (...) {
+				}
+
+				if (*appIdSignalId != 0) {
+					_dbusConnection->signal_unsubscribe(*appIdSignalId);
+				}
+
+				loop->quit();
+			},
+			{},
+			std::string(kInterface),
+			"AppId",
+			std::string(kObjectPath));
+
 		return true;
 	}, true);
 
+	loop->run();
 	return app->run(0, nullptr);
 }
 
@@ -1274,9 +1357,9 @@ void Instance::handleMethodCall(
 Available Availability() {
 	if (!Instance().resolve()) {
 		return Available{
-			.error = Available::Error::NoGtkOrWebkit2Gtk,
+			.error = Available::Error::NoWebKitGTK,
 			.details = "Please install WebKitGTK "
-			"(webkit2gtk-5.0/webkit2gtk-4.1/webkit2gtk-4.0) "
+			"(webkitgtk-6.0/webkit2gtk-4.1/webkit2gtk-4.0) "
 			"from your package manager.",
 		};
 	}
@@ -1308,6 +1391,6 @@ void SetSocketPath(const std::string &socketPath) {
 	SocketPath = socketPath;
 }
 
-} // namespace Webview::WebKit2Gtk
+} // namespace Webview::WebKitGTK
 
-#include "webview_linux_webkit2gtk.moc"
+#include "webview_linux_webkitgtk.moc"

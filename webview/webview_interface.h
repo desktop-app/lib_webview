@@ -78,7 +78,7 @@ struct Available {
 	enum class Error {
 		None,
 		NoWebview2,
-		NoGtkOrWebkit2Gtk,
+		NoWebKitGTK,
 		OldWindows,
 	};
 	Error error = Error::None;
