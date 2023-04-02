@@ -484,10 +484,10 @@ bool Instance::decidePolicy(
 			navigationDecision);
 	}
 	const gchar *uri = webkit_uri_request_get_uri(request);
+	bool result = false;
 	if (_dbusConnection) {
 		try {
 			const auto loop = Glib::MainLoop::create();
-			bool result = false;
 
 			const auto resultId = _dbusConnection->signal_subscribe(
 				[&](
@@ -529,13 +529,13 @@ bool Instance::decidePolicy(
 			if (resultId != 0) {
 				loop->run();
 			}
-
-			return !result;
 		} catch (...) {
 		}
 	}
-	webkit_policy_decision_ignore(decision);
-	return true;
+	if (!result) {
+		webkit_policy_decision_ignore(decision);
+	}
+	return !result;
 }
 
 GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
@@ -564,11 +564,11 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	const auto value = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
 		? webkit_script_dialog_prompt_get_default_text(dialog)
 		: nullptr;
+	bool accepted = false;
+	Glib::ustring result;
 	if (_dbusConnection) {
 		try {
 			const auto loop = Glib::MainLoop::create();
-			bool accepted = false;
-			Glib::ustring result;
 
 			const auto resultId = _dbusConnection->signal_subscribe(
 				[&](
@@ -613,20 +613,13 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 			if (resultId != 0) {
 				loop->run();
 			}
-
-			if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
-				webkit_script_dialog_prompt_set_text(
-					dialog,
-					accepted ? result.c_str() : nullptr);
-			} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
-				webkit_script_dialog_confirm_set_confirmed(dialog, accepted);
-			}
-			return true;
 		} catch (...) {
 		}
 	}
 	if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
-		webkit_script_dialog_prompt_set_text(dialog, nullptr);
+		webkit_script_dialog_prompt_set_text(
+			dialog,
+			accepted ? result.c_str() : nullptr);
 	} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
 		webkit_script_dialog_confirm_set_confirmed(dialog, false);
 	}
