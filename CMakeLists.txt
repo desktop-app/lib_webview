@@ -55,7 +55,7 @@ if (WIN32)
     nuget_add_webview(lib_webview)
     nuget_add_winrt(lib_webview)
 elseif (LINUX)
-    if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION OR DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
+    if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_webkitgtk_library.cpp
             webview/platform/linux/webview_linux_webkitgtk_library.h
