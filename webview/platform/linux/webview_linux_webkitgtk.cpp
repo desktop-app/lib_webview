@@ -8,7 +8,6 @@
 
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
-#include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
 #include "base/integration.h"
@@ -68,16 +67,6 @@ constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 	</interface>
 </node>)INTROSPECTION"_cs;
 
-template <typename T>
-struct GObjectDeleter {
-	void operator()(T *value) {
-		g_object_unref(value);
-	}
-};
-
-template <typename T>
-using GObjectPtr = std::unique_ptr<T, GObjectDeleter<T>>;
-
 std::string SocketPath;
 
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
@@ -132,13 +121,13 @@ private:
 		const Glib::ustring &object_path,
 		const Glib::ustring &interface_name,
 		const Glib::ustring &method_name,
-		Glib::VariantContainerBase parameters,
+		const Glib::VariantContainerBase &parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
 
 	bool _remoting = false;
 	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
-	GObjectPtr<GSubprocess> _serviceProcess;
+	Glib::RefPtr<Gio::Subprocess> _serviceProcess;
 	uint _registerId = 0;
 	uint _messageHandlerId = 0;
 	uint _navigationStartHandlerId = 0;
@@ -189,7 +178,7 @@ Instance::Instance(bool remoting)
 
 Instance::~Instance() {
 	if (_serviceProcess) {
-		g_subprocess_send_signal(_serviceProcess.get(), SIGTERM);
+		_serviceProcess->send_signal(SIGTERM);
 	}
 	if (_dbusConnection) {
 		if (_scriptDialogHandlerId != 0) {
@@ -248,7 +237,7 @@ void Instance::create(Config config) {
 			std::string(kObjectPath),
 			std::string(kInterface),
 			"Create",
-			base::Platform::MakeGlibVariant(std::tuple{
+			Glib::create_variant(std::tuple{
 				_debug,
 			}),
 			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
@@ -378,7 +367,7 @@ void Instance::scriptMessageReceived(void *message) {
 			std::string(kInterface),
 			"MessageReceived",
 			{},
-			base::Platform::MakeGlibVariant(std::tuple{
+			Glib::create_variant(std::tuple{
 				result,
 			}));
 	} catch (...) {
@@ -406,7 +395,7 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 				std::string(kInterface),
 				"NavigationDone",
 				{},
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					success,
 				}));
 		} catch (...) {
@@ -446,10 +435,9 @@ bool Instance::decidePolicy(
 					const Glib::ustring &object_path,
 					const Glib::ustring &interface_name,
 					const Glib::ustring &signal_name,
-					Glib::VariantContainerBase parameters) {
+					const Glib::VariantContainerBase &parameters) {
 					try {
-						result = base::Platform::GlibVariantCast<
-							bool>(parameters.get_child(0));
+						result = parameters.get_child(0).get_dynamic<bool>();
 					} catch (...) {
 					}
 
@@ -471,7 +459,7 @@ bool Instance::decidePolicy(
 				std::string(kInterface),
 				"NavigationStarted",
 				{},
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					Glib::ustring(uri),
 					false
 				}));
@@ -498,7 +486,7 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 				std::string(kInterface),
 				"NavigationStarted",
 				{},
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					Glib::ustring(uri),
 					true
 				}));
@@ -527,12 +515,15 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 					const Glib::ustring &object_path,
 					const Glib::ustring &interface_name,
 					const Glib::ustring &signal_name,
-					Glib::VariantContainerBase parameters) {
+					const Glib::VariantContainerBase &parameters) {
 					try {
-						accepted = base::Platform::GlibVariantCast<
-							bool>(parameters.get_child(0));
-						result = base::Platform::GlibVariantCast<
-							Glib::ustring>(parameters.get_child(1));
+						accepted = parameters.get_child(
+							0
+						).get_dynamic<bool>();
+
+						result = parameters.get_child(
+							1
+						).get_dynamic<Glib::ustring>();
 					} catch (...) {
 					}
 
@@ -554,7 +545,7 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 				std::string(kInterface),
 				"ScriptDialog",
 				{},
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					std::int32_t(type),
 					Glib::ustring(text ? text : ""),
 					Glib::ustring(value ? value : "")
@@ -669,7 +660,7 @@ void Instance::navigate(std::string url) {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Navigate",
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					Glib::ustring(url),
 				}),
 				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
@@ -721,7 +712,7 @@ void Instance::init(std::string js) {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Init",
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					js,
 				}),
 				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
@@ -760,7 +751,7 @@ void Instance::eval(std::string js) {
 				std::string(kObjectPath),
 				std::string(kInterface),
 				"Eval",
-				base::Platform::MakeGlibVariant(std::tuple{
+				Glib::create_variant(std::tuple{
 					js,
 				}),
 				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
@@ -813,10 +804,13 @@ void *Instance::winId() {
 			{},
 			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
 				try {
-					auto reply = _dbusConnection->call_finish(result);
 					ret = reinterpret_cast<void*>(
-						base::Platform::GlibVariantCast<uint64>(
-							reply.get_child(0)));
+						_dbusConnection->call_finish(
+							result
+						).get_child(
+							0
+						).get_dynamic<uint64>()
+					);
 				} catch (...) {
 				}
 
@@ -867,28 +861,26 @@ void Instance::startProcess() {
 
 	const auto loop = Glib::MainLoop::create();
 
-	const auto executablePath = base::Integration::Instance()
-		.executablePath()
-		.toUtf8();
-
-	const auto serviceLauncher = GObjectPtr<GSubprocessLauncher>(
-		g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE));
+	const auto serviceLauncher = Gio::SubprocessLauncher::create();
 
 	if (_compositor) {
-		g_subprocess_launcher_setenv(
-			serviceLauncher.get(),
+		serviceLauncher->setenv(
 			"WAYLAND_DISPLAY",
-			qUtf8Printable(_compositor->socketName()),
+			_compositor->socketName().toStdString(),
 			true);
 	}
 
-	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_launcher_spawn(
-		serviceLauncher.get(),
-		nullptr,
-		executablePath.constData(),
-		"-webviewhelper",
-		SocketPath.c_str(),
-		nullptr));
+	_serviceProcess = [&] {
+		try {
+			return serviceLauncher->spawn({
+				base::Integration::Instance().executablePath().toStdString(),
+				"-webviewhelper",
+				SocketPath,
+			});
+		} catch (...) {
+			return Glib::RefPtr<Gio::Subprocess>();
+		}
+	}();
 
 	if (!_serviceProcess) {
 		return;
@@ -899,7 +891,7 @@ void Instance::startProcess() {
 			return Glib::Regex::create("%1")->replace(
 				Glib::UStringView(SocketPath),
 				0,
-				g_subprocess_get_identifier(_serviceProcess.get()),
+				_serviceProcess->get_identifier(),
 				Glib::Regex::MatchFlags());
 		} catch (...) {
 			return {};
@@ -968,7 +960,7 @@ void Instance::startProcess() {
 		std::string(kInterface),
 		"AppId",
 		{},
-		base::Platform::MakeGlibVariant(std::tuple{
+		Glib::create_variant(std::tuple{
 			[] {
 				if (const auto app = Gio::Application::get_default()
 					; app && !app->get_id().empty()) {
@@ -1022,14 +1014,15 @@ void Instance::connectToRemoteSignals() {
 			const Glib::ustring &object_path,
 			const Glib::ustring &interface_name,
 			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
+			const Glib::VariantContainerBase &parameters) {
 			if (!_messageHandler) {
 				return;
 			}
 
 			try {
-				const auto message = base::Platform::GlibVariantCast<
-					std::string>(parameters.get_child(0));
+				const auto message = parameters.get_child(
+					0
+				).get_dynamic<std::string>();
 
 				_messageHandler(message);
 			} catch (...) {
@@ -1047,16 +1040,20 @@ void Instance::connectToRemoteSignals() {
 			const Glib::ustring &object_path,
 			const Glib::ustring &interface_name,
 			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
+			const Glib::VariantContainerBase &parameters) {
 			if (!_navigationStartHandler) {
 				return;
 			}
 
 			try {
-				const auto uri = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(0));
-				const auto newWindow = base::Platform::GlibVariantCast<
-					bool>(parameters.get_child(1));
+				const auto uri = parameters.get_child(
+					0
+				).get_dynamic<Glib::ustring>();
+
+				const auto newWindow = parameters.get_child(
+					1
+				).get_dynamic<bool>();
+
 				const auto result = [&] {
 					if (newWindow) {
 						if (_navigationStartHandler(uri, true)) {
@@ -1075,7 +1072,7 @@ void Instance::connectToRemoteSignals() {
 					std::string(kInterface),
 					"NavigationStartedResult",
 					{},
-					base::Platform::MakeGlibVariant(std::tuple{
+					Glib::create_variant(std::tuple{
 						result,
 					}));
 			} catch (...) {
@@ -1093,14 +1090,15 @@ void Instance::connectToRemoteSignals() {
 			const Glib::ustring &object_path,
 			const Glib::ustring &interface_name,
 			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
+			const Glib::VariantContainerBase &parameters) {
 			if (!_navigationDoneHandler) {
 				return;
 			}
 
 			try {
-				const auto success = base::Platform::GlibVariantCast<
-					bool>(parameters.get_child(0));
+				const auto success = parameters.get_child(
+					0
+				).get_dynamic<bool>();
 
 				_navigationDoneHandler(success);
 			} catch (...) {
@@ -1118,18 +1116,21 @@ void Instance::connectToRemoteSignals() {
 			const Glib::ustring &object_path,
 			const Glib::ustring &interface_name,
 			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
+			const Glib::VariantContainerBase &parameters) {
 			if (!_dialogHandler) {
 				return;
 			}
 
 			try {
-				const auto type = base::Platform::GlibVariantCast<
-					int>(parameters.get_child(0));
-				const auto text = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(1));
-				const auto value = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(2));
+				const auto type = parameters.get_child(0).get_dynamic<int>();
+
+				const auto text = parameters.get_child(
+					1
+				).get_dynamic<Glib::ustring>();
+
+				const auto value = parameters.get_child(
+					2
+				).get_dynamic<Glib::ustring>();
 
 				const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
 					? DialogType::Prompt
@@ -1146,7 +1147,7 @@ void Instance::connectToRemoteSignals() {
 					std::string(kInterface),
 					"ScriptDialogResult",
 					{},
-					base::Platform::MakeGlibVariant(std::tuple{
+					Glib::create_variant(std::tuple{
 						result.accepted,
 						Glib::ustring(result.text),
 					}));
@@ -1212,11 +1213,10 @@ int Instance::exec() {
 				const Glib::ustring &object_path,
 				const Glib::ustring &interface_name,
 				const Glib::ustring &signal_name,
-				Glib::VariantContainerBase parameters) {
+				const Glib::VariantContainerBase &parameters) {
 				try {
 					app->set_id(
-						base::Platform::GlibVariantCast<
-							Glib::ustring>(parameters.get_child(0)));
+						parameters.get_child(0).get_dynamic<Glib::ustring>());
 				} catch (...) {
 				}
 				loop->quit();
@@ -1245,13 +1245,12 @@ void Instance::handleMethodCall(
 		const Glib::ustring &object_path,
 		const Glib::ustring &interface_name,
 		const Glib::ustring &method_name,
-		Glib::VariantContainerBase parameters,
+		const Glib::VariantContainerBase &parameters,
 		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation) {
 	try {
 		if (method_name == "Create") {
 			create({
-				.debug = base::Platform::GlibVariantCast<bool>(
-					parameters.get_child(0)),
+				.debug = parameters.get_child(0).get_dynamic<bool>(),
 			});
 			invocation->return_value({});
 			return;
@@ -1270,8 +1269,9 @@ void Instance::handleMethodCall(
 				return;
 			}
 		} else if (method_name == "Navigate") {
-			const auto url = base::Platform::GlibVariantCast<
-				Glib::ustring>(parameters.get_child(0));
+			const auto url = parameters.get_child(
+				0
+			).get_dynamic<Glib::ustring>();
 
 			navigate(url);
 			invocation->return_value({});
@@ -1281,24 +1281,26 @@ void Instance::handleMethodCall(
 			invocation->return_value({});
 			return;
 		} else if (method_name == "Init") {
-			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parameters.get_child(0));
+			const auto js = parameters.get_child(
+				0
+			).get_dynamic<std::string>();
 
 			init(js);
 			invocation->return_value({});
 			return;
 		} else if (method_name == "Eval") {
-			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parameters.get_child(0));
+			const auto js = parameters.get_child(
+				0
+			).get_dynamic<std::string>();
 
 			eval(js);
 			invocation->return_value({});
 			return;
 		} else if (method_name == "GetWinId") {
 			invocation->return_value(
-				Glib::VariantContainerBase::create_tuple(
-					Glib::Variant<uint64>::create(
-						reinterpret_cast<uint64>(winId()))));
+				Glib::create_variant(std::tuple{
+					reinterpret_cast<uint64>(winId()),
+				}));
 
 			return;
 		} else if (method_name == "SetWayland") {
