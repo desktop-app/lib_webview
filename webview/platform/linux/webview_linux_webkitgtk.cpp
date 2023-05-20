@@ -941,6 +941,10 @@ void Instance::startProcess() {
 		SocketPath.c_str(),
 		nullptr));
 
+	if (!_serviceProcess) {
+		return;
+	}
+
 	const auto socketPath = [&]() -> std::string {
 		try {
 			return Glib::Regex::create("%1")->replace(
@@ -952,6 +956,10 @@ void Instance::startProcess() {
 			return {};
 		}
 	}();
+
+	if (socketPath.empty()) {
+		return;
+	}
 
 	const auto socketFile = Gio::File::create_for_path(socketPath);
 
@@ -994,45 +1002,47 @@ void Instance::startProcess() {
 		}
 	}();
 
-	if (_dbusConnection) {
-		_dbusConnection->emit_signal(
+	if (!_dbusConnection) {
+		return;
+	}
+
+	_dbusConnection->emit_signal(
+		std::string(kObjectPath),
+		std::string(kInterface),
+		"AppId",
+		{},
+		base::Platform::MakeGlibVariant(std::tuple{
+			[] {
+				if (const auto app = Gio::Application::get_default()
+					; app && !app->get_id().empty()) {
+					return app->get_id();
+				}
+
+				const auto qtAppId = Glib::ustring(
+					QGuiApplication::desktopFileName()
+						.chopped(8)
+						.toStdString());
+
+				if (Gio::Application::id_is_valid(qtAppId)) {
+					return qtAppId;
+				}
+
+				return Glib::ustring();
+			}(),
+		}));
+
+	if (_wayland) {
+		const auto loop = Glib::MainLoop::create();
+		_dbusConnection->call(
 			std::string(kObjectPath),
 			std::string(kInterface),
-			"AppId",
+			"SetWayland",
 			{},
-			base::Platform::MakeGlibVariant(std::tuple{
-				[] {
-					if (const auto app = Gio::Application::get_default()
-						; app && !app->get_id().empty()) {
-						return app->get_id();
-					}
+			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
+				loop->quit();
+			});
 
-					const auto qtAppId = Glib::ustring(
-						QGuiApplication::desktopFileName()
-							.chopped(8)
-							.toStdString());
-					
-					if (Gio::Application::id_is_valid(qtAppId)) {
-						return qtAppId;
-					}
-
-					return Glib::ustring();
-				}(),
-			}));
-
-		if (_wayland) {
-			const auto loop = Glib::MainLoop::create();
-			_dbusConnection->call(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"SetWayland",
-				{},
-				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-					loop->quit();
-				});
-
-			loop->run();
-		}
+		loop->run();
 	}
 
 	connectToRemoteSignals();
