@@ -871,10 +871,14 @@ void *Instance::winId() {
 			"GetWinId",
 			{},
 			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				auto reply = _dbusConnection->call_finish(result);
-				ret = reinterpret_cast<void*>(
-					base::Platform::GlibVariantCast<uint64>(
-						reply.get_child(0)));
+				try {
+					auto reply = _dbusConnection->call_finish(result);
+					ret = reinterpret_cast<void*>(
+						base::Platform::GlibVariantCast<uint64>(
+							reply.get_child(0)));
+				} catch (...) {
+				}
+
 				loop->quit();
 			});
 
