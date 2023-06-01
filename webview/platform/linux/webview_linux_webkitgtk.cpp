@@ -762,7 +762,6 @@ void Instance::registerMasterMethodHandlers() {
 			}
 
 			const auto qtAppId = QGuiApplication::desktopFileName()
-				.chopped(8)
 				.toStdString();
 
 			if (Gio::Application::id_is_valid(qtAppId)) {
