@@ -7,6 +7,7 @@
 #include "webview/platform/linux/webview_linux_webkitgtk.h"
 
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
+#include "webview/platform/linux/webview_linux_compositor.h"
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
@@ -15,12 +16,7 @@
 #include "ui/gl/gl_detection.h"
 
 #include <QtGui/QGuiApplication>
-#include <QtGui/QWindow>
-#include <QtQml/QQmlApplicationEngine>
-#include <QtQml/QQmlContext>
-#include <QtQuick/QQuickItem>
 #include <QtQuickWidgets/QQuickWidget>
-#include <QtWaylandCompositor/QWaylandOutput>
 
 #include <giomm.h>
 
@@ -92,15 +88,6 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
 
-class Bridge final : public QObject {
-	Q_OBJECT
-public:
-	Q_INVOKABLE QRect widgetGlobalGeometry(QWidget *widget) {
-		const auto rect = widget->rect();
-		return QRect(widget->mapToGlobal(rect.topLeft()), rect.size());
-	}
-};
-
 class Instance final : public Interface {
 public:
 	Instance(bool remoting = true);
@@ -163,10 +150,8 @@ private:
 	uint _scriptDialogHandlerId = 0;
 
 	bool _wayland = false;
-	std::unique_ptr<QQmlApplicationEngine> _qmlEngine;
-	std::unique_ptr<Bridge> _qmlBridge;
 	base::unique_qptr<QQuickWidget> _compositorWidget;
-	std::string _waylandSocket;
+	base::unique_qptr<Compositor> _compositor;
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
@@ -202,19 +187,7 @@ Instance::Instance(bool remoting)
 				return true;
 			}();
 
-			_qmlEngine = std::make_unique<QQmlApplicationEngine>(
-				QUrl("qrc:///webview/main.qml"));
-
-			_qmlBridge = std::make_unique<Bridge>();
-			_qmlEngine->rootContext()->setContextProperty(
-				"bridge",
-				_qmlBridge.get());
-
-			_waylandSocket = _qmlEngine
-				->rootObjects()[0]
-				->property("socketName")
-				.toString()
-				.toStdString();
+			_compositor = base::make_unique_q<Compositor>();
 		}
 
 		startProcess();
@@ -266,36 +239,11 @@ void Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 
 	if (_remoting) {
-		if (_qmlEngine && !_compositorWidget) {
-			const auto parent = reinterpret_cast<QWidget*>(config.window);
-
+		if (_compositor && !_compositorWidget) {
 			_compositorWidget = base::make_unique_q<QQuickWidget>(
-				_qmlEngine.get(),
-				parent);
+				reinterpret_cast<QWidget*>(config.window));
 
-			if (parent) {
-				_compositorWidget->quickWindow()->setTransientParent(
-					parent->window()->windowHandle());
-			}
-
-			_qmlEngine->rootContext()->setContextProperty(
-				"widget",
-				_compositorWidget.get());
-
-			_qmlEngine->rootContext()->setContextProperty(
-				"widgetWindow",
-				_compositorWidget->quickWindow());
-
-			const auto mainOutput = _qmlEngine
-				->rootObjects()[0]
-				->findChild<QWaylandOutput*>("mainOutput");
-
-			_compositorWidget->rootContext()->setContextProperty(
-				"mainOutput",
-				mainOutput);
-
-			_compositorWidget->setSource(
-				QUrl("qrc:///webview/Chrome.qml"));
+			_compositor->setWidget(_compositorWidget.get());
 		}
 
 		if (!_dbusConnection) {
@@ -930,7 +878,7 @@ void Instance::startProcess() {
 	g_subprocess_launcher_setenv(
 		serviceLauncher.get(),
 		"WAYLAND_DISPLAY",
-		_waylandSocket.c_str(),
+		qUtf8Printable(_compositor->socketName()),
 		true);
 
 	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_launcher_spawn(
@@ -1406,5 +1354,3 @@ void SetSocketPath(const std::string &socketPath) {
 }
 
 } // namespace Webview::WebKitGTK
-
-#include "webview_linux_webkitgtk.moc"
