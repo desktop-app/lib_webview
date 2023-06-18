@@ -10,8 +10,6 @@ init_target(lib_webview)
 
 get_filename_component(src_loc . REALPATH)
 
-set_target_properties(lib_webview PROPERTIES AUTOMOC ON)
-
 nice_target_sources(lib_webview ${src_loc}
 PRIVATE
     webview/webview_dialog.cpp
@@ -25,10 +23,8 @@ PRIVATE
 
     webview/platform/linux/webview_linux.h
     webview/platform/linux/webview_linux.cpp
-    webview/platform/linux/webview_linux.qrc
     webview/platform/linux/webview_linux_compositor.cpp
     webview/platform/linux/webview_linux_compositor.h
-    webview/platform/linux/webview_linux_compositor_output.h
     webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
     webview/platform/linux/webview_linux_webkitgtk_library.cpp
     webview/platform/linux/webview_linux_webkitgtk_library.h
@@ -69,8 +65,6 @@ elseif (LINUX)
             webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
         )
 
-        find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Qml Quick QuickWidgets WaylandCompositor REQUIRED)
+        find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Quick QuickWidgets WaylandCompositor REQUIRED)
     endif()
 endif()
-
-target_prepare_qrc(lib_webview)

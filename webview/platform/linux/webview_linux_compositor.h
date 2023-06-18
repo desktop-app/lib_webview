@@ -19,8 +19,6 @@ public:
 	void setWidget(QQuickWidget *widget);
 
 private:
-	class Output;
-
 	struct Private;
 	const std::unique_ptr<Private> _private;
 };
