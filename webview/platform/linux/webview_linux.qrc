@@ -1,5 +1,0 @@
-<RCC>
-  <qresource prefix="/webview">
-    <file alias="Chrome.qml">webview_linux_chrome.qml</file>
-  </qresource>
-</RCC>

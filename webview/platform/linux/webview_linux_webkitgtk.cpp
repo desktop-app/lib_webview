@@ -20,10 +20,6 @@
 
 #include <giomm.h>
 
-inline void InitResources() {
-	Q_INIT_RESOURCE(webview_linux);
-}
-
 namespace Webview::WebKitGTK {
 namespace {
 
@@ -171,7 +167,6 @@ Instance::Instance(bool remoting)
 	if (_remoting) {
 		if ((_wayland = ProvidesQWidget())) {
 			[[maybe_unused]] static const auto Inited = [] {
-				InitResources();
 				const auto backend = Ui::GL::ChooseBackendDefault(
 					Ui::GL::CheckCapabilities(nullptr));
 				switch (backend) {
