@@ -6,8 +6,9 @@
 //
 #include "webview/platform/linux/webview_linux_compositor.h"
 
-#include "base/flat_map.h"
 #include "webview/platform/linux/webview_linux_compositor_output.h"
+#include "base/flat_map.h"
+#include "base/unique_qptr.h"
 
 #include <QtQml/QQmlEngine>
 #include <QtQuickWidgets/QQuickWidget>
@@ -23,10 +24,8 @@ struct Compositor::Private {
 
 	QQmlEngine engine;
 	QPointer<QQuickWidget> widget;
-	std::optional<Output> output;
+	base::unique_qptr<Output> output;
 	QWaylandXdgShell shell;
-	base::flat_map<QWaylandXdgSurface*, std::unique_ptr<Output>> toplevels;
-	base::flat_map<QWaylandXdgSurface*, std::unique_ptr<Output>> popups;
 };
 
 Compositor::Compositor()
@@ -35,45 +34,27 @@ Compositor::Compositor()
 			QWaylandXdgToplevel *toplevel,
 			QWaylandXdgSurface *xdgSurface) {
 		if (_private->output) {
-			const auto output = _private->toplevels.emplace(
-				xdgSurface,
-				std::make_unique<Output>(&_private->engine, this, xdgSurface)
-			).first->second.get();
+			const auto output = new Output(
+				&_private->engine,
+				this,
+				xdgSurface);
 
 			connect(output, &Output::surfaceCompleted, [=] {
 				output->window()->show();
 			});
-
-			connect(
-				xdgSurface,
-				&QObject::destroyed,
-				[=] {
-					auto it = _private->toplevels.find(xdgSurface);
-					if (it != _private->toplevels.cend()) {
-						_private->toplevels.erase(it);
-					}
-				});
 		} else if (_private->widget) {
-			_private->output.emplace(
+			_private->output = base::make_unique_q<Output>(
 				&_private->engine,
 				this,
 				xdgSurface,
 				_private->widget->quickWindow());
-
-			connect(
-				xdgSurface,
-				&QObject::destroyed,
-				[=] { _private->output.reset(); });
 		}
 	});
 
 	connect(&_private->shell, &QWaylandXdgShell::popupCreated, [=](
 			QWaylandXdgPopup *popup,
 			QWaylandXdgSurface *xdgSurface) {
-		const auto output = _private->popups.emplace(
-			xdgSurface,
-			std::make_unique<Output>(&_private->engine, this, xdgSurface)
-		).first->second.get();
+		const auto output = new Output(&_private->engine, this, xdgSurface);
 
 		connect(output, &Output::surfaceCompleted, [=] {
 			const auto parent = qvariant_cast<Output*>(
@@ -94,16 +75,6 @@ Compositor::Compositor()
 			output->quickWindow()->setColor(Qt::transparent);
 			output->window()->show();
 		});
-
-		connect(
-			xdgSurface,
-			&QObject::destroyed,
-			[=] {
-				auto it = _private->popups.find(xdgSurface);
-				if (it != _private->popups.cend()) {
-					_private->popups.erase(it);
-				}
-			});
 	});
 
 	create();

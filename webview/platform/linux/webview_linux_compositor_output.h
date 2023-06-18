@@ -24,6 +24,7 @@ public:
 			QWaylandCompositor *compositor,
 			QWaylandShellSurface *shellSurface,
 			QQuickWindow *window = nullptr) {
+		setParent(shellSurface);
 		setCompositor(compositor);
 		setWindow(window ? window : &_ownedWindow.emplace());
 		setScaleFactor(this->window()->devicePixelRatio());
