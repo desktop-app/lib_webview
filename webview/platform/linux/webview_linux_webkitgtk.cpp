@@ -8,75 +8,31 @@
 
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
-#include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/base_platform_info.h"
 #include "base/const_string.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
+#include "base/weak_ptr.h"
 #include "ui/gl/gl_detection.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtQuickWidgets/QQuickWidget>
 
-#include <giomm.h>
+#include <webview/webview.hpp>
+#include <crl/crl.h>
+#include <regex>
 
 namespace Webview::WebKitGTK {
 namespace {
 
+using namespace gi::repository;
+using namespace gi::repository::Webview;
 using namespace Library;
+namespace GObject = gi::repository::GObject;
 
-constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/WebviewHelper"_cs;
-constexpr auto kInterface = "org.desktop_app.GtkIntegration.WebviewHelper"_cs;
-
-constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
-	<interface name='org.desktop_app.GtkIntegration.WebviewHelper'>
-		<method name='Create'>
-			<arg type='b' name='debug' direction='in'/>
-		</method>
-		<method name='Reload'/>
-		<method name='Resolve'/>
-		<method name='FinishEmbedding'/>
-		<method name='Navigate'>
-			<arg type='s' name='url' direction='in'/>
-		</method>
-		<method name='ResizeToWindow'/>
-		<method name='Init'>
-			<arg type='ay' name='js' direction='in'/>
-		</method>
-		<method name='Eval'>
-			<arg type='ay' name='js' direction='in'/>
-		</method>
-		<method name='GetWinId'>
-			<arg type='t' name='result' direction='out'/>
-		</method>
-		<method name='SetWayland'/>
-		<signal name='MessageReceived'>
-			<arg type='ay' name='message' direction='out'/>
-		</signal>
-		<signal name='NavigationStarted'>
-			<arg type='s' name='uri' direction='out'/>
-			<arg type='b' name='newWindow' direction='out'/>
-		</signal>
-		<signal name='ScriptDialog'>
-			<arg type='i' name='type' direction='out'/>
-			<arg type='s' name='text' direction='out'/>
-			<arg type='s' name='value' direction='out'/>
-		</signal>
-		<signal name='NavigationDone'>
-			<arg type='b' name='success' direction='out'/>
-		</signal>
-	</interface>
-</node>)INTROSPECTION"_cs;
-
-template <typename T>
-struct GObjectDeleter {
-	void operator()(T *value) {
-		g_object_unref(value);
-	}
-};
-
-template <typename T>
-using GObjectPtr = std::unique_ptr<T, GObjectDeleter<T>>;
+constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview"_cs;
+constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master"_cs;
+constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper"_cs;
 
 std::string SocketPath;
 
@@ -84,7 +40,7 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
 
-class Instance final : public Interface {
+class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(bool remoting = true);
 	~Instance();
@@ -113,7 +69,7 @@ private:
 	bool loadFailed(
 		WebKitLoadEvent loadEvent,
 		std::string failingUri,
-		Glib::Error error);
+		GLib::Error error);
 
 	void loadChanged(WebKitLoadEvent loadEvent);
 
@@ -124,30 +80,19 @@ private:
 	bool scriptDialog(WebKitScriptDialog *dialog);
 
 	void startProcess();
-	void connectToRemoteSignals();
 
-	void handleMethodCall(
-		const Glib::RefPtr<Gio::DBus::Connection> &connection,
-		const Glib::ustring &sender,
-		const Glib::ustring &object_path,
-		const Glib::ustring &interface_name,
-		const Glib::ustring &method_name,
-		Glib::VariantContainerBase parameters,
-		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
+	void registerMasterMethodHandlers();
+	void registerHelperMethodHandlers();
 
 	bool _remoting = false;
-	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
-	const Gio::DBus::InterfaceVTable _interfaceVTable;
-	GObjectPtr<GSubprocess> _serviceProcess;
-	uint _registerId = 0;
-	uint _messageHandlerId = 0;
-	uint _navigationStartHandlerId = 0;
-	uint _navigationDoneHandlerId = 0;
-	uint _scriptDialogHandlerId = 0;
+	Master _master;
+	Helper _helper;
+	Gio::DBusObjectManagerServer _dbusObjectManager;
+	Gio::Subprocess _serviceProcess;
 
 	bool _wayland = false;
-	base::unique_qptr<QQuickWidget> _compositorWidget;
-	base::unique_qptr<Compositor> _compositor;
+	::base::unique_qptr<QQuickWidget> _compositorWidget;
+	::base::unique_qptr<Compositor> _compositor;
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
@@ -162,8 +107,7 @@ private:
 };
 
 Instance::Instance(bool remoting)
-: _remoting(remoting)
-, _interfaceVTable(sigc::mem_fun(*this, &Instance::handleMethodCall)) {
+: _remoting(remoting) {
 	if (_remoting) {
 		if ((_wayland = ProvidesQWidget())) {
 			[[maybe_unused]] static const auto Inited = [] {
@@ -189,24 +133,7 @@ Instance::Instance(bool remoting)
 
 Instance::~Instance() {
 	if (_serviceProcess) {
-		g_subprocess_send_signal(_serviceProcess.get(), SIGTERM);
-	}
-	if (_dbusConnection) {
-		if (_scriptDialogHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(_scriptDialogHandlerId);
-		}
-		if (_navigationDoneHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(_navigationDoneHandlerId);
-		}
-		if (_navigationStartHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(_navigationStartHandlerId);
-		}
-		if (_messageHandlerId != 0) {
-			_dbusConnection->signal_unsubscribe(_messageHandlerId);
-		}
-		if (_registerId != 0) {
-			_dbusConnection->unregister_object(_registerId);
-		}
+		_serviceProcess.send_signal(SIGTERM);
 	}
 	if (_webview) {
 		if (!gtk_widget_destroy) {
@@ -233,29 +160,24 @@ void Instance::create(Config config) {
 
 	if (_remoting) {
 		if (_compositor && !_compositorWidget) {
-			_compositorWidget = base::make_unique_q<QQuickWidget>(
+			_compositorWidget = ::base::make_unique_q<QQuickWidget>(
 				reinterpret_cast<QWidget*>(config.window));
 
 			_compositor->setWidget(_compositorWidget.get());
 		}
 
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		const auto loop = Glib::MainLoop::create();
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"Create",
-			base::Platform::MakeGlibVariant(std::tuple{
-				_debug,
-			}),
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				loop->quit();
-			});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_create(_debug, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-		loop->run();
+		loop.run();
 		return;
 	}
 
@@ -293,7 +215,7 @@ void Instance::create(Config config) {
 			return instance->loadFailed(
 				loadEvent,
 				failingUri,
-				Glib::Error(error));
+				GLib::Error(error));
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -369,26 +291,15 @@ void Instance::scriptMessageReceived(void *message) {
 		JSStringGetUTF8CString(js, result.data(), n);
 		JSStringRelease(js);
 	}
-	if (!_dbusConnection) {
-		return;
-	}
-	try {
-		_dbusConnection->emit_signal(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"MessageReceived",
-			{},
-			base::Platform::MakeGlibVariant(std::tuple{
-				result,
-			}));
-	} catch (...) {
+	if (_master) {
+		_master.call_message_received(result, nullptr);
 	}
 }
 
 bool Instance::loadFailed(
 		WebKitLoadEvent loadEvent,
 		std::string failingUri,
-		Glib::Error error) {
+		GLib::Error error) {
 	_loadFailed = true;
 	return false;
 }
@@ -397,19 +308,8 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 	if (loadEvent == WEBKIT_LOAD_FINISHED) {
 		const auto success = !_loadFailed;
 		_loadFailed = false;
-		if (!_dbusConnection) {
-			return;
-		}
-		try {
-			_dbusConnection->emit_signal(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"NavigationDone",
-				{},
-				base::Platform::MakeGlibVariant(std::tuple{
-					success,
-				}));
-		} catch (...) {
+		if (_master) {
+			_master.call_navigation_done(success, nullptr);
 		}
 	}
 }
@@ -435,52 +335,18 @@ bool Instance::decidePolicy(
 	}
 	const gchar *uri = webkit_uri_request_get_uri(request);
 	bool result = false;
-	if (_dbusConnection) {
-		try {
-			const auto loop = Glib::MainLoop::create();
-
-			const auto resultId = _dbusConnection->signal_subscribe(
-				[&](
-					const Glib::RefPtr<Gio::DBus::Connection> &connection,
-					const Glib::ustring &sender_name,
-					const Glib::ustring &object_path,
-					const Glib::ustring &interface_name,
-					const Glib::ustring &signal_name,
-					Glib::VariantContainerBase parameters) {
-					try {
-						result = base::Platform::GlibVariantCast<
-							bool>(parameters.get_child(0));
-					} catch (...) {
-					}
-
-					loop->quit();
-				},
-				{},
-				std::string(kInterface),
-				"NavigationStartedResult",
-				std::string(kObjectPath));
-
-			const auto resultGuard = gsl::finally([&] {
-				if (resultId != 0) {
-					_dbusConnection->signal_unsubscribe(resultId);
-				}
-			});
-
-			_dbusConnection->emit_signal(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"NavigationStarted",
-				{},
-				base::Platform::MakeGlibVariant(std::tuple{
-					Glib::ustring(uri),
-					false
-				}));
-
-			if (resultId != 0) {
-				loop->run();
+	if (_master) {
+		auto loop = GLib::MainLoop::new_();
+		_master.call_navigation_started(uri, false, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			if (const auto ret = _master.call_navigation_started_finish(
+					res)) {
+				result = std::get<1>(*ret);
 			}
-		} catch (...) {
-		}
+			loop.quit();
+		});
+		loop.run();
 	}
 	if (!result) {
 		webkit_policy_decision_ignore(decision);
@@ -491,19 +357,8 @@ bool Instance::decidePolicy(
 GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const gchar *uri = webkit_uri_request_get_uri(request);
-	if (_dbusConnection) {
-		try {
-			_dbusConnection->emit_signal(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"NavigationStarted",
-				{},
-				base::Platform::MakeGlibVariant(std::tuple{
-					Glib::ustring(uri),
-					true
-				}));
-		} catch (...) {
-		}
+	if (_master) {
+		_master.call_navigation_started(uri, true, nullptr);
 	}
 	return nullptr;
 }
@@ -515,56 +370,20 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 		? webkit_script_dialog_prompt_get_default_text(dialog)
 		: nullptr;
 	bool accepted = false;
-	Glib::ustring result;
-	if (_dbusConnection) {
-		try {
-			const auto loop = Glib::MainLoop::create();
-
-			const auto resultId = _dbusConnection->signal_subscribe(
-				[&](
-					const Glib::RefPtr<Gio::DBus::Connection> &connection,
-					const Glib::ustring &sender_name,
-					const Glib::ustring &object_path,
-					const Glib::ustring &interface_name,
-					const Glib::ustring &signal_name,
-					Glib::VariantContainerBase parameters) {
-					try {
-						accepted = base::Platform::GlibVariantCast<
-							bool>(parameters.get_child(0));
-						result = base::Platform::GlibVariantCast<
-							Glib::ustring>(parameters.get_child(1));
-					} catch (...) {
-					}
-
-					loop->quit();
-				},
-				{},
-				std::string(kInterface),
-				"ScriptDialogResult",
-				std::string(kObjectPath));
-
-			const auto resultGuard = gsl::finally([&] {
-				if (resultId != 0) {
-					_dbusConnection->signal_unsubscribe(resultId);
+	std::string result;
+	if (_master) {
+		auto loop = GLib::MainLoop::new_();
+		_master.call_script_dialog(
+			type,
+			text ? text : "",
+			value ? value : "",
+			[&](GObject::Object source_object, Gio::AsyncResult res) {
+				if (const auto ret = _master.call_script_dialog_finish(res)) {
+					std::tie(std::ignore, accepted, result) = *ret;
 				}
+				loop.quit();
 			});
-
-			_dbusConnection->emit_signal(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"ScriptDialog",
-				{},
-				base::Platform::MakeGlibVariant(std::tuple{
-					std::int32_t(type),
-					Glib::ustring(text ? text : ""),
-					Glib::ustring(value ? value : "")
-				}));
-
-			if (resultId != 0) {
-				loop->run();
-			}
-		} catch (...) {
-		}
+		loop.run();
 	}
 	if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
 		webkit_script_dialog_prompt_set_text(
@@ -578,27 +397,20 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 
 bool Instance::resolve() {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return false;
 		}
 
-		const auto loop = Glib::MainLoop::create();
+		auto loop = GLib::MainLoop::new_();
 		auto success = false;
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"Resolve",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				try {
-					_dbusConnection->call_finish(result);
-					success = true;
-				} catch (...) {
-				}
-				loop->quit();
-			});
+		_helper.call_resolve([&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			success = _helper.call_resolve_finish(res, nullptr);
+			loop.quit();
+		});
 
-		loop->run();
+		loop.run();
 		return success;
 	}
 
@@ -607,27 +419,20 @@ bool Instance::resolve() {
 
 bool Instance::finishEmbedding() {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return false;
 		}
 
-		const auto loop = Glib::MainLoop::create();
+		auto loop = GLib::MainLoop::new_();
 		auto success = false;
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"FinishEmbedding",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				try {
-					_dbusConnection->call_finish(result);
-					success = true;
-				} catch (...) {
-				}
-				loop->quit();
-			});
+		_helper.call_finish_embedding([&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			success = _helper.call_finish_embedding_finish(res, nullptr);
+			loop.quit();
+		});
 
-		loop->run();
+		loop.run();
 		if (success && _compositorWidget) {
 			_compositorWidget->show();
 		}
@@ -659,27 +464,18 @@ bool Instance::finishEmbedding() {
 
 void Instance::navigate(std::string url) {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		try {
-			const auto loop = Glib::MainLoop::create();
-			_dbusConnection->call(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Navigate",
-				base::Platform::MakeGlibVariant(std::tuple{
-					Glib::ustring(url),
-				}),
-				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-					loop->quit();
-				});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_navigate(url, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-			loop->run();
-		} catch (...) {
-		}
-
+		loop.run();
 		return;
 	}
 
@@ -688,21 +484,18 @@ void Instance::navigate(std::string url) {
 
 void Instance::reload() {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		const auto loop = Glib::MainLoop::create();
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"Reload",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				loop->quit();
-			});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_reload([&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-		loop->run();
+		loop.run();
 		return;
 	}
 
@@ -711,27 +504,18 @@ void Instance::reload() {
 
 void Instance::init(std::string js) {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		try {
-			const auto loop = Glib::MainLoop::create();
-			_dbusConnection->call(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Init",
-				base::Platform::MakeGlibVariant(std::tuple{
-					js,
-				}),
-				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-					loop->quit();
-				});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_init(js, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-			loop->run();
-		} catch (...) {
-		}
-
+		loop.run();
 		return;
 	}
 
@@ -750,27 +534,18 @@ void Instance::init(std::string js) {
 
 void Instance::eval(std::string js) {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		try {
-			const auto loop = Glib::MainLoop::create();
-			_dbusConnection->call(
-				std::string(kObjectPath),
-				std::string(kInterface),
-				"Eval",
-				base::Platform::MakeGlibVariant(std::tuple{
-					js,
-				}),
-				[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-					loop->quit();
-				});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_eval(js, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-			loop->run();
-		} catch (...) {
-		}
-
+		loop.run();
 		return;
 	}
 
@@ -800,30 +575,23 @@ void *Instance::winId() {
 			return reinterpret_cast<void*>(_compositorWidget.get());
 		}
 
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return nullptr;
 		}
 
-		const auto loop = Glib::MainLoop::create();
+		auto loop = GLib::MainLoop::new_();
 		void *ret = nullptr;
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"GetWinId",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				try {
-					auto reply = _dbusConnection->call_finish(result);
-					ret = reinterpret_cast<void*>(
-						base::Platform::GlibVariantCast<uint64>(
-							reply.get_child(0)));
-				} catch (...) {
-				}
+		_helper.call_get_win_id([&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			const auto reply = _helper.call_get_win_id_finish(res);
+			if (reply) {
+				ret = reinterpret_cast<void*>(std::get<1>(*reply));
+			}
+			loop.quit();
+		});
 
-				loop->quit();
-			});
-
-		loop->run();
+		loop.run();
 		return ret;
 	}
 
@@ -841,479 +609,434 @@ void *Instance::winId() {
 
 void Instance::resizeToWindow() {
 	if (_remoting) {
-		if (!_dbusConnection) {
+		if (!_helper) {
 			return;
 		}
 
-		const auto loop = Glib::MainLoop::create();
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"ResizeToWindow",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				loop->quit();
-			});
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_resize_to_window([&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			loop.quit();
+		});
 
-		loop->run();
+		loop.run();
 		return;
 	}
 }
 
 void Instance::startProcess() {
 	if (_wayland && !_compositor) {
-		_compositor = base::make_unique_q<Compositor>();
+		_compositor = ::base::make_unique_q<Compositor>();
 	}
 
-	const auto loop = Glib::MainLoop::create();
+	auto loop = GLib::MainLoop::new_();
 
-	const auto executablePath = base::Integration::Instance()
-		.executablePath()
-		.toUtf8();
-
-	const auto serviceLauncher = GObjectPtr<GSubprocessLauncher>(
-		g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE));
+	auto serviceLauncher = Gio::SubprocessLauncher::new_(
+		Gio::SubprocessFlags::NONE_);
 
 	if (_compositor) {
-		g_subprocess_launcher_setenv(
-			serviceLauncher.get(),
+		serviceLauncher.setenv(
 			"WAYLAND_DISPLAY",
-			qUtf8Printable(_compositor->socketName()),
+			_compositor->socketName().toStdString(),
 			true);
 	}
 
-	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_launcher_spawn(
-		serviceLauncher.get(),
-		nullptr,
-		executablePath.constData(),
+	_serviceProcess = serviceLauncher.spawnv({
+		::base::Integration::Instance().executablePath().toStdString(),
 		"-webviewhelper",
-		SocketPath.c_str(),
-		nullptr));
+		SocketPath,
+	}, nullptr);
 
 	if (!_serviceProcess) {
 		return;
 	}
 
-	const auto socketPath = [&]() -> std::string {
-		try {
-			return Glib::Regex::create("%1")->replace(
-				Glib::UStringView(SocketPath),
-				0,
-				g_subprocess_get_identifier(_serviceProcess.get()),
-				Glib::Regex::MatchFlags());
-		} catch (...) {
-			return {};
-		}
-	}();
+	const auto socketPath = std::regex_replace(
+		SocketPath,
+		std::regex("%1"),
+		_serviceProcess.get_identifier());
 
 	if (socketPath.empty()) {
 		return;
 	}
 
-	const auto socketFile = Gio::File::create_for_path(socketPath);
+	auto socketFile = Gio::File::new_for_path(socketPath);
+	socketFile.delete_(nullptr);
 
-	try {
-		socketFile->remove();
-	} catch (...) {
-	}
-
-	const auto socketMonitor = [&] {
-		try {
-			return socketFile->monitor();
-		} catch (...) {
-			return Glib::RefPtr<Gio::FileMonitor>();
-		}
-	}();
+	auto socketMonitor = socketFile.monitor(
+		Gio::FileMonitorFlags::NONE_,
+		nullptr);
 
 	if (!socketMonitor) {
 		return;
 	}
 
-	socketMonitor->signal_changed().connect([&](
-		const Glib::RefPtr<Gio::File> &file,
-		const Glib::RefPtr<Gio::File> &otherFile,
-		Gio::FileMonitor::Event eventType) {
-		if (eventType == Gio::FileMonitor::Event::CREATED) {
-			loop->quit();
+	socketMonitor.signal_changed().connect([&](
+			Gio::FileMonitor,
+			Gio::File file,
+			Gio::File otherFile,
+			Gio::FileMonitorEvent eventType) {
+		if (eventType == Gio::FileMonitorEvent::CREATED_) {
+			loop.quit();
 		}
 	});
 
 	// timeout in case something goes wrong
-	const auto timeout = Glib::TimeoutSource::create(5000);
-	timeout->connect([&] {
-		loop->quit();
-		return false;
+	const auto timeout = GLib::timeout_add_seconds_once(5, [&] {
+		loop.quit();
 	});
-	timeout->attach();
 
-	loop->run();
-	timeout->destroy();
+	loop.run();
+	GLib::Source::remove(timeout);
 
-	_dbusConnection = [&] {
-		try {
-			return Gio::DBus::Connection::create_for_address_sync(
-				SocketPathToDBusAddress(socketPath),
-				Gio::DBus::ConnectionFlags::AUTHENTICATION_CLIENT);
-		} catch (...) {
-			return Glib::RefPtr<Gio::DBus::Connection>();
-		}
-	}();
+	auto connection = Gio::DBusConnection::new_for_address_sync(
+		SocketPathToDBusAddress(socketPath),
+		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_,
+		nullptr);
 
-	if (!_dbusConnection) {
+	if (!connection) {
 		return;
 	}
 
-	_dbusConnection->emit_signal(
-		std::string(kObjectPath),
-		std::string(kInterface),
-		"AppId",
-		{},
-		base::Platform::MakeGlibVariant(std::tuple{
-			[] {
-				if (const auto app = Gio::Application::get_default()
-					; app && !app->get_id().empty()) {
-					return app->get_id();
-				}
+	_master = MasterSkeleton::new_();
+	auto object = ObjectSkeleton::new_(std::string(kMasterObjectPath));
+	object.set_master(_master);
+	_dbusObjectManager = Gio::DBusObjectManagerServer::new_(
+		std::string(kObjectPath));
+	_dbusObjectManager.export_(object);
+	_dbusObjectManager.set_connection(connection);
+	registerMasterMethodHandlers();
 
-				const auto qtAppId = Glib::ustring(
-					QGuiApplication::desktopFileName()
-						.chopped(8)
-						.toStdString());
+	HelperProxy::new_(
+		connection,
+		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+		std::string(kHelperObjectPath),
+		[&](GObject::Object source_object, Gio::AsyncResult res) {
+			_helper = HelperProxy::new_finish(res, nullptr);
+			loop.quit();
+		});
 
-				if (Gio::Application::id_is_valid(qtAppId)) {
-					return qtAppId;
-				}
+	loop.run();
 
-				return Glib::ustring();
-			}(),
-		}));
-
-	if (_wayland) {
-		_dbusConnection->call(
-			std::string(kObjectPath),
-			std::string(kInterface),
-			"SetWayland",
-			{},
-			[&](const Glib::RefPtr<Gio::AsyncResult> &result) {
-				loop->quit();
-			});
-
-		loop->run();
+	if (!_helper) {
+		return;
 	}
 
-	connectToRemoteSignals();
+	connection.signal_closed().connect(crl::guard(this, [=](
+			Gio::DBusConnection, 
+			bool remotePeerVanished,
+			GLib::Error error) {
+		startProcess();
+	}));
+
+	const auto started = _helper.signal_started().connect([&](Helper) {
+		loop.quit();
+	});
+
+	loop.run();
+	_helper.disconnect(started);
 }
 
-void Instance::connectToRemoteSignals() {
-	if (!_dbusConnection) {
+void Instance::registerMasterMethodHandlers() {
+	if (!_master) {
 		return;
 	}
 
-	_dbusConnection->signal_closed().connect([=](
-		bool remotePeerVanished,
-		const Glib::Error &error) {
-		startProcess();
+	const auto methodError = GLib::Error::new_literal(
+		Gio::DBusErrorNS_::quark(),
+		int(Gio::DBusError::UNKNOWN_METHOD_),
+		"Method does not exist.");
+
+	_master.signal_handle_get_start_data().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation) {
+		_master.complete_get_start_data(invocation, [] {
+			if (auto app = Gio::Application::get_default()
+				; app && !app.get_application_id().empty()) {
+				return app.get_application_id();
+			}
+
+			const auto qtAppId = QGuiApplication::desktopFileName()
+				.chopped(8)
+				.toStdString();
+
+			if (Gio::Application::id_is_valid(qtAppId)) {
+				return qtAppId;
+			}
+
+			return std::string();
+		}(), _wayland);
+		return true;
 	});
 
-	_messageHandlerId = _dbusConnection->signal_subscribe(
-		[=](
-			const Glib::RefPtr<Gio::DBus::Connection> &connection,
-			const Glib::ustring &sender_name,
-			const Glib::ustring &object_path,
-			const Glib::ustring &interface_name,
-			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
-			if (!_messageHandler) {
-				return;
+	_master.signal_handle_message_received().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &message) {
+		if (_messageHandler) {
+			_messageHandler(message);
+			_master.complete_message_received(invocation);
+		} else {
+			invocation.return_gerror(methodError);
+		}
+		return true;
+	});
+
+	_master.signal_handle_navigation_started().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &uri,
+			bool newWindow) {
+		if (!_navigationStartHandler) {
+			invocation.return_gerror(methodError);
+			return true;
+		}
+
+		_master.complete_navigation_started(invocation, [&] {
+			if (newWindow) {
+				if (_navigationStartHandler(uri, true)) {
+					Gio::AppInfo::launch_default_for_uri(uri);
+				}
+				return false;
 			}
+			return _navigationStartHandler(uri, false);
+		}());
 
-			try {
-				const auto message = base::Platform::GlibVariantCast<
-					std::string>(parameters.get_child(0));
+		return true;
+	});
 
-				_messageHandler(message);
-			} catch (...) {
-			}
-		},
-		{},
-		std::string(kInterface),
-		"MessageReceived",
-		std::string(kObjectPath));
+	_master.signal_handle_navigation_done().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			bool success) {
+		if (_navigationDoneHandler) {
+			_navigationDoneHandler(success);
+			_master.complete_navigation_done(invocation);
+		} else {
+			invocation.return_gerror(methodError);
+		}
+		return true;
+	});
 
-	_navigationStartHandlerId = _dbusConnection->signal_subscribe(
-		[=](
-			const Glib::RefPtr<Gio::DBus::Connection> &connection,
-			const Glib::ustring &sender_name,
-			const Glib::ustring &object_path,
-			const Glib::ustring &interface_name,
-			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
-			if (!_navigationStartHandler) {
-				return;
-			}
+	_master.signal_handle_script_dialog().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			int type,
+			const std::string &text,
+			const std::string &value) {
+		if (!_dialogHandler) {
+			invocation.return_gerror(methodError);
+			return true;
+		}
 
-			try {
-				const auto uri = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(0));
-				const auto newWindow = base::Platform::GlibVariantCast<
-					bool>(parameters.get_child(1));
-				const auto result = [&] {
-					if (newWindow) {
-						if (_navigationStartHandler(uri, true)) {
-							try {
-								Gio::AppInfo::launch_default_for_uri(uri);
-							} catch (...) {
-							}
-						}
-						return false;
-					}
-					return _navigationStartHandler(uri, false);
-				}();
+		const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
+			? DialogType::Prompt
+			: (type == WEBKIT_SCRIPT_DIALOG_ALERT)
+			? DialogType::Alert
+			: DialogType::Confirm;
 
-				_dbusConnection->emit_signal(
-					std::string(kObjectPath),
-					std::string(kInterface),
-					"NavigationStartedResult",
-					{},
-					base::Platform::MakeGlibVariant(std::tuple{
-						result,
-					}));
-			} catch (...) {
-			}
-		},
-		{},
-		std::string(kInterface),
-		"NavigationStarted",
-		std::string(kObjectPath));
+		const auto result = _dialogHandler(DialogArgs{
+			.type = dialogType,
+			.value = value,
+			.text = text,
+		});
 
-	_navigationDoneHandlerId = _dbusConnection->signal_subscribe(
-		[=](
-			const Glib::RefPtr<Gio::DBus::Connection> &connection,
-			const Glib::ustring &sender_name,
-			const Glib::ustring &object_path,
-			const Glib::ustring &interface_name,
-			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
-			if (!_navigationDoneHandler) {
-				return;
-			}
+		_master.complete_script_dialog(
+			invocation,
+			result.accepted,
+			result.text);
 
-			try {
-				const auto success = base::Platform::GlibVariantCast<
-					bool>(parameters.get_child(0));
-
-				_navigationDoneHandler(success);
-			} catch (...) {
-			}
-		},
-		{},
-		std::string(kInterface),
-		"NavigationDone",
-		std::string(kObjectPath));
-
-	_scriptDialogHandlerId = _dbusConnection->signal_subscribe(
-		[=](
-			const Glib::RefPtr<Gio::DBus::Connection> &connection,
-			const Glib::ustring &sender_name,
-			const Glib::ustring &object_path,
-			const Glib::ustring &interface_name,
-			const Glib::ustring &signal_name,
-			Glib::VariantContainerBase parameters) {
-			if (!_dialogHandler) {
-				return;
-			}
-
-			try {
-				const auto type = base::Platform::GlibVariantCast<
-					int>(parameters.get_child(0));
-				const auto text = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(1));
-				const auto value = base::Platform::GlibVariantCast<
-					Glib::ustring>(parameters.get_child(2));
-
-				const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
-					? DialogType::Prompt
-					: (type == WEBKIT_SCRIPT_DIALOG_ALERT)
-					? DialogType::Alert
-					: DialogType::Confirm;
-				const auto result = _dialogHandler(DialogArgs{
-					.type = dialogType,
-					.value = value,
-					.text = text,
-				});
-				_dbusConnection->emit_signal(
-					std::string(kObjectPath),
-					std::string(kInterface),
-					"ScriptDialogResult",
-					{},
-					base::Platform::MakeGlibVariant(std::tuple{
-						result.accepted,
-						Glib::ustring(result.text),
-					}));
-			} catch (...) {
-			}
-		},
-		{},
-		std::string(kInterface),
-		"ScriptDialog",
-		std::string(kObjectPath));
+		return true;
+	});
 }
 
 int Instance::exec() {
-	const auto app = Gio::Application::create();
-	app->set_flags(Gio::Application::Flags::NON_UNIQUE);
-	app->hold();
+	auto app = Gio::Application::new_(
+		Gio::ApplicationFlags::NON_UNIQUE_);
 
-	const auto loop = Glib::MainLoop::create();
+	app.signal_startup().connect([=](Gio::Application) {
+		_helper.emit_started();
+	});
 
-	const auto introspectionData = Gio::DBus::NodeInfo::create_for_xml(
-		std::string(kIntrospectionXML));
+	app.hold();
 
-	const auto socketPath = Glib::Regex::create("%1")->replace(
-		Glib::UStringView(SocketPath),
-		0,
-		Glib::UStringView(std::to_string(getpid())),
-		Glib::Regex::MatchFlags());
+	auto loop = GLib::MainLoop::new_();
 
-	const auto authObserver = Gio::DBus::AuthObserver::create();
-	authObserver->signal_authorize_authenticated_peer().connect([](
-		const Glib::RefPtr<const Gio::IOStream> &stream,
-		const Glib::RefPtr<const Gio::Credentials> &credentials) {
-		return credentials->get_unix_pid() == getppid();
-	}, true);
+	const auto socketPath = std::regex_replace(
+		SocketPath,
+		std::regex("%1"),
+		std::to_string(getpid()));
 
-	const auto dbusServer = Gio::DBus::Server::create_sync(
+	if (socketPath.empty()) {
+		return 1;
+	}
+
+	auto authObserver = Gio::DBusAuthObserver::new_();
+	authObserver.signal_authorize_authenticated_peer().connect([](
+			Gio::DBusAuthObserver,
+			Gio::IOStream stream,
+			Gio::Credentials credentials) {
+		return credentials.get_unix_pid(nullptr) == getppid();
+	});
+
+	auto dbusServer = Gio::DBusServer::new_sync(
 		SocketPathToDBusAddress(socketPath),
-		Gio::DBus::generate_guid(),
-		authObserver);
+		Gio::DBusServerFlags::NONE_,
+		Gio::dbus_generate_guid(),
+		authObserver,
+		{},
+		nullptr);
 
-	dbusServer->start();
+	if (!dbusServer) {
+		return 1;
+	}
 
-	auto appIdSignalId = uint(0);
-	auto newConnection = dbusServer->signal_new_connection().connect([&](
-		const Glib::RefPtr<Gio::DBus::Connection> &connection) {
-		_dbusConnection = connection;
+	dbusServer.start();
+	const auto newConnection = dbusServer.signal_new_connection().connect([&](
+			Gio::DBusServer,
+			Gio::DBusConnection connection) {
+		_helper = HelperSkeleton::new_();
+		auto object = ObjectSkeleton::new_(std::string(kHelperObjectPath));
+		object.set_helper(_helper);
+		_dbusObjectManager = Gio::DBusObjectManagerServer::new_(
+			std::string(kObjectPath));
+		_dbusObjectManager.export_(object);
+		_dbusObjectManager.set_connection(connection);
+		registerHelperMethodHandlers();
 
-		_registerId = _dbusConnection->register_object(
-			std::string(kObjectPath),
-			introspectionData->lookup_interface(),
-			_interfaceVTable);
+		MasterProxy::new_(
+			connection,
+			Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+			std::string(kMasterObjectPath),
+			[&](GObject::Object source_object, Gio::AsyncResult res) {
+				_master = MasterProxy::new_finish(res, nullptr);
+				if (!_master) {
+					std::abort();
+				}
+				_master.call_get_start_data([&](
+						GObject::Object source_object,
+						Gio::AsyncResult res) {
+					const auto settings = _master.call_get_start_data_finish(
+						res);
+					if (settings) {
+						app.set_application_id(std::get<1>(*settings));
+						_wayland = std::get<2>(*settings);
+					}
+					loop.quit();
+				});
+			});
 
-		_dbusConnection->signal_closed().connect([&](
-			bool remotePeerVanished,
-			const Glib::Error &error) {
-			app->quit();
+		connection.signal_closed().connect([&](
+				Gio::DBusConnection, 
+				bool remotePeerVanished,
+				GLib::Error error) {
+			app.quit();
 		});
 
-		appIdSignalId = _dbusConnection->signal_subscribe(
-			[&](
-				const Glib::RefPtr<Gio::DBus::Connection> &connection,
-				const Glib::ustring &sender_name,
-				const Glib::ustring &object_path,
-				const Glib::ustring &interface_name,
-				const Glib::ustring &signal_name,
-				Glib::VariantContainerBase parameters) {
-				try {
-					app->set_id(
-						base::Platform::GlibVariantCast<
-							Glib::ustring>(parameters.get_child(0)));
-				} catch (...) {
-				}
-				loop->quit();
-			},
-			{},
-			std::string(kInterface),
-			"AppId",
-			std::string(kObjectPath));
-
 		return true;
-	}, true);
+	});
 
-	loop->run();
+	loop.run();
+	dbusServer.disconnect(newConnection);
 
-	if (appIdSignalId != 0) {
-		_dbusConnection->signal_unsubscribe(appIdSignalId);
-	}
-	newConnection.disconnect();
-
-	return app->run(0, nullptr);
+	return app.run(0, nullptr);
 }
 
-void Instance::handleMethodCall(
-		const Glib::RefPtr<Gio::DBus::Connection> &connection,
-		const Glib::ustring &sender,
-		const Glib::ustring &object_path,
-		const Glib::ustring &interface_name,
-		const Glib::ustring &method_name,
-		Glib::VariantContainerBase parameters,
-		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation) {
-	try {
-		if (method_name == "Create") {
-			create({
-				.debug = base::Platform::GlibVariantCast<bool>(
-					parameters.get_child(0)),
-			});
-			invocation->return_value({});
-			return;
-		} else if (method_name == "Reload") {
-			reload();
-			invocation->return_value({});
-			return;
-		} else if (method_name == "Resolve") {
-			if (resolve()) {
-				invocation->return_value({});
-				return;
-			}
-		} else if (method_name == "FinishEmbedding") {
-			if (finishEmbedding()) {
-				invocation->return_value({});
-				return;
-			}
-		} else if (method_name == "Navigate") {
-			const auto url = base::Platform::GlibVariantCast<
-				Glib::ustring>(parameters.get_child(0));
-
-			navigate(url);
-			invocation->return_value({});
-			return;
-		} else if (method_name == "ResizeToWindow") {
-			resizeToWindow();
-			invocation->return_value({});
-			return;
-		} else if (method_name == "Init") {
-			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parameters.get_child(0));
-
-			init(js);
-			invocation->return_value({});
-			return;
-		} else if (method_name == "Eval") {
-			const auto js = base::Platform::GlibVariantCast<
-				std::string>(parameters.get_child(0));
-
-			eval(js);
-			invocation->return_value({});
-			return;
-		} else if (method_name == "GetWinId") {
-			invocation->return_value(
-				Glib::VariantContainerBase::create_tuple(
-					Glib::Variant<uint64>::create(
-						reinterpret_cast<uint64>(winId()))));
-
-			return;
-		} else if (method_name == "SetWayland") {
-			_wayland = true;
-			invocation->return_value({});
-			return;
-		}
-	} catch (...) {
+void Instance::registerHelperMethodHandlers() {
+	if (!_helper) {
+		return;
 	}
 
-	Gio::DBus::Error error(
-		Gio::DBus::Error::UNKNOWN_METHOD,
+	const auto methodError = GLib::Error::new_literal(
+		Gio::DBusErrorNS_::quark(),
+		int(Gio::DBusError::UNKNOWN_METHOD_),
 		"Method does not exist.");
 
-	invocation->return_error(error);
+	_helper.signal_handle_create().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			bool debug) {
+		create({
+			.debug = debug,
+		});
+		_helper.complete_create(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_reload().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		reload();
+		_helper.complete_reload(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_resolve().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		if (resolve()) {
+			_helper.complete_resolve(invocation);
+		} else {
+			invocation.return_gerror(methodError);
+		}
+		return true;
+	});
+
+	_helper.signal_handle_finish_embedding().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		if (finishEmbedding()) {
+			_helper.complete_finish_embedding(invocation);
+		} else {
+			invocation.return_gerror(methodError);
+		}
+		return true;
+	});
+
+	_helper.signal_handle_navigate().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &url) {
+		navigate(url);
+		_helper.complete_navigate(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_resize_to_window().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		resizeToWindow();
+		_helper.complete_resize_to_window(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_init().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &js) {
+		init(js);
+		_helper.complete_init(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_eval().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &js) {
+		eval(js);
+		_helper.complete_eval(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_get_win_id().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		_helper.complete_get_win_id(
+			invocation,
+			reinterpret_cast<uint64>(winId()));
+		return true;
+	});
 }
 
 } // namespace

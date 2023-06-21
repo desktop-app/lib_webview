@@ -1,0 +1,48 @@
+<node>
+	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
+		<method name='GetStartData'>
+			<arg type='s' name='appId' direction='out'/>
+			<arg type='b' name='wayland' direction='out'/>
+		</method>
+		<method name='MessageReceived'>
+			<arg type='ay' name='message' direction='in'/>
+		</method>
+		<method name='NavigationStarted'>
+			<arg type='s' name='uri' direction='in'/>
+			<arg type='b' name='newWindow' direction='in'/>
+			<arg type='b' name='result' direction='out'/>
+		</method>
+		<method name='ScriptDialog'>
+			<arg type='i' name='type' direction='in'/>
+			<arg type='s' name='text' direction='in'/>
+			<arg type='s' name='value' direction='in'/>
+			<arg type='b' name='accepted' direction='out'/>
+			<arg type='s' name='text' direction='out'/>
+		</method>
+		<method name='NavigationDone'>
+			<arg type='b' name='success' direction='in'/>
+		</method>
+	</interface>
+	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
+		<method name='Create'>
+			<arg type='b' name='debug' direction='in'/>
+		</method>
+		<method name='Reload'/>
+		<method name='Resolve'/>
+		<method name='FinishEmbedding'/>
+		<method name='Navigate'>
+			<arg type='s' name='url' direction='in'/>
+		</method>
+		<method name='ResizeToWindow'/>
+		<method name='Init'>
+			<arg type='ay' name='js' direction='in'/>
+		</method>
+		<method name='Eval'>
+			<arg type='ay' name='js' direction='in'/>
+		</method>
+		<method name='GetWinId'>
+			<arg type='t' name='result' direction='out'/>
+		</method>
+		<signal name='Started'/>
+	</interface>
+</node>
