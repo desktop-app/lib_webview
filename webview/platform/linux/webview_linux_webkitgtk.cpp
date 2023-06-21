@@ -929,9 +929,7 @@ void Instance::startProcess() {
 	// timeout in case something goes wrong
 	const auto timeout = Glib::TimeoutSource::create(5000);
 	timeout->connect([&] {
-		if (loop->is_running()) {
-			loop->quit();
-		}
+		loop->quit();
 		return false;
 	});
 	timeout->attach();
@@ -1179,12 +1177,10 @@ int Instance::exec() {
 		authObserver);
 
 	dbusServer->start();
-	dbusServer->signal_new_connection().connect([=](
-		const Glib::RefPtr<Gio::DBus::Connection> &connection) {
-		if (_dbusConnection) {
-			return false;
-		}
 
+	auto appIdSignalId = uint(0);
+	auto newConnection = dbusServer->signal_new_connection().connect([&](
+		const Glib::RefPtr<Gio::DBus::Connection> &connection) {
 		_dbusConnection = connection;
 
 		_registerId = _dbusConnection->register_object(
@@ -1192,19 +1188,14 @@ int Instance::exec() {
 			introspectionData->lookup_interface(),
 			_interfaceVTable);
 
-		_dbusConnection->signal_closed().connect([=](
+		_dbusConnection->signal_closed().connect([&](
 			bool remotePeerVanished,
 			const Glib::Error &error) {
 			app->quit();
 		});
 
-		if (app->is_registered()) {
-			return true;
-		}
-
-		const auto appIdSignalId = std::make_shared<uint>(0);
-		*appIdSignalId = _dbusConnection->signal_subscribe(
-			[=](
+		appIdSignalId = _dbusConnection->signal_subscribe(
+			[&](
 				const Glib::RefPtr<Gio::DBus::Connection> &connection,
 				const Glib::ustring &sender_name,
 				const Glib::ustring &object_path,
@@ -1217,11 +1208,6 @@ int Instance::exec() {
 							Glib::ustring>(parameters.get_child(0)));
 				} catch (...) {
 				}
-
-				if (*appIdSignalId != 0) {
-					_dbusConnection->signal_unsubscribe(*appIdSignalId);
-				}
-
 				loop->quit();
 			},
 			{},
@@ -1233,6 +1219,12 @@ int Instance::exec() {
 	}, true);
 
 	loop->run();
+
+	if (appIdSignalId != 0) {
+		_dbusConnection->signal_unsubscribe(appIdSignalId);
+	}
+	newConnection.disconnect();
+
 	return app->run(0, nullptr);
 }
 
