@@ -179,13 +179,13 @@ Compositor::Compositor()
 	connect(&_private->shell, &QWaylandXdgShell::toplevelCreated, [=](
 			QWaylandXdgToplevel *toplevel,
 			QWaylandXdgSurface *xdgSurface) {
-		if (_private->output) {
+		if (_private->output || !_private->widget) {
 			const auto output = new Output(this, xdgSurface);
 
 			output->chrome().surfaceCompleted() | rpl::start_with_next([=] {
 				output->window()->show();
 			}, _private->lifetime);
-		} else if (_private->widget) {
+		} else {
 			_private->output = base::make_unique_q<Output>(
 				this,
 				xdgSurface,
