@@ -181,8 +181,6 @@ Instance::Instance(bool remoting)
 				}
 				return true;
 			}();
-
-			_compositor = base::make_unique_q<Compositor>();
 		}
 
 		startProcess();
@@ -863,6 +861,10 @@ void Instance::resizeToWindow() {
 }
 
 void Instance::startProcess() {
+	if (_wayland && !_compositor) {
+		_compositor = base::make_unique_q<Compositor>();
+	}
+
 	const auto executablePath = base::Integration::Instance()
 		.executablePath()
 		.toUtf8();
@@ -870,11 +872,13 @@ void Instance::startProcess() {
 	const auto serviceLauncher = GObjectPtr<GSubprocessLauncher>(
 		g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE));
 
-	g_subprocess_launcher_setenv(
-		serviceLauncher.get(),
-		"WAYLAND_DISPLAY",
-		qUtf8Printable(_compositor->socketName()),
-		true);
+	if (_compositor) {
+		g_subprocess_launcher_setenv(
+			serviceLauncher.get(),
+			"WAYLAND_DISPLAY",
+			qUtf8Printable(_compositor->socketName()),
+			true);
+	}
 
 	_serviceProcess = GObjectPtr<GSubprocess>(g_subprocess_launcher_spawn(
 		serviceLauncher.get(),
