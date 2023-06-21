@@ -865,6 +865,8 @@ void Instance::startProcess() {
 		_compositor = base::make_unique_q<Compositor>();
 	}
 
+	const auto loop = Glib::MainLoop::create();
+
 	const auto executablePath = base::Integration::Instance()
 		.executablePath()
 		.toUtf8();
@@ -915,7 +917,6 @@ void Instance::startProcess() {
 	} catch (...) {
 	}
 
-	const auto loop = Glib::MainLoop::create();
 	const auto socketMonitor = socketFile->monitor();
 	socketMonitor->signal_changed().connect([&](
 		const Glib::RefPtr<Gio::File> &file,
@@ -977,7 +978,6 @@ void Instance::startProcess() {
 		}));
 
 	if (_wayland) {
-		const auto loop = Glib::MainLoop::create();
 		_dbusConnection->call(
 			std::string(kObjectPath),
 			std::string(kInterface),
