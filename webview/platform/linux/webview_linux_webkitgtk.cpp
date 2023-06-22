@@ -917,7 +917,18 @@ void Instance::startProcess() {
 	} catch (...) {
 	}
 
-	const auto socketMonitor = socketFile->monitor();
+	const auto socketMonitor = [&] {
+		try {
+			return socketFile->monitor();
+		} catch (...) {
+			return Glib::RefPtr<Gio::FileMonitor>();
+		}
+	}();
+
+	if (!socketMonitor) {
+		return;
+	}
+
 	socketMonitor->signal_changed().connect([&](
 		const Glib::RefPtr<Gio::File> &file,
 		const Glib::RefPtr<Gio::File> &otherFile,
