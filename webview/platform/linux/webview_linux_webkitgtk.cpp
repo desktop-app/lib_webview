@@ -45,7 +45,7 @@ public:
 	Instance(bool remoting = true);
 	~Instance();
 
-	void create(Config config);
+	bool create(Config config);
 
 	bool resolve();
 
@@ -167,22 +167,24 @@ void Instance::create(Config config) {
 		}
 
 		if (!_helper) {
-			return;
+			return false;
 		}
 
 		auto loop = GLib::MainLoop::new_();
+		auto success = false;
 		_helper.call_create(_debug, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
+			success = _helper.call_create_finish(res, nullptr);
 			loop.quit();
 		});
 
 		loop.run();
-		return;
+		return success;
 	}
 
 	if (!resolve()) {
-		return;
+		return false;
 	}
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -265,6 +267,8 @@ window.external = {
 		window.webkit.messageHandlers.external.postMessage(s);
 	}
 };)");
+
+	return true;
 }
 
 void Instance::scriptMessageReceived(void *message) {
@@ -957,10 +961,11 @@ void Instance::registerHelperMethodHandlers() {
 			Helper,
 			Gio::DBusMethodInvocation invocation,
 			bool debug) {
-		create({
-			.debug = debug,
-		});
-		_helper.complete_create(invocation);
+		if (create({ .debug = debug })) {
+			_helper.complete_create(invocation);
+		} else {
+			invocation.return_gerror(methodError);
+		}
 		return true;
 	});
 
@@ -1066,7 +1071,9 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		return nullptr;
 	}
 	auto result = std::make_unique<Instance>();
-	result->create(std::move(config));
+	if (!result->create(std::move(config))) {
+		return nullptr;
+	}
 	return result;
 }
 
