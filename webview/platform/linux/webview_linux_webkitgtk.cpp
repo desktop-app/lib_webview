@@ -151,7 +151,7 @@ Instance::~Instance() {
 	}
 }
 
-void Instance::create(Config config) {
+bool Instance::create(Config config) {
 	_debug = config.debug;
 	_messageHandler = std::move(config.messageHandler);
 	_navigationStartHandler = std::move(config.navigationStartHandler);
