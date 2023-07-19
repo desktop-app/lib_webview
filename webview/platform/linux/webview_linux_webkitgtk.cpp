@@ -9,7 +9,6 @@
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
 #include "base/platform/base_platform_info.h"
-#include "base/const_string.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
@@ -30,9 +29,9 @@ using namespace gi::repository::Webview;
 using namespace Library;
 namespace GObject = gi::repository::GObject;
 
-constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview"_cs;
-constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master"_cs;
-constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper"_cs;
+constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview";
+constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master";
+constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper";
 
 std::string SocketPath;
 
@@ -704,10 +703,9 @@ void Instance::startProcess() {
 	}
 
 	_master = MasterSkeleton::new_();
-	auto object = ObjectSkeleton::new_(std::string(kMasterObjectPath));
+	auto object = ObjectSkeleton::new_(kMasterObjectPath);
 	object.set_master(_master);
-	_dbusObjectManager = Gio::DBusObjectManagerServer::new_(
-		std::string(kObjectPath));
+	_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
 	_dbusObjectManager.export_(object);
 	_dbusObjectManager.set_connection(connection);
 	registerMasterMethodHandlers();
@@ -715,7 +713,7 @@ void Instance::startProcess() {
 	HelperProxy::new_(
 		connection,
 		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
-		std::string(kHelperObjectPath),
+		kHelperObjectPath,
 		[&](GObject::Object source_object, Gio::AsyncResult res) {
 			_helper = HelperProxy::new_finish(res, nullptr);
 			loop.quit();
@@ -900,10 +898,9 @@ int Instance::exec() {
 			Gio::DBusServer,
 			Gio::DBusConnection connection) {
 		_helper = HelperSkeleton::new_();
-		auto object = ObjectSkeleton::new_(std::string(kHelperObjectPath));
+		auto object = ObjectSkeleton::new_(kHelperObjectPath);
 		object.set_helper(_helper);
-		_dbusObjectManager = Gio::DBusObjectManagerServer::new_(
-			std::string(kObjectPath));
+		_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
 		_dbusObjectManager.export_(object);
 		_dbusObjectManager.set_connection(connection);
 		registerHelperMethodHandlers();
@@ -911,7 +908,7 @@ int Instance::exec() {
 		MasterProxy::new_(
 			connection,
 			Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
-			std::string(kMasterObjectPath),
+			kMasterObjectPath,
 			[&](GObject::Object source_object, Gio::AsyncResult res) {
 				_master = MasterProxy::new_finish(res, nullptr);
 				if (!_master) {
