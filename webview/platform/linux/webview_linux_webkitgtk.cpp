@@ -658,7 +658,7 @@ void Instance::startProcess() {
 	const auto socketPath = std::regex_replace(
 		SocketPath,
 		std::regex("%1"),
-		_serviceProcess.get_identifier());
+		_serviceProcess.get_identifier().value_or(""));
 
 	if (socketPath.empty()) {
 		return;
@@ -754,9 +754,10 @@ void Instance::registerMasterMethodHandlers() {
 			Master,
 			Gio::DBusMethodInvocation invocation) {
 		_master.complete_get_start_data(invocation, [] {
-			if (auto app = Gio::Application::get_default()
-				; app && !app.get_application_id().empty()) {
-				return app.get_application_id();
+			if (auto app = Gio::Application::get_default()) {
+				if (const auto appId = app.get_application_id()) {
+					return *appId;
+				}
 			}
 
 			const auto qtAppId = QGuiApplication::desktopFileName()
