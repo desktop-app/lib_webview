@@ -9,10 +9,7 @@
 namespace Webview::WebKitGTK {
 
 Available Availability() {
-	return Available{
-		.error = Available::Error::NoWebKitGTK,
-		.details = "This feature was disabled at build time.",
-	};
+	return Available{};
 }
 
 bool ProvidesQWidget() {
