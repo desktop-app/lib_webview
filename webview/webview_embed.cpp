@@ -6,8 +6,10 @@
 //
 #include "webview/webview_embed.h"
 
-#include "webview/webview_interface.h"
+#include "webview/webview_data_stream.h"
 #include "webview/webview_dialog.h"
+#include "webview/webview_interface.h"
+#include "base/debug_log.h"
 #include "base/event_filter.h"
 #include "base/options.h"
 #include "base/invoke_queued.h"
@@ -95,6 +97,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 			.navigationStartHandler = navigationStartHandler(),
 			.navigationDoneHandler = navigationDoneHandler(),
 			.dialogHandler = dialogHandler(),
+			.dataRequestHandler = dataRequestHandler(),
 			.userDataPath = config.userDataPath.toStdString(),
 			.debug = OptionWebviewDebugEnabled.value(),
 		});
@@ -180,6 +183,12 @@ void Window::navigate(const QString &url) {
 	_webview->navigate(url.toStdString());
 }
 
+void Window::navigateToData(const QString &id) {
+	Expects(_webview != nullptr);
+
+	_webview->navigateToData(id.toStdString());
+}
+
 void Window::reload() {
 	Expects(_webview != nullptr);
 
@@ -246,6 +255,10 @@ void Window::setDialogHandler(Fn<DialogResult(DialogArgs)> handler) {
 	_dialogHandler = handler ? handler : DefaultDialogHandler;
 }
 
+void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
+	_dataRequestHandler = std::move(handler);
+}
+
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
@@ -285,6 +298,62 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 		}
 		return result;
 	};
+}
+
+Fn<DataResult(DataRequest)> Window::dataRequestHandler() const {
+	return [=](DataRequest request) {
+		return _dataRequestHandler
+			? _dataRequestHandler(std::move(request))
+			: DataResult::Failed;
+	};
+}
+
+void ParseRangeHeaderFor(DataRequest &request, std::string_view header) {
+	const auto unsupported = [&] {
+		LOG(("Unsupported range header: ")
+			+ QString::fromUtf8(header.data(), header.size()));
+	};
+	if (header.compare(0, 6, "bytes=")) {
+		return unsupported();
+	}
+	const auto range = std::string_view(header).substr(6);
+	const auto separator = range.find('-');
+	if (separator == range.npos) {
+		return unsupported();
+	}
+	const auto startFrom = range.data();
+	const auto startTill = startFrom + separator;
+	const auto finishFrom = startTill + 1;
+	const auto finishTill = startFrom + range.size();
+	if (finishTill > finishFrom) {
+		const auto done = std::from_chars(
+			finishFrom,
+			finishTill,
+			request.limit);
+		if (done.ec != std::errc() || done.ptr != finishTill) {
+			request.limit = 0;
+			return unsupported();
+		}
+		request.limit += 1; // 0-499 means first 500 bytes.
+	} else {
+		request.limit = -1;
+	}
+	if (startTill > startFrom) {
+		const auto done = std::from_chars(
+			startFrom,
+			startTill,
+			request.offset);
+		if (done.ec != std::errc() || done.ptr != startTill) {
+			request.offset = request.limit = 0;
+			return unsupported();
+		} else if (request.limit > 0) {
+			request.limit -= request.offset;
+			if (request.limit <= 0) {
+				request.offset = request.limit = 0;
+				return unsupported();
+			}
+		}
+	}
 }
 
 } // namespace Webview

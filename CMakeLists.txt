@@ -12,6 +12,9 @@ get_filename_component(src_loc . REALPATH)
 
 nice_target_sources(lib_webview ${src_loc}
 PRIVATE
+    webview/webview_data_stream.h
+    webview/webview_data_stream_memory.cpp
+    webview/webview_data_stream_memory.h
     webview/webview_dialog.cpp
     webview/webview_dialog.h
     webview/webview_embed.cpp
@@ -33,6 +36,8 @@ PRIVATE
 
     webview/platform/win/webview_win.cpp
     webview/platform/win/webview_win.h
+    webview/platform/win/webview_windows_data_stream.cpp
+    webview/platform/win/webview_windows_data_stream.h
     webview/platform/win/webview_windows_edge_chromium.cpp
     webview/platform/win/webview_windows_edge_chromium.h
     webview/platform/win/webview_windows_edge_html.cpp

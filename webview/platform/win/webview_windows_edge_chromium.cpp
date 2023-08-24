@@ -6,7 +6,11 @@
 //
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 
+#include "webview/webview_data_stream.h"
+#include "webview/platform/win/webview_windows_data_stream.h"
 #include "base/basic_types.h"
+#include "base/flat_map.h"
+#include "base/weak_ptr.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_co_task_mem.h"
 #include "base/platform/win/base_windows_winrt.h"
@@ -14,6 +18,8 @@
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
+
+#include <crl/common/crl_common_on_main_guarded.h>
 
 #include <string>
 #include <locale>
@@ -23,6 +29,9 @@
 
 namespace Webview::EdgeChromium {
 namespace {
+
+constexpr auto kDataUrlPrefix
+	= std::string_view("http://desktop-app-resource/");
 
 [[nodiscard]] std::wstring ToWide(std::string_view string) {
 	const auto length = MultiByteToWideChar(
@@ -78,7 +87,9 @@ class Handler final
 	, public ICoreWebView2NavigationStartingEventHandler
 	, public ICoreWebView2NavigationCompletedEventHandler
 	, public ICoreWebView2NewWindowRequestedEventHandler
-	, public ICoreWebView2ScriptDialogOpeningEventHandler {
+	, public ICoreWebView2ScriptDialogOpeningEventHandler
+	, public ICoreWebView2WebResourceRequestedEventHandler
+	, public base::has_weak_ptr {
 
 public:
 	Handler(Config config, std::function<void()> readyHandler);
@@ -125,6 +136,9 @@ public:
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2ScriptDialogOpeningEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2WebResourceRequestedEventArgs *args) override;
 
 private:
 	HWND _window = nullptr;
@@ -135,7 +149,11 @@ private:
 	std::function<bool(std::string, bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
+	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	std::function<void()> _readyHandler;
+	base::flat_map<
+		winrt::com_ptr<ICoreWebView2WebResourceRequestedEventArgs>,
+		winrt::com_ptr<ICoreWebView2Deferral>> _pending;
 
 	QColor _opaqueBg;
 	bool _debug = false;
@@ -147,6 +165,7 @@ Handler::Handler(Config config, std::function<void()> readyHandler)
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler))
 , _dialogHandler(std::move(config.dialogHandler))
+, _dataRequestHandler(std::move(config.dataRequestHandler))
 , _readyHandler(std::move(readyHandler))
 , _opaqueBg(config.opaqueBg)
 , _debug(config.debug) {
@@ -216,9 +235,17 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_webview->add_NavigationCompleted(this, &token);
 	_webview->add_NewWindowRequested(this, &token);
 	_webview->add_ScriptDialogOpening(this, &token);
+	_webview->add_WebResourceRequested(this, &token);
+
+	auto hr = _webview->AddWebResourceRequestedFilter(
+		L"http://desktop-app-resource/*",
+		COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+	if (hr != S_OK) {
+		return E_FAIL;
+	}
 
 	auto settings = winrt::com_ptr<ICoreWebView2Settings>();
-	auto hr = _webview->get_Settings(settings.put());
+	hr = _webview->get_Settings(settings.put());
 	if (hr != S_OK || !settings) {
 		return E_FAIL;
 	}
@@ -357,6 +384,140 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	return S_OK;
 }
 
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2WebResourceRequestedEventArgs *args) {
+	auto request = winrt::com_ptr<ICoreWebView2WebResourceRequest>();
+	auto hr = args->get_Request(request.put());
+	if (hr != S_OK || !request) {
+		return S_OK;
+	}
+	auto uri = base::CoTaskMemString();
+	hr = request->get_Uri(uri.put());
+	if (hr != S_OK || !uri) {
+		return S_OK;
+	}
+	auto headers = winrt::com_ptr<ICoreWebView2HttpRequestHeaders>();
+	hr = request->get_Headers(headers.put());
+	if (hr != S_OK || !headers) {
+		return S_OK;
+	}
+	winrt::com_ptr<ICoreWebView2HttpHeadersCollectionIterator> iterator;
+	hr = headers->GetIterator(iterator.put());
+	if (hr != S_OK || !iterator) {
+		return S_OK;
+	}
+	const auto ansi = FromWide(uri);
+	const auto prefix = kDataUrlPrefix.size();
+	if (ansi.size() <= prefix || ansi.compare(0, prefix, kDataUrlPrefix)) {
+		return S_OK;
+	}
+
+	constexpr auto fail = [](
+			ICoreWebView2Environment *environment,
+			ICoreWebView2WebResourceRequestedEventArgs *args) {
+		auto response = winrt::com_ptr<ICoreWebView2WebResourceResponse>();
+		auto hr = environment->CreateWebResourceResponse(
+			nullptr,
+			404,
+			L"Not Found",
+			L"",
+			response.put());
+		if (hr == S_OK && response) {
+			args->put_Response(response.get());
+		}
+		return S_OK;
+	};
+	constexpr auto done = [](
+			ICoreWebView2Environment *environment,
+			ICoreWebView2WebResourceRequestedEventArgs *args,
+			DataResponse resolved) {
+		auto &stream = resolved.stream;
+		if (!stream) {
+			return fail(environment, args);
+		}
+		const auto length = stream->size();
+		const auto offset = resolved.streamOffset;
+		const auto total = resolved.totalSize ? resolved.totalSize : length;
+		const auto partial = (offset > 0) || (total != length);
+		auto headers = L""
+			L"Content-Type: " + ToWide(stream->mime()) +
+			L"\nAccess-Control-Allow-Origin: *"
+			L"\nAccept-Ranges: bytes"
+			L"\nCache-Control: no-store"
+			L"\nContent-Length: " + std::to_wstring(length);
+		if (partial) {
+			headers += L"\nContent-Range: bytes "
+				+ std::to_wstring(offset)
+				+ L'-'
+				+ std::to_wstring(offset + length - 1)
+				+ L'/'
+				+ std::to_wstring(total);
+		}
+		auto response = winrt::com_ptr<ICoreWebView2WebResourceResponse>();
+		auto hr = environment->CreateWebResourceResponse(
+			Microsoft::WRL::Make<DataStreamCOM>(std::move(stream)).Detach(),
+			partial ? 206 : 200,
+			partial ? L"Partial Content" : L"OK",
+			headers.c_str(),
+			response.put());
+		if (hr == S_OK && response) {
+			args->put_Response(response.get());
+		}
+		return S_OK;
+	};
+	const auto callback = crl::guard(this, [=](DataResponse response) {
+		done(_environment.get(), args, std::move(response));
+		auto copy = winrt::com_ptr<ICoreWebView2WebResourceRequestedEventArgs>();
+		copy.copy_from(args);
+		if (const auto deferral = _pending.take(copy)) {
+			(*deferral)->Complete();
+		}
+	});
+	auto prepared = DataRequest{
+		.id = ansi.substr(prefix),
+		.done = std::move(callback),
+	};
+	while (true) {
+		auto hasCurrent = BOOL();
+		hr = iterator->get_HasCurrentHeader(&hasCurrent);
+		if (hr != S_OK || !hasCurrent) {
+			break;
+		}
+		auto name = base::CoTaskMemString();
+		auto value = base::CoTaskMemString();
+		hr = iterator->GetCurrentHeader(name.put(), value.put());
+		if (hr != S_OK || !name || !value) {
+			break;
+		} else if (FromWide(name) == "Range") {
+			const auto data = FromWide(value);
+			ParseRangeHeaderFor(prepared, FromWide(value));
+		}
+		auto hasNext = BOOL();
+		hr = iterator->MoveNext(&hasNext);
+		if (hr != S_OK || !hasNext) {
+			break;
+		}
+	}
+
+	const auto result = _dataRequestHandler
+		? _dataRequestHandler(prepared)
+		: DataResult::Failed;
+	if (result == DataResult::Failed) {
+		return fail(_environment.get(), args);
+	} else if (result == DataResult::Pending) {
+		auto deferral = winrt::com_ptr<ICoreWebView2Deferral>();
+		hr = args->GetDeferral(deferral.put());
+		if (hr != S_OK || !deferral) {
+			return fail(_environment.get(), args);
+		}
+		auto copy = winrt::com_ptr<ICoreWebView2WebResourceRequestedEventArgs>();
+		copy.copy_from(args);
+		_pending.emplace(std::move(copy), std::move(deferral));
+	}
+	return S_OK;
+}
+
 class Instance final : public Interface {
 public:
 	Instance(void *window, std::unique_ptr<Handler> handler);
@@ -365,6 +526,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void navigateToData(std::string id) override;
 	void reload() override;
 
 	void resizeToWindow() override;
@@ -401,6 +563,14 @@ bool Instance::finishEmbedding() {
 void Instance::navigate(std::string url) {
 	const auto wide = ToWide(url);
 	_handler->webview()->Navigate(wide.c_str());
+}
+
+void Instance::navigateToData(std::string id) {
+	auto full = std::string();
+	full.reserve(kDataUrlPrefix.size() + id.size());
+	full.append(kDataUrlPrefix);
+	full.append(id);
+	navigate(full);
 }
 
 void Instance::reload() {
@@ -458,6 +628,7 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		winrt::take_ownership_from_abi);
 	options->put_AdditionalBrowserArguments(
 		L"--disable-features=ElasticOverscroll");
+
 	const auto event = CreateEvent(nullptr, false, false, nullptr);
 	const auto guard = gsl::finally([&] { CloseHandle(event); });
 	auto handler = std::make_unique<Handler>(config, [&] {
