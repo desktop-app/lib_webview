@@ -9,7 +9,7 @@
 #include "webview/webview_interface.h"
 #include "ui/widgets/separate_panel.h"
 #include "ui/widgets/labels.h"
-#include "ui/widgets/input_fields.h"
+#include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/integration.h"
@@ -191,7 +191,8 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 				result.value = input->getLastText();
 				raw->hideGetDuration();
 			};
-			QObject::connect(input, &Ui::InputField::submitted, submitted);
+			input->submits(
+			) | rpl::start_with_next(submitted, input->lifetime());
 		}
 		container->events(
 		) | rpl::start_with_next([=](not_null<QEvent*> event) {
