@@ -7,6 +7,9 @@
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 
 #include "base/basic_types.h"
+#include "base/platform/base_platform_info.h"
+#include "base/platform/win/base_windows_co_task_mem.h"
+#include "base/platform/win/base_windows_winrt.h"
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
@@ -14,7 +17,8 @@
 #include <string>
 #include <locale>
 #include <shlwapi.h>
-#include <webview2.h>
+#include <WebView2.h>
+#include <WebView2EnvironmentOptions.h>
 
 namespace Webview::EdgeChromium {
 namespace {
@@ -61,6 +65,10 @@ namespace {
 	return result;
 }
 
+[[nodiscard]] std::string FromWide(const base::CoTaskMemString &string) {
+	return string ? FromWide(string.data()) : std::string();
+}
+
 class Handler final
 	: public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
 	, public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
@@ -72,9 +80,22 @@ class Handler final
 	, public ICoreWebView2ScriptDialogOpeningEventHandler {
 
 public:
-	Handler(
-		Config config,
-		std::function<void(ICoreWebView2Controller*)> readyHandler);
+	Handler(Config config, std::function<void()> readyHandler);
+
+	const winrt::com_ptr<ICoreWebView2Environment> &environment() const {
+		return _environment;
+	}
+	const winrt::com_ptr<ICoreWebView2Controller> &controller() const {
+		return _controller;
+	}
+	const winrt::com_ptr<ICoreWebView2> &webview() const {
+		return _webview;
+	}
+	[[nodiscard]] bool valid() const {
+		return _environment && _controller && _webview;
+	}
+
+	void setOpaqueBg(QColor opaqueBg);
 
 	ULONG STDMETHODCALLTYPE AddRef();
 	ULONG STDMETHODCALLTYPE Release();
@@ -106,23 +127,42 @@ public:
 
 private:
 	HWND _window = nullptr;
+	winrt::com_ptr<ICoreWebView2Environment> _environment;
+	winrt::com_ptr<ICoreWebView2Controller> _controller;
+	winrt::com_ptr<ICoreWebView2> _webview;
 	std::function<void(std::string)> _messageHandler;
 	std::function<bool(std::string, bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
-	std::function<void(ICoreWebView2Controller*)> _readyHandler;
+	std::function<void()> _readyHandler;
 
+	QColor _opaqueBg;
+	bool _debug = false;
 };
 
-Handler::Handler(
-	Config config,
-	std::function<void(ICoreWebView2Controller*)> readyHandler)
+Handler::Handler(Config config, std::function<void()> readyHandler)
 : _window(static_cast<HWND>(config.window))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler))
 , _dialogHandler(std::move(config.dialogHandler))
-, _readyHandler(std::move(readyHandler)) {
+, _readyHandler(std::move(readyHandler))
+, _opaqueBg(config.opaqueBg)
+, _debug(config.debug) {
+}
+
+void Handler::setOpaqueBg(QColor opaqueBg) {
+	if (Platform::IsWindows10OrGreater()) {
+		opaqueBg = QColor(255, 255, 255, 0);
+	}
+	if (const auto late = _controller.try_as<ICoreWebView2Controller2>()) {
+		late->put_DefaultBackgroundColor({
+			uchar(opaqueBg.alpha()),
+			uchar(opaqueBg.red()),
+			uchar(opaqueBg.green()),
+			uchar(opaqueBg.blue())
+		});
+	}
 }
 
 ULONG STDMETHODCALLTYPE Handler::AddRef() {
@@ -140,10 +180,11 @@ HRESULT STDMETHODCALLTYPE Handler::QueryInterface(REFIID riid, LPVOID *ppv) {
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Environment *env) {
-	if (!env) {
-		return S_FALSE;
+	_environment.copy_from(env);
+	if (!_environment) {
+		return E_FAIL;
 	}
-	env->CreateCoreWebView2Controller(_window, this);
+	_environment->CreateCoreWebView2Controller(_window, this);
 	return S_OK;
 }
 
@@ -151,44 +192,55 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Controller *controller) {
 	if (!_readyHandler) {
-		return S_FALSE;
+		return S_OK;
 	}
+	_controller.copy_from(controller);
 	const auto guard = gsl::finally([&] {
-		const auto ready = _readyHandler;
+		const auto onstack = _readyHandler;
 		_readyHandler = nullptr;
-		ready(controller);
+		onstack();
 	});
-	if (!controller) {
-		return S_FALSE;
+	if (!_controller) {
+		return E_FAIL;
 	}
 
-	auto webview = (ICoreWebView2*)nullptr;
-	controller->get_CoreWebView2(&webview);
-	if (!webview) {
-		return S_FALSE;
+	_controller->get_CoreWebView2(_webview.put());
+	if (!_webview) {
+		return E_FAIL;
 	}
 	auto token = ::EventRegistrationToken();
-	webview->add_WebMessageReceived(this, &token);
-	webview->add_PermissionRequested(this, &token);
-	webview->add_NavigationStarting(this, &token);
-	webview->add_NavigationCompleted(this, &token);
-	webview->add_NewWindowRequested(this, &token);
-	webview->add_ScriptDialogOpening(this, &token);
+	_webview->add_WebMessageReceived(this, &token);
+	_webview->add_PermissionRequested(this, &token);
+	_webview->add_NavigationStarting(this, &token);
+	_webview->add_NavigationCompleted(this, &token);
+	_webview->add_NewWindowRequested(this, &token);
+	_webview->add_ScriptDialogOpening(this, &token);
+
+	auto settings = winrt::com_ptr<ICoreWebView2Settings>();
+	auto hr = _webview->get_Settings(settings.put());
+	if (hr != S_OK || !settings) {
+		return E_FAIL;
+	}
+	settings->put_AreDefaultContextMenusEnabled(_debug);
+	settings->put_AreDevToolsEnabled(_debug);
+	settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+	settings->put_IsStatusBarEnabled(FALSE);
+
+	setOpaqueBg(_opaqueBg);
+
 	return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2WebMessageReceivedEventArgs *args) {
-	auto message = LPWSTR{};
-	const auto result = args->TryGetWebMessageAsString(&message);
+	auto message = base::CoTaskMemString();
+	const auto result = args->TryGetWebMessageAsString(message.put());
 
 	if (result == S_OK && message) {
 		_messageHandler(FromWide(message));
-		sender->PostWebMessageAsString(message);
+		sender->PostWebMessageAsString(message.data());
 	}
-
-	CoTaskMemFree(message);
 	return S_OK;
 }
 
@@ -208,16 +260,15 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2NavigationStartingEventArgs *args) {
-	auto uri = LPWSTR{};
-	const auto result = args->get_Uri(&uri);
+	auto uri = base::CoTaskMemString();
+	const auto result = args->get_Uri(uri.put());
 
 	if (result == S_OK && uri) {
-		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri), false)) {
+		if (_navigationStartHandler
+			&& !_navigationStartHandler(FromWide(uri), false)) {
 			args->put_Cancel(TRUE);
 		}
 	}
-
-	CoTaskMemFree(uri);
 	return S_OK;
 }
 
@@ -237,8 +288,8 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2NewWindowRequestedEventArgs *args) {
-	auto uri = LPWSTR{};
-	const auto result = args->get_Uri(&uri);
+	auto uri = base::CoTaskMemString();
+	const auto result = args->get_Uri(uri.put());
 	auto isUserInitiated = BOOL{};
 	args->get_IsUserInitiated(&isUserInitiated);
 	args->put_Handled(TRUE);
@@ -249,8 +300,6 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 			QDesktopServices::openUrl(QString::fromStdString(url));
 		}
 	}
-
-	CoTaskMemFree(uri);
 	return S_OK;
 }
 
@@ -263,26 +312,21 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		return S_OK;
 	}
 
-	auto uri = LPWSTR{};
-	hr = args->get_Uri(&uri);
+	auto uri = base::CoTaskMemString();
+	auto text = base::CoTaskMemString();
+	auto value = base::CoTaskMemString();
+	hr = args->get_Uri(uri.put());
 	if (hr != S_OK || !uri) {
 		return S_OK;
 	}
-	const auto uriGuard = gsl::finally([&] { CoTaskMemFree(uri); });
-
-	auto text = LPWSTR{};
-	hr = args->get_Message(&text);
+	hr = args->get_Message(text.put());
 	if (hr != S_OK || !text) {
 		return S_OK;
 	}
-	const auto textGuard = gsl::finally([&] { CoTaskMemFree(text); });
-
-	auto value = LPWSTR{};
-	hr = args->get_DefaultText(&value);
+	hr = args->get_DefaultText(value.put());
 	if (hr != S_OK || !value) {
 		return S_OK;
 	}
-	const auto valueGuard = gsl::finally([&] { CoTaskMemFree(value); });
 
 	const auto type = [&] {
 		switch (kind) {
@@ -314,11 +358,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 
 class Instance final : public Interface {
 public:
-	Instance(
-		void *window,
-		ICoreWebView2Controller *controller,
-		ICoreWebView2 *webview,
-		std::unique_ptr<Handler> handler);
+	Instance(void *window, std::unique_ptr<Handler> handler);
 	~Instance();
 
 	bool finishEmbedding() override;
@@ -333,64 +373,62 @@ public:
 
 	void *winId() override;
 
+	void setOpaqueBg(QColor opaqueBg) override;
+
 private:
 	HWND _window = nullptr;
-	ICoreWebView2Controller *_controller = nullptr;
-	ICoreWebView2 *_webview = nullptr;
 	std::unique_ptr<Handler> _handler;
 
 };
 
-Instance::Instance(
-	void *window,
-	ICoreWebView2Controller *controller,
-	ICoreWebView2 *webview,
-	std::unique_ptr<Handler> handler)
+Instance::Instance(void *window, std::unique_ptr<Handler> handler)
 : _window(static_cast<HWND>(window))
-, _controller(controller)
-, _webview(webview)
 , _handler(std::move(handler)) {
 	init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}");
 }
 
 Instance::~Instance() {
 	CoUninitialize();
-	_webview->Release();
-	_controller->Release();
 }
 
 bool Instance::finishEmbedding() {
-	_controller->put_IsVisible(TRUE);
+	_handler->controller()->put_IsVisible(TRUE);
 	return true;
 }
 
 void Instance::navigate(std::string url) {
 	const auto wide = ToWide(url);
-	_webview->Navigate(wide.c_str());
+	_handler->webview()->Navigate(wide.c_str());
 }
 
 void Instance::reload() {
-	_webview->Reload();
+	_handler->webview()->Reload();
 }
 
 void Instance::resizeToWindow() {
 	auto bounds = RECT{};
 	GetClientRect(_window, &bounds);
-	_controller->put_Bounds(bounds);
+	_handler->controller()->put_Bounds(bounds);
 }
 
 void Instance::init(std::string js) {
 	const auto wide = ToWide(js);
-	_webview->AddScriptToExecuteOnDocumentCreated(wide.c_str(), nullptr);
+	_handler->webview()->AddScriptToExecuteOnDocumentCreated(
+		wide.c_str(),
+		nullptr);
 }
 
 void Instance::eval(std::string js) {
 	const auto wide = ToWide(js);
-	_webview->ExecuteScript(wide.c_str(), nullptr);
+	_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
 }
 
 void *Instance::winId() {
 	return nullptr;
+}
+
+void Instance::setOpaqueBg(QColor opaqueBg) {
+	_handler->setOpaqueBg(opaqueBg);
 }
 
 } // namespace
@@ -409,40 +447,21 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	}
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-	auto controller = (ICoreWebView2Controller*)nullptr;
-	auto webview = (ICoreWebView2*)nullptr;
+	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
+		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
+		winrt::take_ownership_from_abi);
+	options->put_AdditionalBrowserArguments(
+		L"--disable-features=ElasticOverscroll");
 	const auto event = CreateEvent(nullptr, false, false, nullptr);
 	const auto guard = gsl::finally([&] { CloseHandle(event); });
-	const auto debug = config.debug;
-	const auto ready = [&](ICoreWebView2Controller *created) {
-		const auto guard = gsl::finally([&] { SetEvent(event); });
-		controller = created;
-		if (!controller) {
-			return;
-		}
-		controller->get_CoreWebView2(&webview);
-		if (!webview) {
-			return;
-		}
-		auto settings = (ICoreWebView2Settings*)nullptr;
-		const auto result = webview->get_Settings(&settings);
-		if (result != S_OK || !settings) {
-			return;
-		}
-		settings->put_AreDefaultContextMenusEnabled(debug);
-		settings->put_AreDevToolsEnabled(debug);
-		settings->put_AreDefaultScriptDialogsEnabled(FALSE);
-		settings->put_IsStatusBarEnabled(FALSE);
-
-		controller->AddRef();
-		webview->AddRef();
-	};
-	auto handler = std::make_unique<Handler>(config, ready);
+	auto handler = std::make_unique<Handler>(config, [&] {
+		SetEvent(event);
+	});
 	const auto wpath = ToWide(config.userDataPath);
 	const auto result = CreateCoreWebView2EnvironmentWithOptions(
 		nullptr,
 		wpath.empty() ? nullptr : wpath.c_str(),
-		nullptr,
+		options.get(),
 		handler.get());
 	if (result != S_OK) {
 		CoUninitialize();
@@ -455,15 +474,11 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		COWAIT_INPUTAVAILABLE;
 	CoWaitForMultipleHandles(flags, INFINITE, 1, handles, &index);
 
-	if (!controller || !webview) {
+	if (!handler->valid()) {
 		CoUninitialize();
 		return nullptr;
 	}
-	return std::make_unique<Instance>(
-		config.window,
-		controller,
-		webview,
-		std::move(handler));
+	return std::make_unique<Instance>(config.window, std::move(handler));
 }
 
 } // namespace Webview::EdgeChromium

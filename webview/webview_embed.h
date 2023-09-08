@@ -9,6 +9,8 @@
 #include "base/unique_qptr.h"
 #include "base/basic_types.h"
 
+#include <QColor>
+
 class QString;
 class QWidget;
 class QWindow;
@@ -23,6 +25,7 @@ class Interface;
 struct Config;
 
 struct WindowConfig {
+	QColor opaqueBg;
 	QString userDataPath;
 };
 
@@ -39,6 +42,7 @@ public:
 	}
 
 	void updateTheme(
+		QColor opaqueBg,
 		QColor scrollBg,
 		QColor scrollBgOver,
 		QColor scrollBarBg,

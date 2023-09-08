@@ -54,7 +54,8 @@ bool Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_get_message)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_confirm_set_confirmed)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_get_default_text)
-		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_set_text);
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_set_text)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_background_color);
 	if (!result) {
 		return false;
 	}

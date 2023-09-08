@@ -26,6 +26,10 @@
 	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
 		<method name='Create'>
 			<arg type='b' name='debug' direction='in'/>
+			<arg type='i' name='r' direction='in'/>
+			<arg type='i' name='g' direction='in'/>
+			<arg type='i' name='b' direction='in'/>
+			<arg type='i' name='a' direction='in'/>
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'/>
@@ -39,6 +43,12 @@
 		</method>
 		<method name='Eval'>
 			<arg type='ay' name='js' direction='in'/>
+		</method>
+		<method name='SetOpaqueBg'>
+			<arg type='i' name='r' direction='in'/>
+			<arg type='i' name='g' direction='in'/>
+			<arg type='i' name='b' direction='in'/>
+			<arg type='i' name='a' direction='in'/>
 		</method>
 		<method name='GetWinId'>
 			<arg type='t' name='result' direction='out'/>

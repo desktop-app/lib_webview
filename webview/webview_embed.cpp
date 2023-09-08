@@ -94,6 +94,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 			.window = _providesQWidget
 				? (void*)parent
 				: (_window ? (void*)_window->winId() : nullptr),
+			.opaqueBg = config.opaqueBg,
 			.messageHandler = messageHandler(),
 			.navigationStartHandler = navigationStartHandler(),
 			.navigationDoneHandler = navigationDoneHandler(),
@@ -125,6 +126,7 @@ bool Window::finishWebviewEmbedding() {
 }
 
 void Window::updateTheme(
+		QColor opaqueBg,
 		QColor scrollBg,
 		QColor scrollBgOver,
 		QColor scrollBarBg,
@@ -171,6 +173,7 @@ function() {
 		+ function
 		+ ", false);");
 	_webview->eval("(" + function + "());");
+	_webview->setOpaqueBg(opaqueBg);
 }
 
 void Window::navigate(const QString &url) {

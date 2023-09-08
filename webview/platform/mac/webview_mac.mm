@@ -184,6 +184,8 @@ public:
 
 	void *winId() override;
 
+	void setOpaqueBg(QColor opaqueBg) override;
+
 private:
 	WKUserContentController *_manager = nullptr;
 	WKWebView *_webview = nullptr;
@@ -201,6 +203,7 @@ Instance::Instance(Config config) {
 	[_webview setUIDelegate:_handler];
 	[configuration release];
 
+	setOpaqueBg(config.opaqueBg);
 	init(R"(
 window.external = {
 	invoke: function(s) {
@@ -243,6 +246,10 @@ void Instance::eval(std::string js) {
 
 void *Instance::winId() {
 	return _webview;
+}
+
+void Instance::setOpaqueBg(QColor opaqueBg) {
+	[webview setUnderPageBackgroundColor:[NSColor clearColor]];
 }
 
 void Instance::resizeToWindow() {

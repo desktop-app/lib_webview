@@ -44,6 +44,8 @@ public:
 
 	void *winId() override;
 
+	void setOpaqueBg(QColor opaqueBg) override;
+
 private:
 	HWND _window = nullptr;
 	WebViewControl _webview = nullptr;
@@ -54,6 +56,7 @@ private:
 Instance::Instance(Config config, WebViewControl webview)
 : _window(static_cast<HWND>(config.window))
 , _webview(std::move(webview)) {
+	setOpaqueBg(config.opaqueBg);
 	_webview.Settings().IsScriptNotifyAllowed(true);
 	_webview.IsVisible(true);
 	_webview.ScriptNotify([handler = config.messageHandler](
@@ -110,10 +113,25 @@ void Instance::eval(std::string js) {
 	_webview.InvokeScriptAsync(
 		L"eval",
 		single_threaded_vector<hstring>({ winrt::to_hstring(js) }));
+	_webview.InvokeScriptAsync(
+		L"eval",
+		single_threaded_vector<hstring>({ winrt::to_hstring("document.body.style.backgroundColor='transparent';")}));
+	_webview.InvokeScriptAsync(
+		L"eval",
+		single_threaded_vector<hstring>({ winrt::to_hstring("document.getElementsByTagName('html')[0].style.backgroundColor='transparent';") }));
 }
 
 void *Instance::winId() {
 	return nullptr;
+}
+
+void Instance::setOpaqueBg(QColor opaqueBg) {
+	_webview.DefaultBackgroundColor({
+		uchar(opaqueBg.alpha()),
+		uchar(opaqueBg.red()),
+		uchar(opaqueBg.green()),
+		uchar(opaqueBg.blue())
+	});
 }
 
 void Instance::resizeToWindow() {

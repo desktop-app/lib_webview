@@ -60,6 +60,8 @@ public:
 
 	void *winId() override;
 
+	void setOpaqueBg(QColor opaqueBg) override;
+
 	int exec();
 
 private:
@@ -171,7 +173,11 @@ bool Instance::create(Config config) {
 
 		auto loop = GLib::MainLoop::new_();
 		auto success = false;
-		_helper.call_create(_debug, [&](
+		const auto r = config.opaqueBg.red();
+		const auto g = config.opaqueBg.green();
+		const auto b = config.opaqueBg.blue();
+		const auto a = config.opaqueBg.alpha();
+		_helper.call_create(_debug, r, g, b, a, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
@@ -260,6 +266,7 @@ bool Instance::create(Config config) {
 		manager,
 		"external",
 		nullptr);
+	setOpaqueBg(config.opaqueBg);
 	init(R"(
 window.external = {
 	invoke: function(s) {
@@ -610,6 +617,37 @@ void *Instance::winId() {
 	}
 }
 
+void Instance::setOpaqueBg(QColor opaqueBg) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		auto loop = GLib::MainLoop::new_();
+		_helper.call_set_opaque_bg(
+			opaqueBg.red(),
+			opaqueBg.green(),
+			opaqueBg.blue(),
+			opaqueBg.alpha(),
+			[&](GObject::Object source_object, Gio::AsyncResult res) {
+				loop.quit();
+			});
+
+		loop.run();
+		return;
+	}
+
+	GdkRGBA rgba{
+		opaqueBg.redF(),
+		opaqueBg.greenF(),
+		opaqueBg.blueF(),
+		opaqueBg.alphaF(),
+	};
+	webkit_web_view_set_background_color(
+		WEBKIT_WEB_VIEW(_webview),
+		&rgba);
+}
+
 void Instance::resizeToWindow() {
 	if (_remoting) {
 		if (!_helper) {
@@ -726,7 +764,7 @@ void Instance::startProcess() {
 	}
 
 	connection.signal_closed().connect(crl::guard(this, [=](
-			Gio::DBusConnection, 
+			Gio::DBusConnection,
 			bool remotePeerVanished,
 			GLib::Error error) {
 		startProcess();
@@ -929,7 +967,7 @@ int Instance::exec() {
 			});
 
 		connection.signal_closed().connect([&](
-				Gio::DBusConnection, 
+				Gio::DBusConnection,
 				bool remotePeerVanished,
 				GLib::Error error) {
 			app.quit();
@@ -957,8 +995,12 @@ void Instance::registerHelperMethodHandlers() {
 	_helper.signal_handle_create().connect([=](
 			Helper,
 			Gio::DBusMethodInvocation invocation,
-			bool debug) {
-		if (create({ .debug = debug })) {
+			bool debug,
+			int r,
+			int g,
+			int b,
+			int a) {
+		if (create({ .opaqueBg = QColor(r, g, b, a), .debug = debug })) {
 			_helper.complete_create(invocation);
 		} else {
 			invocation.return_gerror(methodError);
@@ -1028,6 +1070,18 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &js) {
 		eval(js);
 		_helper.complete_eval(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_set_opaque_bg().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			int r,
+			int g,
+			int b,
+			int a) {
+		setOpaqueBg(QColor(r, g, b, a));
+		_helper.complete_set_opaque_bg(invocation);
 		return true;
 	});
 

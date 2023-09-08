@@ -29,6 +29,14 @@ typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkNative GtkNative;
+typedef struct _GdkRGBA GdkRGBA;
+
+struct _GdkRGBA {
+	float red;
+	float green;
+	float blue;
+	float alpha;
+};
 
 typedef struct _JSCValue JSCValue;
 typedef const struct OpaqueJSContext *JSContextRef;
@@ -197,6 +205,9 @@ inline void (*webkit_web_view_run_javascript)(
 	GCancellable *cancellable,
 	GAsyncReadyCallback callback,
 	gpointer user_data);
+inline void (*webkit_web_view_set_background_color)(
+	WebKitWebView *web_view,
+	const GdkRGBA *rgba);
 
 [[nodiscard]] bool Resolve(bool wayland);
 

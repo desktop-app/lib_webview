@@ -20,6 +20,7 @@ class QWidget;
 namespace Webview {
 
 struct ThemeParams {
+	QColor opaqueBg;
 	QColor scrollBg;
 	QColor scrollBgOver;
 	QColor scrollBarBg;
@@ -40,6 +41,8 @@ public:
 
 	virtual void init(std::string js) = 0;
 	virtual void eval(std::string js) = 0;
+
+	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
 	virtual void *winId() = 0;
 
@@ -66,6 +69,7 @@ struct DialogResult {
 
 struct Config {
 	void *window = nullptr;
+	QColor opaqueBg;
 	std::function<void(std::string)> messageHandler;
 	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
