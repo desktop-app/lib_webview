@@ -134,6 +134,7 @@ void Window::updateTheme(
 	if (!_webview) {
 		return;
 	}
+#ifndef Q_OS_MAC
 	const auto wrap = [](QColor color) {
 		return u"rgba(%1, %2, %3, %4)"_q
 			.arg(color.red())
@@ -173,6 +174,7 @@ function() {
 		+ function
 		+ ", false);");
 	_webview->eval("(" + function + "());");
+#endif
 	_webview->setOpaqueBg(opaqueBg);
 }
 

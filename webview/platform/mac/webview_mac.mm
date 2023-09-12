@@ -249,7 +249,10 @@ void *Instance::winId() {
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
-	[webview setUnderPageBackgroundColor:[NSColor clearColor]];
+	if (@available(macOS 12.0, *)) {
+		[_webview setValue: @NO forKey: @"drawsBackground"];
+		[_webview setUnderPageBackgroundColor:[NSColor clearColor]];
+	}
 }
 
 void Instance::resizeToWindow() {
