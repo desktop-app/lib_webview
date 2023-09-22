@@ -109,7 +109,7 @@
 	[openPanel setResolvesAliases:YES];
 
 	[openPanel beginWithCompletionHandler:^(NSInteger result){
-		if (result == NSFileHandlingPanelOKButton) {
+		if (result == NSModalResponseOK) {
 			completionHandler([openPanel URLs]);
 		}
 	}];
