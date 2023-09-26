@@ -768,12 +768,14 @@ void Instance::startProcess() {
 		return;
 	}
 
+#if 0
 	connection.signal_closed().connect(crl::guard(this, [=](
 			Gio::DBusConnection,
 			bool remotePeerVanished,
 			GLib::Error error) {
-		startProcess();
+		// TODO: Handle crashes somehow
 	}));
+#endif
 
 	const auto started = _helper.signal_started().connect([&](Helper) {
 		loop.quit();
