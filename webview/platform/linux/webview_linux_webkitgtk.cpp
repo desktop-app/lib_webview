@@ -1118,9 +1118,6 @@ bool ProvidesQWidget() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (!Supported()) {
-		return nullptr;
-	}
 	auto result = std::make_unique<Instance>();
 	if (!result->create(std::move(config))) {
 		return nullptr;
