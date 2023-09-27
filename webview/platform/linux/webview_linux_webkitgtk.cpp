@@ -642,11 +642,11 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	GdkRGBA rgba{
-		opaqueBg.redF(),
-		opaqueBg.greenF(),
-		opaqueBg.blueF(),
-		opaqueBg.alphaF(),
+	const GdkRGBA rgba{
+		float(opaqueBg.redF()),
+		float(opaqueBg.greenF()),
+		float(opaqueBg.blueF()),
+		float(opaqueBg.alphaF()),
 	};
 	webkit_web_view_set_background_color(
 		WEBKIT_WEB_VIEW(_webview),
