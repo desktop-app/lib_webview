@@ -118,6 +118,7 @@ Instance::Instance(bool remoting)
 : _remoting(remoting) {
 	if (_remoting) {
 		if ((_wayland = ProvidesQWidget())) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 			[[maybe_unused]] static const auto Inited = [] {
 				const auto backend = Ui::GL::ChooseBackendDefault(
 					Ui::GL::CheckCapabilities(nullptr));
@@ -131,6 +132,7 @@ Instance::Instance(bool remoting)
 				}
 				return true;
 			}();
+#endif  // Qt >= 6.0.0
 		}
 
 		startProcess();

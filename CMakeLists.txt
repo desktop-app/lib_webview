@@ -44,6 +44,8 @@ PUBLIC
     ${src_loc}
 )
 
+set_target_properties(lib_webview PROPERTIES AUTOMOC ON)
+
 target_link_libraries(lib_webview
 PUBLIC
     desktop-app::lib_ui
