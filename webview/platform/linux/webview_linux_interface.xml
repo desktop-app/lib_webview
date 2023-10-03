@@ -32,7 +32,9 @@
 			<arg type='i' name='a' direction='in'/>
 		</method>
 		<method name='Reload'/>
-		<method name='Resolve'/>
+		<method name='Resolve'>
+			<arg type='b' name='result' direction='out'/>
+		</method>
 		<method name='FinishEmbedding'/>
 		<method name='Navigate'>
 			<arg type='s' name='url' direction='in'/>

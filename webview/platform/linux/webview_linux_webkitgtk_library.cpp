@@ -10,7 +10,7 @@
 
 namespace Webview::WebKitGTK::Library {
 
-bool Resolve(bool wayland) {
+std::optional<bool> Resolve(bool wayland) {
 	const auto lib = base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 			?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
 			?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
@@ -57,7 +57,7 @@ bool Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_set_text)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_background_color);
 	if (!result) {
-		return false;
+		return std::nullopt;
 	}
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
@@ -71,7 +71,7 @@ bool Resolve(bool wayland) {
 			&& LOAD_LIBRARY_SYMBOL(lib, JSStringGetUTF8CString)
 			&& LOAD_LIBRARY_SYMBOL(lib, JSStringRelease);
 		if (!available1 && !available2) {
-			return false;
+			return std::nullopt;
 		}
 	}
 	{
@@ -81,7 +81,7 @@ bool Resolve(bool wayland) {
 		const auto available2 = LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_request);
 
 		if (!available1 && !available2) {
-			return false;
+			return std::nullopt;
 		}
 	}
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
