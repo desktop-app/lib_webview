@@ -6,7 +6,7 @@
 //
 #include "webview/platform/win/webview_windows_data_stream.h"
 
-#include "base/platform/win/base_windows_h.h"
+#include <windows.h>
 
 namespace Webview {
 

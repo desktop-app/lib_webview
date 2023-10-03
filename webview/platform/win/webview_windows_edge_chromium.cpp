@@ -237,8 +237,9 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_webview->add_ScriptDialogOpening(this, &token);
 	_webview->add_WebResourceRequested(this, &token);
 
+	const auto filter = ToWide(kDataUrlPrefix) + L'*';
 	auto hr = _webview->AddWebResourceRequestedFilter(
-		L"http://desktop-app-resource/*",
+		filter.c_str(),
 		COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
 	if (hr != S_OK) {
 		return E_FAIL;

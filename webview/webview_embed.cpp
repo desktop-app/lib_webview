@@ -20,6 +20,8 @@
 #include <QtGui/QWindow>
 #include <QtCore/QJsonDocument>
 
+#include <charconv>
+
 namespace Webview {
 namespace {
 
@@ -41,8 +43,7 @@ namespace {
 base::options::toggle OptionWebviewDebugEnabled({
 	.id = kOptionWebviewDebugEnabled,
 	.name = "Enable webview inspecting",
-	.description = "Right click and choose Inspect in the webview windows.",
-	.scope = base::options::windows | base::options::linux,
+	.description = "Right click and choose Inspect in the webview windows. (on macOS launch Safari, open from Develop menu)",
 });
 
 } // namespace
@@ -262,7 +263,9 @@ void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
-		if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+		if (!lower.startsWith("http://")
+			&& !lower.startsWith("https://")
+			&& !lower.startsWith("desktop-app-resource://")) {
 			return false;
 		}
 		auto result = true;

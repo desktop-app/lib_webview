@@ -23,6 +23,10 @@ public:
 	std::int64_t seek(int origin, std::int64_t position) override;
 	std::int64_t read(void *buffer, std::int64_t requested) override;
 
+	[[nodiscard]] const char *bytes() const {
+		return _data.data();
+	}
+
 private:
 	QByteArray _data;
 	std::string _mime;
