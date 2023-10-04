@@ -33,7 +33,7 @@
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>
-			<arg type='b' name='result' direction='out'/>
+			<arg type='i' name='result' direction='out'/>
 		</method>
 		<method name='FinishEmbedding'/>
 		<method name='Navigate'>

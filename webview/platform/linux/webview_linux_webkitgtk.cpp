@@ -53,7 +53,7 @@ public:
 
 	bool create(Config config);
 
-	std::optional<bool> resolve();
+	ResolveResult resolve();
 
 	bool finishEmbedding() override;
 
@@ -193,7 +193,7 @@ bool Instance::create(Config config) {
 		return success;
 	}
 
-	if (!resolve().value_or(false)) {
+	if (resolve() != ResolveResult::Success) {
 		return false;
 	}
 
@@ -410,31 +410,25 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	return true;
 }
 
-std::optional<bool> Instance::resolve() {
+ResolveResult Instance::resolve() {
 	if (_remoting) {
 		if (!_helper) {
-			// Don't want a second level of std::optional
-			throw std::exception();
+			return ResolveResult::OtherError;
 		}
 
 		auto loop = GLib::MainLoop::new_();
-		std::optional<bool> result;
-		std::optional<std::exception> error(std::in_place);
+		auto result = ResolveResult::OtherError;
 		_helper.call_resolve([&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
 			if (reply) {
-				result = reinterpret_cast<void*>(std::get<1>(*reply));
-				error.reset();
+				result = ResolveResult(std::get<1>(*reply));
 			}
 			loop.quit();
 		});
-		loop.run();
 
-		if (error) {
-			throw *error;
-		}
+		loop.run();
 		return result;
 	}
 
@@ -1035,11 +1029,7 @@ void Instance::registerHelperMethodHandlers() {
 	_helper.signal_handle_resolve().connect([=](
 			Helper,
 			Gio::DBusMethodInvocation invocation) {
-		if (const auto result = resolve()) {
-			_helper.complete_resolve(invocation, *result);
-		} else {
-			invocation.return_gerror(methodError);
-		}
+		_helper.complete_resolve(invocation, int(resolve()));
 		return true;
 	});
 
@@ -1114,16 +1104,13 @@ void Instance::registerHelperMethodHandlers() {
 } // namespace
 
 Available Availability() {
-	try {
-		if (!Instance().resolve()) {
-			return Available{
-				.error = Available::Error::NoWebKitGTK,
-				.details = "Please install WebKitGTK "
-				"(webkitgtk-6.0/webkit2gtk-4.1/webkit2gtk-4.0) "
-				"from your package manager.",
-			};
-		}
-	} catch (...) {
+	if (Instance().resolve() == ResolveResult::NoLibrary) {
+		return Available{
+			.error = Available::Error::NoWebKitGTK,
+			.details = "Please install WebKitGTK "
+			"(webkitgtk-6.0/webkit2gtk-4.1/webkit2gtk-4.0) "
+			"from your package manager.",
+		};
 	}
 	return Available{};
 }
