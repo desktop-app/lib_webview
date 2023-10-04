@@ -12,10 +12,6 @@ Available Availability() {
 	return Available{};
 }
 
-bool ProvidesQWidget() {
-	return false;
-}
-
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return nullptr;
 }

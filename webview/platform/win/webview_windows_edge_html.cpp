@@ -42,6 +42,7 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	QWidget *widget() override;
 	void *winId() override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
@@ -119,6 +120,10 @@ void Instance::eval(std::string js) {
 	_webview.InvokeScriptAsync(
 		L"eval",
 		single_threaded_vector<hstring>({ winrt::to_hstring("document.getElementsByTagName('html')[0].style.backgroundColor='transparent';") }));
+}
+
+QWidget *Instance::widget() {
+	return nullptr;
 }
 
 void *Instance::winId() {

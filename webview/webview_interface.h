@@ -44,6 +44,7 @@ public:
 
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
+	virtual QWidget *widget() = 0;
 	virtual void *winId() = 0;
 
 };
@@ -68,6 +69,7 @@ struct DialogResult {
 };
 
 struct Config {
+	QWidget *parent = nullptr;
 	void *window = nullptr;
 	QColor opaqueBg;
 	std::function<void(std::string)> messageHandler;
@@ -94,7 +96,6 @@ struct Available {
 	return Availability().error == Available::Error::None;
 }
 [[nodiscard]] bool SupportsEmbedAfterCreate();
-[[nodiscard]] bool ProvidesQWidget();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);

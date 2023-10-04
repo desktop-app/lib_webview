@@ -65,7 +65,6 @@ private:
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
 	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
 
-	bool _providesQWidget = false;
 	std::unique_ptr<Interface> _webview;
 	base::unique_qptr<QWidget> _widget;
 	base::unique_qptr<QWindow> _window;
