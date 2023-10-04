@@ -7,7 +7,6 @@
 #pragma once
 
 #include <gio/gio.h>
-#include <optional>
 
 #define GTK_TYPE_CONTAINER (gtk_container_get_type ())
 #define GTK_CONTAINER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_CONTAINER, GtkContainer))
@@ -210,6 +209,13 @@ inline void (*webkit_web_view_set_background_color)(
 	WebKitWebView *web_view,
 	const GdkRGBA *rgba);
 
-[[nodiscard]] std::optional<bool> Resolve(bool wayland);
+enum class ResolveResult {
+	Success,
+	NoLibrary,
+	CantInit,
+	OtherError,
+};
+
+[[nodiscard]] ResolveResult Resolve(bool wayland);
 
 } // namespace Webview::WebKitGTK::Library
