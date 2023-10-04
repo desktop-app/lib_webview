@@ -182,6 +182,7 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	QWidget *widget() override;
 	void *winId() override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
@@ -244,6 +245,10 @@ void Instance::eval(std::string js) {
 	[_webview evaluateJavaScript:string completionHandler:nil];
 }
 
+QWidget *Instance::widget() {
+	return nullptr;
+}
+
 void *Instance::winId() {
 	return _webview;
 }
@@ -266,10 +271,6 @@ Available Availability() {
 
 bool SupportsEmbedAfterCreate() {
 	return true;
-}
-
-bool ProvidesQWidget() {
-	return false;
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {

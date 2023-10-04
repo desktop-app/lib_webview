@@ -46,6 +46,14 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
 
+bool PreferWayland() {
+	if (!Platform::IsX11()) {
+		return true;
+	}
+	const auto platform = Platform::GetWindowManager().toLower();
+	return platform.contains("mutter") || platform.contains("gnome");
+}
+
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(bool remoting = true);
@@ -65,6 +73,7 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	QWidget *widget() override;
 	void *winId() override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
@@ -88,6 +97,7 @@ private:
 	bool scriptDialog(WebKitScriptDialog *dialog);
 
 	void startProcess();
+	void stopProcess();
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
@@ -117,29 +127,14 @@ private:
 Instance::Instance(bool remoting)
 : _remoting(remoting) {
 	if (_remoting) {
-		if ((_wayland = ProvidesQWidget())) {
-			[[maybe_unused]] static const auto Inited = [] {
-				const auto backend = Ui::GL::ChooseBackendDefault(
-					Ui::GL::CheckCapabilities(nullptr));
-				switch (backend) {
-				case Ui::GL::Backend::Raster:
-					SetGraphicsApi(QSGRendererInterface::Software);
-					break;
-				case Ui::GL::Backend::OpenGL:
-					SetGraphicsApi(QSGRendererInterface::OpenGL);
-					break;
-				}
-				return true;
-			}();
-		}
-
+		_wayland = PreferWayland();
 		startProcess();
 	}
 }
 
 Instance::~Instance() {
-	if (_serviceProcess) {
-		_serviceProcess.send_signal(SIGTERM);
+	if (_remoting) {
+		stopProcess();
 	}
 	if (_webview) {
 		if (!gtk_widget_destroy) {
@@ -165,9 +160,27 @@ bool Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 
 	if (_remoting) {
+		if (resolve() != ResolveResult::Success) {
+			return false;
+		}
+
 		if (_compositor && !_compositorWidget) {
+			[[maybe_unused]] static const auto Inited = [] {
+				const auto backend = Ui::GL::ChooseBackendDefault(
+					Ui::GL::CheckCapabilities(nullptr));
+				switch (backend) {
+				case Ui::GL::Backend::Raster:
+					SetGraphicsApi(QSGRendererInterface::Software);
+					break;
+				case Ui::GL::Backend::OpenGL:
+					SetGraphicsApi(QSGRendererInterface::OpenGL);
+					break;
+				}
+				return true;
+			}();
+
 			_compositorWidget = ::base::make_unique_q<QQuickWidget>(
-				reinterpret_cast<QWidget*>(config.window));
+				config.parent);
 
 			_compositor->setWidget(_compositorWidget.get());
 		}
@@ -191,10 +204,6 @@ bool Instance::create(Config config) {
 
 		loop.run();
 		return success;
-	}
-
-	if (resolve() != ResolveResult::Success) {
-		return false;
 	}
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -429,6 +438,12 @@ ResolveResult Instance::resolve() {
 		});
 
 		loop.run();
+		if (!_wayland && result == ResolveResult::CantInit) {
+			_wayland = true;
+			stopProcess();
+			startProcess();
+			return resolve();
+		}
 		return result;
 	}
 
@@ -587,12 +602,12 @@ void Instance::eval(std::string js) {
 	}
 }
 
+QWidget *Instance::widget() {
+	return _compositorWidget.get();
+}
+
 void *Instance::winId() {
 	if (_remoting) {
-		if (_compositorWidget) {
-			return reinterpret_cast<void*>(_compositorWidget.get());
-		}
-
 		if (!_helper) {
 			return nullptr;
 		}
@@ -611,6 +626,10 @@ void *Instance::winId() {
 
 		loop.run();
 		return ret;
+	}
+
+	if (_wayland) {
+		return nullptr;
 	}
 
 	if (gdk_x11_surface_get_xid
@@ -786,6 +805,13 @@ void Instance::startProcess() {
 
 	loop.run();
 	_helper.disconnect(started);
+}
+
+void Instance::stopProcess() {
+	if (_serviceProcess) {
+		_serviceProcess.send_signal(SIGTERM);
+	}
+	_compositor = nullptr;
 }
 
 void Instance::registerMasterMethodHandlers() {
@@ -1113,14 +1139,6 @@ Available Availability() {
 		};
 	}
 	return Available{};
-}
-
-bool ProvidesQWidget() {
-	if (!Platform::IsX11()) {
-		return true;
-	}
-	const auto platform = Platform::GetWindowManager().toLower();
-	return platform.contains("mutter") || platform.contains("gnome");
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {

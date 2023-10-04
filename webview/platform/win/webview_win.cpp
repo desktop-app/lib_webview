@@ -32,10 +32,6 @@ bool SupportsEmbedAfterCreate() {
 	return !EdgeChromium::Supported() && EdgeHtml::Supported();
 }
 
-bool ProvidesQWidget() {
-	return false;
-}
-
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Platform::IsWindows8Point1OrGreater()) {
 		return nullptr;

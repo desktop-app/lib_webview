@@ -371,6 +371,7 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	QWidget *widget() override;
 	void *winId() override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
@@ -421,6 +422,10 @@ void Instance::init(std::string js) {
 void Instance::eval(std::string js) {
 	const auto wide = ToWide(js);
 	_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
+}
+
+QWidget *Instance::widget() {
+	return nullptr;
 }
 
 void *Instance::winId() {
