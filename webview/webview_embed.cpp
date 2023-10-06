@@ -57,7 +57,7 @@ Window::Window(QWidget *parent, WindowConfig config)
 			_window.reset(CreateContainerWindow(_webview.get()));
 		}
 	}
-	if (_webview->widget()) {
+	if (_webview && _webview->widget()) {
 		_widget.reset(_webview->widget());
 	} else {
 		if (!_window) {
