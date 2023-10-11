@@ -68,9 +68,9 @@ private:
 };
 
 Chrome::Chrome(
-	Output *output,
-	QWaylandXdgSurface *xdgSurface,
-	bool windowFollowsSize) {
+		Output *output,
+		QWaylandXdgSurface *xdgSurface,
+		bool windowFollowsSize) {
 	setParentItem(output->quickWindow()->contentItem());
 	setOutput(output);
 	setShellSurface(xdgSurface);
