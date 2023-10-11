@@ -710,6 +710,12 @@ void Instance::startProcess() {
 			"WAYLAND_DISPLAY",
 			_compositor->socketName().toStdString(),
 			true);
+
+		// https://bugreports.qt.io/browse/QTBUG-115063
+		serviceLauncher.setenv(
+			"GSK_RENDERER",
+			"cairo",
+			true);
 	}
 
 	_serviceProcess = serviceLauncher.spawnv({
