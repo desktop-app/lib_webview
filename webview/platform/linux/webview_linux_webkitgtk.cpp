@@ -14,6 +14,8 @@
 #include "base/weak_ptr.h"
 #include "ui/gl/gl_detection.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
 #include <QtQuickWidgets/QQuickWidget>
 
@@ -873,7 +875,7 @@ void Instance::registerMasterMethodHandlers() {
 		_master.complete_navigation_started(invocation, [&] {
 			if (newWindow) {
 				if (_navigationStartHandler(uri, true)) {
-					Gio::AppInfo::launch_default_for_uri(uri);
+					QDesktopServices::openUrl(QString::fromStdString(uri));
 				}
 				return false;
 			}
