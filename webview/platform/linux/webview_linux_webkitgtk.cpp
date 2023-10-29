@@ -712,10 +712,9 @@ void Instance::startProcess() {
 			true);
 
 		// https://bugreports.qt.io/browse/QTBUG-115063
-		serviceLauncher.setenv(
-			"GSK_RENDERER",
-			"cairo",
-			true);
+		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
+		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
+		serviceLauncher.setenv("GDK_GL", "disable", true);
 	}
 
 	_serviceProcess = serviceLauncher.spawnv({
