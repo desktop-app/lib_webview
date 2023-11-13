@@ -6,13 +6,12 @@
 //
 #include "webview/platform/win/webview_windows_edge_html.h"
 
+#include "base/platform/win/base_windows_h.h"
 #include "base/platform/win/base_windows_winrt.h"
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <objbase.h>
 
 #include <winrt/Windows.Foundation.Collections.h>
