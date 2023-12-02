@@ -9,6 +9,7 @@
 #include "base/unique_qptr.h"
 #include "base/basic_types.h"
 
+#include <rpl/lifetime.h>
 #include <QColor>
 
 class QString;
@@ -61,6 +62,10 @@ public:
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
 
+	[[nodiscard]] rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
+
 private:
 	bool createWebView(QWidget *parent, const WindowConfig &config);
 	bool finishWebviewEmbedding();
@@ -78,6 +83,7 @@ private:
 	Fn<void(bool)> _navigationDoneHandler;
 	Fn<DialogResult(DialogArgs)> _dialogHandler;
 	Fn<DataResult(DataRequest)> _dataRequestHandler;
+	rpl::lifetime _lifetime;
 
 };
 
