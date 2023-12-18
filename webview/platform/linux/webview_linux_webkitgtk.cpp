@@ -44,6 +44,13 @@ void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
 
 std::string SocketPath;
 
+inline auto MethodError() {
+	return GLib::Error::new_literal(
+		Gio::DBusErrorNS_::quark(),
+		int(Gio::DBusError::UNKNOWN_METHOD_),
+		"Method does not exist.");
+}
+
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
@@ -720,7 +727,7 @@ void Instance::startProcess() {
 
 	_serviceProcess = serviceLauncher.spawnv({
 		::base::Integration::Instance().executablePath().toStdString(),
-		"-webviewhelper",
+		std::string("-webviewhelper"),
 		SocketPath,
 	}, nullptr);
 
@@ -731,7 +738,7 @@ void Instance::startProcess() {
 	const auto socketPath = std::regex_replace(
 		SocketPath,
 		std::regex("%1"),
-		_serviceProcess.get_identifier().value_or(""));
+		std::string(_serviceProcess.get_identifier()));
 
 	if (socketPath.empty()) {
 		return;
@@ -801,7 +808,7 @@ void Instance::startProcess() {
 	connection.signal_closed().connect(crl::guard(this, [=](
 			Gio::DBusConnection,
 			bool remotePeerVanished,
-			GLib::Error error) {
+			GLib::Error_Ref error) {
 		_compositorWidget = nullptr;
 	}));
 
@@ -825,18 +832,13 @@ void Instance::registerMasterMethodHandlers() {
 		return;
 	}
 
-	const auto methodError = GLib::Error::new_literal(
-		Gio::DBusErrorNS_::quark(),
-		int(Gio::DBusError::UNKNOWN_METHOD_),
-		"Method does not exist.");
-
 	_master.signal_handle_get_start_data().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
 		_master.complete_get_start_data(invocation, [] {
 			if (auto app = Gio::Application::get_default()) {
 				if (const auto appId = app.get_application_id()) {
-					return *appId;
+					return std::string(appId);
 				}
 			}
 
@@ -860,7 +862,7 @@ void Instance::registerMasterMethodHandlers() {
 			_messageHandler(message);
 			_master.complete_message_received(invocation);
 		} else {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 		}
 		return true;
 	});
@@ -871,7 +873,7 @@ void Instance::registerMasterMethodHandlers() {
 			const std::string &uri,
 			bool newWindow) {
 		if (!_navigationStartHandler) {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 			return true;
 		}
 
@@ -896,7 +898,7 @@ void Instance::registerMasterMethodHandlers() {
 			_navigationDoneHandler(success);
 			_master.complete_navigation_done(invocation);
 		} else {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 		}
 		return true;
 	});
@@ -908,7 +910,7 @@ void Instance::registerMasterMethodHandlers() {
 			const std::string &text,
 			const std::string &value) {
 		if (!_dialogHandler) {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 			return true;
 		}
 
@@ -1011,7 +1013,7 @@ int Instance::exec() {
 		connection.signal_closed().connect([&](
 				Gio::DBusConnection,
 				bool remotePeerVanished,
-				GLib::Error error) {
+				GLib::Error_Ref error) {
 			app.quit();
 		});
 
@@ -1021,18 +1023,13 @@ int Instance::exec() {
 	loop.run();
 	dbusServer.disconnect(newConnection);
 
-	return app.run(0, nullptr);
+	return app.run({});
 }
 
 void Instance::registerHelperMethodHandlers() {
 	if (!_helper) {
 		return;
 	}
-
-	const auto methodError = GLib::Error::new_literal(
-		Gio::DBusErrorNS_::quark(),
-		int(Gio::DBusError::UNKNOWN_METHOD_),
-		"Method does not exist.");
 
 	_helper.signal_handle_create().connect([=](
 			Helper,
@@ -1045,7 +1042,7 @@ void Instance::registerHelperMethodHandlers() {
 		if (create({ .opaqueBg = QColor(r, g, b, a), .debug = debug })) {
 			_helper.complete_create(invocation);
 		} else {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 		}
 		return true;
 	});
@@ -1071,7 +1068,7 @@ void Instance::registerHelperMethodHandlers() {
 		if (finishEmbedding()) {
 			_helper.complete_finish_embedding(invocation);
 		} else {
-			invocation.return_gerror(methodError);
+			invocation.return_gerror(MethodError());
 		}
 		return true;
 	});
