@@ -73,13 +73,13 @@ Window::Window(QWidget *parent, WindowConfig config)
 	if (!createWebView(parent, config) || !finishWebviewEmbedding()) {
 		return;
 	}
-	_webview->resizeToWindow();
 	base::install_event_filter(_widget, [=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::Resize || e->type() == QEvent::Move) {
 			InvokeQueued(_widget.get(), [=] { _webview->resizeToWindow(); });
 		}
 		return base::EventFilterResult::Continue;
 	});
+	_webview->resizeToWindow();
 	setDialogHandler(nullptr);
 }
 

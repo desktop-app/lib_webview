@@ -802,10 +802,7 @@ void Instance::startProcess() {
 			Gio::DBusConnection,
 			bool remotePeerVanished,
 			GLib::Error error) {
-		if (_compositorWidget) {
-			_compositorWidget->hide();
-		}
-		// TODO: Signal this further to cross-platform code somehow
+		_compositorWidget = nullptr;
 	}));
 
 	const auto started = _helper.signal_started().connect([&](Helper) {
