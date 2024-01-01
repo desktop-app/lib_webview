@@ -10,6 +10,7 @@
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_co_task_mem.h"
 #include "base/platform/win/base_windows_winrt.h"
+#include "base/platform/win/wrl/wrl_implements_h.h"
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
