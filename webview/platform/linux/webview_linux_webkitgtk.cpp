@@ -118,7 +118,7 @@ private:
 	Gio::Subprocess _serviceProcess;
 
 	bool _wayland = false;
-	::base::unique_qptr<QQuickWidget> _compositorWidget;
+	::base::unique_qptr<QWidget> _widget;
 	::base::unique_qptr<Compositor> _compositor;
 
 	GtkWidget *_window = nullptr;
@@ -173,7 +173,7 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		if (_compositor && !_compositorWidget) {
+		if (_compositor && !qobject_cast<QQuickWidget*>(_widget)) {
 			[[maybe_unused]] static const auto Inited = [] {
 				const auto backend = Ui::GL::ChooseBackendDefault(
 					Ui::GL::CheckCapabilities(nullptr));
@@ -188,10 +188,8 @@ bool Instance::create(Config config) {
 				return true;
 			}();
 
-			_compositorWidget = ::base::make_unique_q<QQuickWidget>(
-				config.parent);
-
-			_compositor->setWidget(_compositorWidget.get());
+			_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
+			_compositor->setWidget(static_cast<QQuickWidget*>(_widget.get()));
 		}
 
 		if (!_helper) {
@@ -212,6 +210,13 @@ bool Instance::create(Config config) {
 		});
 
 		loop.run();
+		if (success && !_compositor) {
+			_widget.reset(
+				QWidget::createWindowContainer(
+					QWindow::fromWinId(WId(winId())),
+					config.parent,
+					Qt::FramelessWindowHint));
+		}
 		return success;
 	}
 
@@ -475,8 +480,8 @@ bool Instance::finishEmbedding() {
 		});
 
 		loop.run();
-		if (success && _compositorWidget) {
-			_compositorWidget->show();
+		if (success && _widget) {
+			_widget->show();
 		}
 		return success;
 	}
@@ -612,7 +617,7 @@ void Instance::eval(std::string js) {
 }
 
 QWidget *Instance::widget() {
-	return _compositorWidget.get();
+	return _widget.get();
 }
 
 void *Instance::winId() {
@@ -808,7 +813,7 @@ void Instance::startProcess() {
 			Gio::DBusConnection,
 			bool remotePeerVanished,
 			GLib::Error_Ref error) {
-		_compositorWidget = nullptr;
+		_widget = nullptr;
 	}));
 
 	const auto started = _helper.signal_started().connect([&](Helper) {
