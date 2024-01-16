@@ -724,6 +724,8 @@ void Instance::startProcess() {
 			true);
 
 		// https://bugreports.qt.io/browse/QTBUG-115063
+		serviceLauncher.setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "", true);
+		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
 		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
 		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
 		serviceLauncher.setenv("GDK_GL", "disable", true);
