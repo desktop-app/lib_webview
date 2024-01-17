@@ -1009,7 +1009,10 @@ int Instance::exec() {
 					const auto settings = _master.call_get_start_data_finish(
 						res);
 					if (settings) {
-						app.set_application_id(std::get<1>(*settings));
+						if (const auto appId = std::get<1>(*settings)
+								; !appId.empty()) {
+							app.set_application_id(appId);
+						}
 						_wayland = std::get<2>(*settings);
 					}
 					loop.quit();
