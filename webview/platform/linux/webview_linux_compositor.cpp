@@ -174,7 +174,7 @@ struct Compositor::Private {
 	rpl::lifetime lifetime;
 };
 
-Compositor::Compositor()
+Compositor::Compositor(const QByteArray &socketName)
 : _private(std::make_unique<Private>(this)) {
 	connect(&_private->shell, &QWaylandXdgShell::toplevelCreated, [=](
 			QWaylandXdgToplevel *toplevel,
@@ -220,6 +220,7 @@ Compositor::Compositor()
 		}, _private->lifetime);
 	});
 
+	setSocketName(socketName);
 	create();
 }
 
