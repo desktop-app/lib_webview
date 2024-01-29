@@ -708,34 +708,13 @@ void Instance::resizeToWindow() {
 }
 
 void Instance::startProcess() {
-	if (_wayland && !_compositor) {
-		_compositor = ::base::make_unique_q<Compositor>();
-	}
-
 	auto loop = GLib::MainLoop::new_();
 
-	auto serviceLauncher = Gio::SubprocessLauncher::new_(
-		Gio::SubprocessFlags::NONE_);
-
-	if (_compositor) {
-		serviceLauncher.setenv(
-			"WAYLAND_DISPLAY",
-			_compositor->socketName().toStdString(),
-			true);
-
-		// https://bugreports.qt.io/browse/QTBUG-115063
-		serviceLauncher.setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "", true);
-		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
-		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
-		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
-		serviceLauncher.setenv("GDK_GL", "disable", true);
-	}
-
-	_serviceProcess = serviceLauncher.spawnv({
+	_serviceProcess = Gio::Subprocess::new_({
 		::base::Integration::Instance().executablePath().toStdString(),
 		std::string("-webviewhelper"),
 		SocketPath,
-	}, nullptr);
+	}, Gio::SubprocessFlags::NONE_, nullptr);
 
 	if (!_serviceProcess) {
 		return;
@@ -749,6 +728,10 @@ void Instance::startProcess() {
 	if (socketPath.empty()) {
 		return;
 	}
+
+	_compositor = ::base::make_unique_q<Compositor>(
+		QByteArray::fromStdString(
+			GLib::path_get_basename(socketPath + "-wayland")));
 
 	auto socketFile = Gio::File::new_for_path(socketPath);
 	socketFile.delete_(nullptr);
@@ -856,7 +839,7 @@ void Instance::registerMasterMethodHandlers() {
 			}
 
 			return std::string();
-		}(), _wayland);
+		}(), _compositor ? _compositor->socketName().toStdString() : "");
 		return true;
 	});
 
@@ -1013,7 +996,14 @@ int Instance::exec() {
 								; !appId.empty()) {
 							app.set_application_id(appId);
 						}
-						_wayland = std::get<2>(*settings);
+						if (const auto waylandDisplay = std::get<2>(*settings)
+								; !waylandDisplay.empty()) {
+							GLib::setenv(
+								"WAYLAND_DISPLAY",
+								waylandDisplay,
+								true);
+							_wayland = true;
+						}
 					}
 					loop.quit();
 				});
@@ -1031,6 +1021,15 @@ int Instance::exec() {
 
 	loop.run();
 	dbusServer.disconnect(newConnection);
+
+	if (_wayland) {
+		// https://bugreports.qt.io/browse/QTBUG-115063
+		GLib::setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "", true);
+		GLib::setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
+		GLib::setenv("GSK_RENDERER", "cairo", true);
+		GLib::setenv("GDK_DEBUG", "gl-disable", true);
+		GLib::setenv("GDK_GL", "disable", true);
+	}
 
 	return app.run({});
 }

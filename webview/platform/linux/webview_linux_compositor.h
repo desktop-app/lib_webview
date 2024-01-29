@@ -14,7 +14,7 @@ namespace Webview {
 
 class Compositor : public QWaylandQuickCompositor {
 public:
-	Compositor();
+	Compositor(const QByteArray &socketName = {});
 
 	void setWidget(QQuickWidget *widget);
 

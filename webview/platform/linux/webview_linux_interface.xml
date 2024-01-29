@@ -2,7 +2,7 @@
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
 		<method name='GetStartData'>
 			<arg type='s' name='appId' direction='out'/>
-			<arg type='b' name='wayland' direction='out'/>
+			<arg type='s' name='waylandDisplay' direction='out'/>
 		</method>
 		<method name='MessageReceived'>
 			<arg type='ay' name='message' direction='in'/>
