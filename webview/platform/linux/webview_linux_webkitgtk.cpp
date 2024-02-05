@@ -729,9 +729,11 @@ void Instance::startProcess() {
 		return;
 	}
 
-	_compositor = ::base::make_unique_q<Compositor>(
-		QByteArray::fromStdString(
-			GLib::path_get_basename(socketPath + "-wayland")));
+	if (_wayland) {
+		_compositor = ::base::make_unique_q<Compositor>(
+			QByteArray::fromStdString(
+				GLib::path_get_basename(socketPath + "-wayland")));
+	}
 
 	auto socketFile = Gio::File::new_for_path(socketPath);
 	socketFile.delete_(nullptr);
