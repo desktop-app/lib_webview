@@ -54,8 +54,8 @@ public:
 		_chrome.emplace(this, xdgSurface, !window);
 	}
 
-	QQuickWindow *quickWindow() const {
-		return qobject_cast<QQuickWindow*>(window());
+	QQuickWindow *window() const {
+		return static_cast<QQuickWindow*>(QWaylandQuickOutput::window());
 	}
 
 	Chrome *chrome() const {
@@ -71,7 +71,7 @@ Chrome::Chrome(
 		Output *output,
 		QWaylandXdgSurface *xdgSurface,
 		bool windowFollowsSize) {
-	setParentItem(output->quickWindow()->contentItem());
+	setParentItem(output->window()->contentItem());
 	setOutput(output);
 	setShellSurface(xdgSurface);
 	setAutoCreatePopupItems(false);
@@ -215,7 +215,7 @@ Compositor::Compositor(const QByteArray &socketName)
 					popup->unconstrainedPosition() + parent->position());
 			}
 			output->window()->setFlag(Qt::Popup);
-			output->quickWindow()->setColor(Qt::transparent);
+			output->window()->setColor(Qt::transparent);
 			output->window()->show();
 		}, _private->lifetime);
 	});
