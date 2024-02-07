@@ -58,8 +58,8 @@ public:
 		return qobject_cast<QQuickWindow*>(window());
 	}
 
-	const Chrome &chrome() const {
-		return *_chrome;
+	Chrome *chrome() const {
+		return _chrome;
 	}
 
 private:
@@ -182,7 +182,7 @@ Compositor::Compositor(const QByteArray &socketName)
 		if (_private->output || !_private->widget) {
 			const auto output = new Output(this, xdgSurface);
 
-			output->chrome().surfaceCompleted() | rpl::start_with_next([=] {
+			output->chrome()->surfaceCompleted() | rpl::start_with_next([=] {
 				output->window()->show();
 			}, _private->lifetime);
 		} else {
@@ -198,7 +198,7 @@ Compositor::Compositor(const QByteArray &socketName)
 			QWaylandXdgSurface *xdgSurface) {
 		const auto output = new Output(this, xdgSurface);
 
-		output->chrome().surfaceCompleted() | rpl::start_with_next([=] {
+		output->chrome()->surfaceCompleted() | rpl::start_with_next([=] {
 			const auto parent = (*static_cast<Output * const *>(
 				popup->parentXdgSurface()->property("output").constData()
 			))->window();
