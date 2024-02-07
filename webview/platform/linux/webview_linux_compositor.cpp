@@ -24,6 +24,7 @@ class Chrome : public QWaylandQuickShellSurfaceItem {
 public:
 	Chrome(
 		Output *output,
+		QQuickWindow *window,
 		QWaylandXdgSurface *xdgSurface,
 		bool windowFollowsSize);
 
@@ -51,7 +52,7 @@ public:
 		setSizeFollowsWindow(true);
 		xdgSurface->setProperty("output", QVariant::fromValue(this));
 		QCoreApplication::processEvents();
-		_chrome.emplace(this, xdgSurface, !window);
+		_chrome.emplace(this, this->window(), xdgSurface, !window);
 	}
 
 	QQuickWindow *window() const {
@@ -64,14 +65,15 @@ public:
 
 private:
 	std::optional<QQuickWindow> _ownedWindow;
-	std::optional<Chrome> _chrome;
+	base::unique_qptr<Chrome> _chrome;
 };
 
 Chrome::Chrome(
 		Output *output,
+		QQuickWindow *window,
 		QWaylandXdgSurface *xdgSurface,
-		bool windowFollowsSize) {
-	setParentItem(output->window()->contentItem());
+		bool windowFollowsSize)
+: QWaylandQuickShellSurfaceItem(window->contentItem()) {
 	setOutput(output);
 	setShellSurface(xdgSurface);
 	setAutoCreatePopupItems(false);
@@ -79,7 +81,7 @@ Chrome::Chrome(
 	_moveItem.setEnabled(false);
 
 	base::qt_signal_producer(
-		output->window(),
+		window,
 		&QObject::destroyed
 	) | rpl::start_with_next([=] {
 		if (const auto toplevel = xdgSurface->toplevel()) {
@@ -92,16 +94,16 @@ Chrome::Chrome(
 	rpl::single(rpl::empty) | rpl::then(
 		rpl::merge(
 			base::qt_signal_producer(
-				output->window(),
+				window,
 				&QWindow::widthChanged
 			),
 			base::qt_signal_producer(
-				output->window(),
+				window,
 				&QWindow::heightChanged
 			)
 		) | rpl::to_empty
 	) | rpl::map([=] {
-		return output->window()->size();
+		return window->size();
 	}) | rpl::start_with_next([=](QSize size) {
 		if (!windowFollowsSize
 				|| !xdgSurface->windowGeometry().size().isEmpty()) {
@@ -125,10 +127,10 @@ Chrome::Chrome(
 		setY(-geometry.y());
 
 		if (windowFollowsSize) {
-			output->window()->resize(geometry.size());
+			window->resize(geometry.size());
 		}
 
-		if (!_completed && !output->window()->size().isEmpty()) {
+		if (!_completed && !window->size().isEmpty()) {
 			_completed = true;
 			_surfaceCompletes.fire({});
 		}
@@ -143,7 +145,7 @@ Chrome::Chrome(
 		) | rpl::map([=] {
 			return toplevel->title();
 		}) | rpl::start_with_next([=](const QString &title) {
-			output->window()->setTitle(title);
+			window->setTitle(title);
 		}, _lifetime);
 
 		rpl::single(rpl::empty) | rpl::then(
@@ -155,7 +157,7 @@ Chrome::Chrome(
 			return toplevel->fullscreen();
 		}) | rpl::start_with_next([=](bool fullscreen) {
 			if (!fullscreen) {
-				toplevel->sendFullscreen(output->window()->size());
+				toplevel->sendFullscreen(window->size());
 			}
 		}, _lifetime);
 	}
@@ -196,27 +198,29 @@ Compositor::Compositor(const QByteArray &socketName)
 	connect(&_private->shell, &QWaylandXdgShell::popupCreated, [=](
 			QWaylandXdgPopup *popup,
 			QWaylandXdgSurface *xdgSurface) {
-		const auto output = new Output(this, xdgSurface);
+		const auto widget = _private->widget;
+		const auto output = (*static_cast<Output * const *>(
+			popup->parentXdgSurface()->property("output").constData()
+		));
+		const auto parent = output->window();
+		const auto window = new QQuickWindow;
+		static_cast<QObject*>(window)->setParent(xdgSurface);
+		const auto chrome = new Chrome(output, window, xdgSurface, true);
 
-		output->chrome()->surfaceCompleted() | rpl::start_with_next([=] {
-			const auto parent = (*static_cast<Output * const *>(
-				popup->parentXdgSurface()->property("output").constData()
-			))->window();
-			if (_private->widget
-					&& parent == _private->widget->quickWindow()) {
-				output->window()->setTransientParent(
-					_private->widget->window()->windowHandle());
-				output->window()->setPosition(
+		chrome->surfaceCompleted() | rpl::start_with_next([=] {
+			if (widget && parent == widget->quickWindow()) {
+				window->setTransientParent(widget->window()->windowHandle());
+				window->setPosition(
 					popup->unconstrainedPosition()
-						+ _private->widget->mapToGlobal(QPoint()));
+						+ widget->mapToGlobal(QPoint()));
 			} else {
-				output->window()->setTransientParent(parent);
-				output->window()->setPosition(
+				window->setTransientParent(parent);
+				window->setPosition(
 					popup->unconstrainedPosition() + parent->position());
 			}
-			output->window()->setFlag(Qt::Popup);
-			output->window()->setColor(Qt::transparent);
-			output->window()->show();
+			window->setFlag(Qt::Popup);
+			window->setColor(Qt::transparent);
+			window->show();
 		}, _private->lifetime);
 	});
 
