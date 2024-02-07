@@ -119,7 +119,7 @@ private:
 
 	bool _wayland = false;
 	::base::unique_qptr<QWidget> _widget;
-	::base::unique_qptr<Compositor> _compositor;
+	QPointer<Compositor> _compositor;
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
@@ -729,8 +729,8 @@ void Instance::startProcess() {
 		return;
 	}
 
-	if (_wayland) {
-		_compositor.emplace(
+	if (_wayland && !_compositor) {
+		_compositor = new Compositor(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
 	}
@@ -815,7 +815,9 @@ void Instance::stopProcess() {
 	if (_serviceProcess) {
 		_serviceProcess.send_signal(SIGTERM);
 	}
-	_compositor = nullptr;
+	if (_compositor) {
+		_compositor->deleteLater();
+	}
 }
 
 void Instance::registerMasterMethodHandlers() {
