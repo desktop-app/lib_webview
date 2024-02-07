@@ -730,7 +730,7 @@ void Instance::startProcess() {
 	}
 
 	if (_wayland) {
-		_compositor = ::base::make_unique_q<Compositor>(
+		_compositor.emplace(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
 	}
