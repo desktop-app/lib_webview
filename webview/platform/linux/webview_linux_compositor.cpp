@@ -230,10 +230,6 @@ Compositor::Compositor(const QByteArray &socketName)
 
 void Compositor::setWidget(QQuickWidget *widget) {
 	_private->widget = widget;
-	setParent(widget);
-	if (!widget) {
-		_private->output.reset();
-	}
 }
 
 } // namespace Webview
