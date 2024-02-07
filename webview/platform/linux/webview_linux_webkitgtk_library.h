@@ -101,15 +101,15 @@ inline void (*gtk_container_add)(
 	GtkContainer *container,
 	GtkWidget *widget);
 inline void (*gtk_window_set_child)(
-	GtkWindow* window,
-	GtkWidget* child);
+	GtkWindow *window,
+	GtkWidget *child);
 inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
 inline GtkNative *(*gtk_widget_get_native)(GtkWidget *widget);
 inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
-inline void (*gtk_widget_set_visible)(GtkWidget* widget, gboolean visible);
+inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
@@ -123,11 +123,11 @@ inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSStringRef (*JSValueToStringCopy)(
 	JSContextRef ctx,
 	JSValueRef value,
-	JSValueRef* exception);
+	JSValueRef *exception);
 inline size_t (*JSStringGetMaximumUTF8CStringSize)(JSStringRef string);
 inline size_t (*JSStringGetUTF8CString)(
 	JSStringRef string,
-	char* buffer,
+	char *buffer,
 	size_t bufferSize);
 inline void (*JSStringRelease)(JSStringRef string);
 
@@ -185,8 +185,8 @@ inline WebKitUserScript *(*webkit_user_script_new)(
 	const gchar *source,
 	WebKitUserContentInjectedFrames injected_frames,
 	WebKitUserScriptInjectionTime injection_time,
-	const gchar* const *whitelist,
-	const gchar* const *blacklist);
+	const gchar *const *whitelist,
+	const gchar *const *blacklist);
 inline void (*webkit_user_content_manager_add_script)(
 	WebKitUserContentManager *manager,
 	WebKitUserScript *script);
