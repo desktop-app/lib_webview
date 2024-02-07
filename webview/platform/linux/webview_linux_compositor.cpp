@@ -186,7 +186,7 @@ Compositor::Compositor(const QByteArray &socketName)
 				output->window()->show();
 			}, _private->lifetime);
 		} else {
-			_private->output = base::make_unique_q<Output>(
+			_private->output.emplace(
 				this,
 				xdgSurface,
 				_private->widget->quickWindow());
