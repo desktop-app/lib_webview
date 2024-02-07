@@ -17,19 +17,28 @@
 #define GTK_TYPE_WINDOW (gtk_window_get_type ())
 #define GTK_WINDOW(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_WINDOW, GtkWindow))
 
+#define GTK_TYPE_STYLE_PROVIDER (gtk_style_provider_get_type ())
+#define GTK_STYLE_PROVIDER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_STYLE_PROVIDER, GtkStyleProvider))
+#define GTK_STYLE_PROVIDER_PRIORITY_APPLICATION 600
+
 #define WEBKIT_TYPE_NAVIGATION_POLICY_DECISION (webkit_navigation_policy_decision_get_type())
 #define WEBKIT_NAVIGATION_POLICY_DECISION(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_NAVIGATION_POLICY_DECISION, WebKitNavigationPolicyDecision))
 
 #define WEBKIT_TYPE_WEB_VIEW (webkit_web_view_get_type())
 #define WEBKIT_WEB_VIEW(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_WEB_VIEW, WebKitWebView))
 
+typedef struct _GdkDisplay GdkDisplay;
+typedef struct _GdkScreen GdkScreen;
 typedef struct _GdkSurface GdkSurface;
 typedef struct _GdkWindow GdkWindow;
+typedef struct _GdkRGBA GdkRGBA;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkNative GtkNative;
-typedef struct _GdkRGBA GdkRGBA;
+typedef struct _GtkStyleContext GtkStyleContext;
+typedef struct _GtkStyleProvider GtkStyleProvider;
+typedef struct _GtkCssProvider GtkCssProvider;
 
 struct _GdkRGBA {
 	float red;
@@ -113,6 +122,33 @@ inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
+inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);
+inline GdkScreen *(*gtk_widget_get_screen)(GtkWidget *widget);
+inline GtkStyleContext *(*gtk_widget_get_style_context)(GtkWidget *widget);
+inline void (*gtk_widget_add_css_class)(
+	GtkWidget *widget,
+	const char *css_class);
+inline void (*gtk_style_context_add_provider_for_display)(
+	GdkDisplay *display,
+	GtkStyleProvider *provider,
+	guint priority);
+inline void (*gtk_style_context_add_provider_for_screen)(
+	GdkScreen *screen,
+	GtkStyleProvider *provider,
+	guint priority);
+inline void (*gtk_style_context_add_class)(
+	GtkStyleContext *context,
+	const char *class_name);
+inline GType (*gtk_style_provider_get_type)(void);
+inline GtkCssProvider *(*gtk_css_provider_new)(void);
+inline void (*gtk_css_provider_load_from_string)(
+	GtkCssProvider *css_provider,
+	const char *string);
+inline void (*gtk_css_provider_load_from_data)(
+	GtkCssProvider *css_provider,
+	const gchar *data,
+	gssize length,
+	GError **error);
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here

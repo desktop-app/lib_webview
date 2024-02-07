@@ -31,6 +31,16 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
+		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_css_class)
+			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_style_context)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_class)))
+		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_provider_for_display)
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_provider_for_screen))
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_style_provider_get_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_new)
+		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
 		&& (wayland
 			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid)
 			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid))
@@ -60,6 +70,7 @@ ResolveResult Resolve(bool wayland) {
 		return ResolveResult::NoLibrary;
 	}
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
 	{
 		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string);

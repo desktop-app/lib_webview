@@ -123,6 +123,7 @@ private:
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_webview = nullptr;
+	GtkCssProvider *_backgroundProvider = nullptr;
 
 	bool _debug = false;
 	std::function<void(std::string)> _messageHandler;
@@ -144,6 +145,9 @@ Instance::Instance(bool remoting)
 Instance::~Instance() {
 	if (_remoting) {
 		stopProcess();
+	}
+	if (_backgroundProvider) {
+		g_object_unref(_backgroundProvider);
 	}
 	if (_webview) {
 		if (!gtk_widget_destroy) {
@@ -189,7 +193,10 @@ bool Instance::create(Config config) {
 			}();
 
 			_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
-			_compositor->setWidget(static_cast<QQuickWidget*>(_widget.get()));
+			const auto widget = static_cast<QQuickWidget*>(_widget.get());
+			widget->setAttribute(Qt::WA_AlwaysStackOnTop);
+			widget->setClearColor(Qt::transparent);
+			_compositor->setWidget(widget);
 		}
 
 		if (!_helper) {
@@ -221,6 +228,26 @@ bool Instance::create(Config config) {
 	}
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	if (gtk_widget_add_css_class) {
+		gtk_widget_add_css_class(_window, "webviewWindow");
+	} else {
+		gtk_style_context_add_class(
+			gtk_widget_get_style_context(_window),
+			"webviewWindow");
+	}
+	_backgroundProvider = gtk_css_provider_new();
+	if (gtk_style_context_add_provider_for_display) {
+		gtk_style_context_add_provider_for_display(
+			gtk_widget_get_display(_window),
+			GTK_STYLE_PROVIDER(_backgroundProvider),
+			GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	} else {
+		gtk_style_context_add_provider_for_screen(
+			gtk_widget_get_screen(_window),
+			GTK_STYLE_PROVIDER(_backgroundProvider),
+			GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	}
+	setOpaqueBg(config.opaqueBg);
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
 	if (!gtk_widget_show_all) {
 		gtk_widget_set_visible(_window, true);
@@ -294,7 +321,8 @@ bool Instance::create(Config config) {
 		manager,
 		"external",
 		nullptr);
-	setOpaqueBg(config.opaqueBg);
+	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
+	webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(_webview), &rgba);
 	init(R"(
 window.external = {
 	invoke: function(s) {
@@ -678,15 +706,22 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	const GdkRGBA rgba{
-		float(opaqueBg.redF()),
-		float(opaqueBg.greenF()),
-		float(opaqueBg.blueF()),
-		float(opaqueBg.alphaF()),
-	};
-	webkit_web_view_set_background_color(
-		WEBKIT_WEB_VIEW(_webview),
-		&rgba);
+	const auto background = std::regex_replace(
+		".webviewWindow {background: %1;}",
+		std::regex("%1"),
+		_wayland ? "transparent" : opaqueBg.name().toStdString());
+
+	if (gtk_css_provider_load_from_string) {
+		gtk_css_provider_load_from_string(
+			_backgroundProvider,
+			background.c_str());
+	} else {
+		gtk_css_provider_load_from_data(
+			_backgroundProvider,
+			background.c_str(),
+			-1,
+			nullptr);
+	}
 }
 
 void Instance::resizeToWindow() {
