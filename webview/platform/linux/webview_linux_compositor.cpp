@@ -50,7 +50,7 @@ public:
 		setWindow(window ? window : &_ownedWindow.emplace());
 		setScaleFactor(this->window()->devicePixelRatio());
 		setSizeFollowsWindow(true);
-		xdgSurface->setProperty("output", QVariant::fromValue(this));
+		this->window()->setProperty("output", QVariant::fromValue(this));
 		QCoreApplication::processEvents();
 		_chrome.emplace(this, this->window(), xdgSurface, !window);
 	}
@@ -74,11 +74,20 @@ Chrome::Chrome(
 		QWaylandXdgSurface *xdgSurface,
 		bool windowFollowsSize)
 : QWaylandQuickShellSurfaceItem(window->contentItem()) {
-	setOutput(output);
+	rpl::single(rpl::empty) | rpl::then(
+		base::qt_signal_producer(
+			view(),
+			&QWaylandView::surfaceChanged
+		)
+	) | rpl::start_with_next([=] {
+		setOutput(output);
+	}, _lifetime);
+
 	setShellSurface(xdgSurface);
 	setAutoCreatePopupItems(false);
 	setMoveItem(&_moveItem);
 	_moveItem.setEnabled(false);
+	xdgSurface->setProperty("window", QVariant::fromValue(window));
 
 	base::qt_signal_producer(
 		window,
@@ -199,12 +208,15 @@ Compositor::Compositor(const QByteArray &socketName)
 			QWaylandXdgPopup *popup,
 			QWaylandXdgSurface *xdgSurface) {
 		const auto widget = _private->widget;
-		const auto output = (*static_cast<Output * const *>(
-			popup->parentXdgSurface()->property("output").constData()
+		const auto parent = (*static_cast<QQuickWindow * const *>(
+			popup->parentXdgSurface()->property("window").constData()
 		));
-		const auto parent = output->window();
+		const auto output = (*static_cast<Output * const *>(
+			parent->property("output").constData()
+		));
 		const auto window = new QQuickWindow;
 		static_cast<QObject*>(window)->setParent(xdgSurface);
+		window->setProperty("output", QVariant::fromValue(output));
 		const auto chrome = new Chrome(output, window, xdgSurface, true);
 
 		chrome->surfaceCompleted() | rpl::start_with_next([=] {
