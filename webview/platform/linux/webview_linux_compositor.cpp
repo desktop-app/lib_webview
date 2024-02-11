@@ -117,24 +117,31 @@ Chrome::Chrome(
 		) | rpl::to_empty
 	) | rpl::map([=] {
 		return window->size();
-	}) | rpl::start_with_next([=](QSize size) {
-		if (!windowFollowsSize
-				|| !xdgSurface->windowGeometry().size().isEmpty()) {
-			if (const auto toplevel = xdgSurface->toplevel()) {
-				toplevel->sendFullscreen(size);
-			} else if (const auto popup = xdgSurface->popup()) {
-				popup->sendConfigure(QRect(QPoint(), size));
-			}
+	}) | rpl::filter([=](const QSize &size) {
+		return !size.isEmpty();
+	}) | rpl::start_with_next([=](const QSize &size) {
+		if (const auto toplevel = xdgSurface->toplevel()) {
+			toplevel->sendFullscreen(size);
+		} else if (const auto popup = xdgSurface->popup()) {
+			popup->sendConfigure(QRect(QPoint(), size));
 		}
 	}, _lifetime);
 
 	rpl::single(rpl::empty) | rpl::then(
-		base::qt_signal_producer(
-			xdgSurface,
-			&QWaylandXdgSurface::windowGeometryChanged
+		rpl::merge(
+			base::qt_signal_producer(
+				xdgSurface->surface(),
+				&QWaylandSurface::destinationSizeChanged
+			),
+			base::qt_signal_producer(
+				xdgSurface,
+				&QWaylandXdgSurface::windowGeometryChanged
+			)
 		)
 	) | rpl::map([=] {
-		return xdgSurface->windowGeometry();
+		return xdgSurface->windowGeometry().isValid()
+			? xdgSurface->windowGeometry()
+			: QRect(QPoint(), xdgSurface->surface()->destinationSize());
 	}) | rpl::start_with_next([=](const QRect &geometry) {
 		setX(-geometry.x());
 		setY(-geometry.y());
