@@ -117,13 +117,12 @@ Chrome::Chrome(
 		) | rpl::to_empty
 	) | rpl::map([=] {
 		return window->size();
-	}) | rpl::filter([=](const QSize &size) {
+	}) | rpl::distinct_until_changed(
+	) | rpl::filter([=](const QSize &size) {
 		return !size.isEmpty();
 	}) | rpl::start_with_next([=](const QSize &size) {
 		if (const auto toplevel = xdgSurface->toplevel()) {
 			toplevel->sendFullscreen(size);
-		} else if (const auto popup = xdgSurface->popup()) {
-			popup->sendConfigure(QRect(QPoint(), size));
 		}
 	}, _lifetime);
 
@@ -142,17 +141,23 @@ Chrome::Chrome(
 		return xdgSurface->windowGeometry().isValid()
 			? xdgSurface->windowGeometry()
 			: QRect(QPoint(), xdgSurface->surface()->destinationSize());
+	}) | rpl::distinct_until_changed(
+	) | rpl::filter([=](const QRect &geometry) {
+		return geometry.isValid();
 	}) | rpl::start_with_next([=](const QRect &geometry) {
 		setX(-geometry.x());
 		setY(-geometry.y());
 
 		if (windowFollowsSize) {
-			window->resize(geometry.size());
+			if (xdgSurface->popup()) {
+				window->setMinimumSize(geometry.size());
+				window->setMaximumSize(geometry.size());
+			} else {
+				window->resize(geometry.size());
+			}
 		}
 
-		if (!window->size().isEmpty()) {
-			_completed = true;
-		}
+		_completed = true;
 	}, _lifetime);
 
 	if (const auto toplevel = xdgSurface->toplevel()) {
