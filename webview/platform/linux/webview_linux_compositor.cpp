@@ -30,13 +30,14 @@ public:
 		bool windowFollowsSize);
 
 	rpl::producer<> surfaceCompleted() const {
-		return _surfaceCompletes.events();
+		return _completed.value()
+			| rpl::filter(rpl::mappers::_1)
+			| rpl::to_empty;
 	}
 
 private:
 	QQuickItem _moveItem;
-	bool _completed = false;
-	rpl::event_stream<> _surfaceCompletes;
+	rpl::variable<bool> _completed = false;
 	rpl::lifetime _lifetime;
 };
 
@@ -142,9 +143,8 @@ Chrome::Chrome(
 			window->resize(geometry.size());
 		}
 
-		if (!_completed && !window->size().isEmpty()) {
+		if (!window->size().isEmpty()) {
 			_completed = true;
-			_surfaceCompletes.fire({});
 		}
 	}, _lifetime);
 
