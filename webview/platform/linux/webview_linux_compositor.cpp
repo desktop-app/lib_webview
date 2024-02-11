@@ -9,6 +9,7 @@
 #include "base/flat_map.h"
 #include "base/unique_qptr.h"
 #include "base/qt_signal_producer.h"
+#include "base/event_filter.h"
 
 #include <QtQuickWidgets/QQuickWidget>
 #include <QtWaylandCompositor/QWaylandXdgSurface>
@@ -89,16 +90,18 @@ Chrome::Chrome(
 	_moveItem.setEnabled(false);
 	xdgSurface->setProperty("window", QVariant::fromValue(window));
 
-	base::qt_signal_producer(
-		window,
-		&QObject::destroyed
-	) | rpl::start_with_next([=] {
+	base::install_event_filter(this, window, [=](not_null<QEvent*> e) {
+		if (e->type() != QEvent::Close) {
+			return base::EventFilterResult::Continue;
+		}
+		e->ignore();
 		if (const auto toplevel = xdgSurface->toplevel()) {
 			toplevel->sendClose();
 		} else if (const auto popup = xdgSurface->popup()) {
 			popup->sendPopupDone();
 		}
-	}, _lifetime);
+		return base::EventFilterResult::Cancel;
+	});
 
 	rpl::single(rpl::empty) | rpl::then(
 		rpl::merge(
