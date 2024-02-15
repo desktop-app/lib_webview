@@ -116,6 +116,7 @@ private:
 	bool _remoting = false;
 	Master _master;
 	Helper _helper;
+	Gio::DBusServer _dbusServer;
 	Gio::DBusObjectManagerServer _dbusObjectManager;
 	Gio::Subprocess _serviceProcess;
 
@@ -736,25 +737,67 @@ void Instance::startProcess() {
 				GLib::path_get_basename(socketPath + "-wayland")));
 	}
 
-	auto socketFile = Gio::File::new_for_path(socketPath);
-	socketFile.delete_(nullptr);
+	auto authObserver = Gio::DBusAuthObserver::new_();
+	authObserver.signal_authorize_authenticated_peer().connect([=](
+			Gio::DBusAuthObserver,
+			Gio::IOStream stream,
+			Gio::Credentials credentials) {
+		return credentials.get_unix_pid(nullptr)
+			== std::stoi(_serviceProcess.get_identifier());
+	});
 
-	auto socketMonitor = socketFile.monitor(
-		Gio::FileMonitorFlags::NONE_,
+	_dbusServer = Gio::DBusServer::new_sync(
+		SocketPathToDBusAddress(socketPath),
+		Gio::DBusServerFlags::NONE_,
+		Gio::dbus_generate_guid(),
+		authObserver,
+		{},
 		nullptr);
 
-	if (!socketMonitor) {
+	if (!_dbusServer) {
 		return;
 	}
 
-	socketMonitor.signal_changed().connect([&](
-			Gio::FileMonitor,
-			Gio::File file,
-			Gio::File otherFile,
-			Gio::FileMonitorEvent eventType) {
-		if (eventType == Gio::FileMonitorEvent::CREATED_) {
-			loop.quit();
-		}
+	_dbusServer.start();
+	const ::base::has_weak_ptr guard;
+	auto started = ulong();
+	const auto newConnection = _dbusServer.signal_new_connection().connect([&](
+			Gio::DBusServer,
+			Gio::DBusConnection connection) {
+		_master = MasterSkeleton::new_();
+		auto object = ObjectSkeleton::new_(kMasterObjectPath);
+		object.set_master(_master);
+		_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
+		_dbusObjectManager.export_(object);
+		_dbusObjectManager.set_connection(connection);
+		registerMasterMethodHandlers();
+
+		HelperProxy::new_(
+			connection,
+			Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+			kHelperObjectPath,
+			crl::guard(&guard, [&](
+					GObject::Object source_object,
+					Gio::AsyncResult res) {
+				_helper = HelperProxy::new_finish(res, nullptr);
+				if (!_helper) {
+					loop.quit();
+					return;
+				}
+
+				started = _helper.signal_started().connect([&](Helper) {
+					loop.quit();
+				});
+			}));
+
+		connection.signal_closed().connect(crl::guard(this, [=](
+				Gio::DBusConnection,
+				bool remotePeerVanished,
+				GLib::Error_Ref error) {
+			_widget = nullptr;
+		}));
+
+		return true;
 	});
 
 	// timeout in case something goes wrong
@@ -764,52 +807,10 @@ void Instance::startProcess() {
 
 	loop.run();
 	GLib::Source::remove(timeout);
-
-	auto connection = Gio::DBusConnection::new_for_address_sync(
-		SocketPathToDBusAddress(socketPath),
-		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_,
-		nullptr);
-
-	if (!connection) {
-		return;
+	if (_helper && started) {
+		_helper.disconnect(started);
 	}
-
-	_master = MasterSkeleton::new_();
-	auto object = ObjectSkeleton::new_(kMasterObjectPath);
-	object.set_master(_master);
-	_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
-	_dbusObjectManager.export_(object);
-	_dbusObjectManager.set_connection(connection);
-	registerMasterMethodHandlers();
-
-	HelperProxy::new_(
-		connection,
-		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
-		kHelperObjectPath,
-		[&](GObject::Object source_object, Gio::AsyncResult res) {
-			_helper = HelperProxy::new_finish(res, nullptr);
-			loop.quit();
-		});
-
-	loop.run();
-
-	if (!_helper) {
-		return;
-	}
-
-	connection.signal_closed().connect(crl::guard(this, [=](
-			Gio::DBusConnection,
-			bool remotePeerVanished,
-			GLib::Error_Ref error) {
-		_widget = nullptr;
-	}));
-
-	const auto started = _helper.signal_started().connect([&](Helper) {
-		loop.quit();
-	});
-
-	loop.run();
-	_helper.disconnect(started);
+	_dbusServer.disconnect(newConnection);
 }
 
 void Instance::stopProcess() {
@@ -950,82 +951,62 @@ int Instance::exec() {
 		return 1;
 	}
 
-	auto authObserver = Gio::DBusAuthObserver::new_();
-	authObserver.signal_authorize_authenticated_peer().connect([](
-			Gio::DBusAuthObserver,
-			Gio::IOStream stream,
-			Gio::Credentials credentials) {
-		return credentials.get_unix_pid(nullptr) == getppid();
-	});
-
-	auto dbusServer = Gio::DBusServer::new_sync(
+	auto connection = Gio::DBusConnection::new_for_address_sync(
 		SocketPathToDBusAddress(socketPath),
-		Gio::DBusServerFlags::NONE_,
-		Gio::dbus_generate_guid(),
-		authObserver,
-		{},
+		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_,
 		nullptr);
 
-	if (!dbusServer) {
+	if (!connection) {
 		return 1;
 	}
 
-	dbusServer.start();
-	const auto newConnection = dbusServer.signal_new_connection().connect([&](
-			Gio::DBusServer,
-			Gio::DBusConnection connection) {
-		_helper = HelperSkeleton::new_();
-		auto object = ObjectSkeleton::new_(kHelperObjectPath);
-		object.set_helper(_helper);
-		_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
-		_dbusObjectManager.export_(object);
-		_dbusObjectManager.set_connection(connection);
-		registerHelperMethodHandlers();
+	_helper = HelperSkeleton::new_();
+	auto object = ObjectSkeleton::new_(kHelperObjectPath);
+	object.set_helper(_helper);
+	_dbusObjectManager = Gio::DBusObjectManagerServer::new_(kObjectPath);
+	_dbusObjectManager.export_(object);
+	_dbusObjectManager.set_connection(connection);
+	registerHelperMethodHandlers();
 
-		MasterProxy::new_(
-			connection,
-			Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
-			kMasterObjectPath,
-			[&](GObject::Object source_object, Gio::AsyncResult res) {
-				_master = MasterProxy::new_finish(res, nullptr);
-				if (!_master) {
-					std::abort();
-				}
-				_master.call_get_start_data([&](
-						GObject::Object source_object,
-						Gio::AsyncResult res) {
-					const auto settings = _master.call_get_start_data_finish(
-						res);
-					if (settings) {
-						if (const auto appId = std::get<1>(*settings)
-								; !appId.empty()) {
-							app.set_application_id(appId);
-						}
-						if (const auto waylandDisplay = std::get<2>(*settings)
-								; !waylandDisplay.empty()) {
-							GLib::setenv(
-								"WAYLAND_DISPLAY",
-								waylandDisplay,
-								true);
-							_wayland = true;
-						}
+	MasterProxy::new_(
+		connection,
+		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+		kMasterObjectPath,
+		[&](GObject::Object source_object, Gio::AsyncResult res) {
+			_master = MasterProxy::new_finish(res, nullptr);
+			if (!_master) {
+				std::abort();
+			}
+			_master.call_get_start_data([&](
+					GObject::Object source_object,
+					Gio::AsyncResult res) {
+				const auto settings = _master.call_get_start_data_finish(res);
+				if (settings) {
+					if (const auto appId = std::get<1>(*settings)
+							; !appId.empty()) {
+						app.set_application_id(appId);
 					}
-					loop.quit();
-				});
+					if (const auto waylandDisplay = std::get<2>(*settings)
+							; !waylandDisplay.empty()) {
+						GLib::setenv(
+							"WAYLAND_DISPLAY",
+							waylandDisplay,
+							true);
+						_wayland = true;
+					}
+				}
+				loop.quit();
 			});
-
-		connection.signal_closed().connect([&](
-				Gio::DBusConnection,
-				bool remotePeerVanished,
-				GLib::Error_Ref error) {
-			app.quit();
 		});
 
-		return true;
+	connection.signal_closed().connect([&](
+			Gio::DBusConnection,
+			bool remotePeerVanished,
+			GLib::Error_Ref error) {
+		app.quit();
 	});
 
 	loop.run();
-	dbusServer.disconnect(newConnection);
 
 	if (_wayland) {
 		// https://bugreports.qt.io/browse/QTBUG-115063
