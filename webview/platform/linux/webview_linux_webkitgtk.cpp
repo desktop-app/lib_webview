@@ -114,6 +114,7 @@ private:
 	void registerHelperMethodHandlers();
 
 	bool _remoting = false;
+	bool _connected = false;
 	Master _master;
 	Helper _helper;
 	Gio::DBusServer _dbusServer;
@@ -206,28 +207,31 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		auto success = false;
+		const ::base::has_weak_ptr guard;
+		std::optional<bool> success;
 		const auto r = config.opaqueBg.red();
 		const auto g = config.opaqueBg.green();
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
-		_helper.call_create(_debug, r, g, b, a, [&](
+		_helper.call_create(_debug, r, g, b, a, crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
-			loop.quit();
-		});
+			GLib::MainContext::default_().wakeup();
+		}));
 
-		loop.run();
-		if (success && !_compositor) {
+		while (!success && _connected) {
+			GLib::MainContext::default_().iteration(true);
+		}
+
+		if (success.value_or(false) && !_compositor) {
 			_widget.reset(
 				QWidget::createWindowContainer(
 					QWindow::fromWinId(WId(winId())),
 					config.parent,
 					Qt::FramelessWindowHint));
 		}
-		return success;
+		return success.value_or(false);
 	}
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -470,26 +474,29 @@ ResolveResult Instance::resolve() {
 			return ResolveResult::OtherError;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		auto result = ResolveResult::OtherError;
-		_helper.call_resolve([&](
+		const ::base::has_weak_ptr guard;
+		std::optional<ResolveResult> result;
+		_helper.call_resolve(crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
 			if (reply) {
 				result = ResolveResult(std::get<1>(*reply));
 			}
-			loop.quit();
-		});
+			GLib::MainContext::default_().wakeup();
+		}));
 
-		loop.run();
-		if (!_wayland && result == ResolveResult::CantInit) {
+		while (!result && _connected) {
+			GLib::MainContext::default_().iteration(true);
+		}
+
+		if (!_wayland && result && *result == ResolveResult::CantInit) {
 			_wayland = true;
 			stopProcess();
 			startProcess();
 			return resolve();
 		}
-		return result;
+		return result.value_or(ResolveResult::OtherError);
 	}
 
 	return Resolve(_wayland);
@@ -501,20 +508,23 @@ bool Instance::finishEmbedding() {
 			return false;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		auto success = false;
-		_helper.call_finish_embedding([&](
+		const ::base::has_weak_ptr guard;
+		std::optional<bool> success;
+		_helper.call_finish_embedding(crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_finish_embedding_finish(res, nullptr);
-			loop.quit();
-		});
+			GLib::MainContext::default_().wakeup();
+		}));
 
-		loop.run();
-		if (success && _widget) {
+		while (!success && _connected) {
+			GLib::MainContext::default_().iteration(true);
+		}
+
+		if (success.value_or(false) && _widget) {
 			_widget->show();
 		}
-		return success;
+		return success.value_or(false);
 	}
 
 	if (gtk_window_set_child) {
@@ -632,20 +642,23 @@ void *Instance::winId() {
 			return nullptr;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		void *ret = nullptr;
-		_helper.call_get_win_id([&](
+		const ::base::has_weak_ptr guard;
+		std::optional<void*> ret;
+		_helper.call_get_win_id(crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_get_win_id_finish(res);
-			if (reply) {
-				ret = reinterpret_cast<void*>(std::get<1>(*reply));
-			}
-			loop.quit();
-		});
+			ret = reply
+				? reinterpret_cast<void*>(std::get<1>(*reply))
+				: nullptr;
+			GLib::MainContext::default_().wakeup();
+		}));
 
-		loop.run();
-		return ret;
+		while (!ret && _connected) {
+			GLib::MainContext::default_().iteration(true);
+		}
+
+		return ret.value_or(nullptr);
 	}
 
 	if (_wayland) {
@@ -786,6 +799,7 @@ void Instance::startProcess() {
 				}
 
 				started = _helper.signal_started().connect([&](Helper) {
+					_connected = true;
 					loop.quit();
 				});
 			}));
@@ -794,7 +808,9 @@ void Instance::startProcess() {
 				Gio::DBusConnection,
 				bool remotePeerVanished,
 				GLib::Error_Ref error) {
+			_connected = false;
 			_widget = nullptr;
+			GLib::MainContext::default_().wakeup();
 		}));
 
 		return true;
