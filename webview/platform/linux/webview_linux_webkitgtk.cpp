@@ -545,14 +545,7 @@ void Instance::navigate(std::string url) {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		_helper.call_navigate(url, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			loop.quit();
-		});
-
-		loop.run();
+		_helper.call_navigate(url, nullptr);
 		return;
 	}
 
@@ -565,14 +558,7 @@ void Instance::reload() {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		_helper.call_reload([&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			loop.quit();
-		});
-
-		loop.run();
+		_helper.call_reload(nullptr);
 		return;
 	}
 
@@ -585,14 +571,7 @@ void Instance::init(std::string js) {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		_helper.call_init(js, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			loop.quit();
-		});
-
-		loop.run();
+		_helper.call_init(js, nullptr);
 		return;
 	}
 
@@ -615,14 +594,7 @@ void Instance::eval(std::string js) {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		_helper.call_eval(js, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			loop.quit();
-		});
-
-		loop.run();
+		_helper.call_eval(js, nullptr);
 		return;
 	}
 
@@ -697,17 +669,13 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
 		_helper.call_set_opaque_bg(
 			opaqueBg.red(),
 			opaqueBg.green(),
 			opaqueBg.blue(),
 			opaqueBg.alpha(),
-			[&](GObject::Object source_object, Gio::AsyncResult res) {
-				loop.quit();
-			});
+			nullptr);
 
-		loop.run();
 		return;
 	}
 
@@ -735,14 +703,7 @@ void Instance::resizeToWindow() {
 			return;
 		}
 
-		auto loop = GLib::MainLoop::new_();
-		_helper.call_resize_to_window([&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			loop.quit();
-		});
-
-		loop.run();
+		_helper.call_resize_to_window(nullptr);
 		return;
 	}
 }
