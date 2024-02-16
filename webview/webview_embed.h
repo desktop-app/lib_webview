@@ -62,6 +62,8 @@ public:
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
 
+	void focus();
+
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
 	}

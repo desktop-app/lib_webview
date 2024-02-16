@@ -42,6 +42,8 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	void focus() override;
+
 	QWidget *widget() override;
 	void *winId() override;
 
@@ -132,6 +134,12 @@ void Instance::eval(std::string js) {
 	_webview.InvokeScriptAsync(
 		L"eval",
 		single_threaded_vector<hstring>({ winrt::to_hstring("document.getElementsByTagName('html')[0].style.backgroundColor='transparent';") }));
+}
+
+void Instance::focus() {
+	SetForegroundWindow(_window);
+	SetFocus(_window);
+	_webview.MoveFocus(WebViewControlMoveFocusReason::Programmatic);
 }
 
 QWidget *Instance::widget() {

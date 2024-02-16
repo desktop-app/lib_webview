@@ -535,6 +535,8 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	void focus() override;
+
 	QWidget *widget() override;
 	void *winId() override;
 
@@ -594,6 +596,13 @@ void Instance::init(std::string js) {
 void Instance::eval(std::string js) {
 	const auto wide = ToWide(js);
 	_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
+}
+
+void Instance::focus() {
+	SetForegroundWindow(_window);
+	SetFocus(_window);
+	_handler->controller()->MoveFocus(
+		COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
 }
 
 QWidget *Instance::widget() {

@@ -208,6 +208,15 @@ void Window::eval(const QByteArray &js) {
 	_webview->eval(js.toStdString());
 }
 
+void Window::focus() {
+	Expects(_webview != nullptr);
+
+	if (_window) {
+		_window->requestActivate();
+	}
+	_webview->focus();
+}
+
 void Window::setMessageHandler(Fn<void(std::string)> handler) {
 	_messageHandler = std::move(handler);
 }

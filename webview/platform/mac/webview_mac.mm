@@ -643,6 +643,10 @@ void Instance::eval(std::string js) {
 	[_webview evaluateJavaScript:string completionHandler:nil];
 }
 
+void Instance::focus() {
+
+}
+
 QWidget *Instance::widget() {
 	return nullptr;
 }

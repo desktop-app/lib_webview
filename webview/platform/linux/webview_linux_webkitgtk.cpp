@@ -82,6 +82,8 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	void focus() override;
+
 	QWidget *widget() override;
 	void *winId() override;
 
@@ -642,6 +644,9 @@ void Instance::eval(std::string js) {
 			nullptr,
 			nullptr);
 	}
+}
+
+void Instance::focus() {
 }
 
 QWidget *Instance::widget() {

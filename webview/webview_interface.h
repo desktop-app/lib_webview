@@ -45,6 +45,8 @@ public:
 	virtual void init(std::string js) = 0;
 	virtual void eval(std::string js) = 0;
 
+	virtual void focus() = 0;
+
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
 	virtual QWidget *widget() = 0;
