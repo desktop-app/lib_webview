@@ -229,6 +229,8 @@ public:
 	void init(std::string js) override;
 	void eval(std::string js) override;
 
+	void focus() override;
+
 	QWidget *widget() override;
 	void *winId() override;
 
