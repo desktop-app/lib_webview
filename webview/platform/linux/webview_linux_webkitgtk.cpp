@@ -9,6 +9,7 @@
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
 #include "base/platform/base_platform_info.h"
+#include "base/debug_log.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
@@ -75,6 +76,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void navigateToData(std::string id) override;
 	void reload() override;
 
 	void resizeToWindow() override;
@@ -561,6 +563,10 @@ void Instance::navigate(std::string url) {
 	}
 
 	webkit_web_view_load_uri(WEBKIT_WEB_VIEW(_webview), url.c_str());
+}
+
+void Instance::navigateToData(std::string id) {
+	Unexpected("WebKitGTK::Instance::navigateToData.");
 }
 
 void Instance::reload() {

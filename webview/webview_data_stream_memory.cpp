@@ -50,7 +50,7 @@ std::int64_t DataStreamFromMemory::read(
 	if (requested < 0) {
 		return -1;
 	}
-	const auto copy = std::min(size() - _offset, requested);
+	const auto copy = std::min(std::int64_t(size() - _offset), requested);
 	if (copy > 0) {
 		memcpy(buffer, _data.constData() + _offset, copy);
 		_offset += copy;
