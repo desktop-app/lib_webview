@@ -793,7 +793,7 @@ void Instance::startProcess() {
 
 		HelperProxy::new_(
 			connection,
-			Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+			Gio::DBusProxyFlags::NONE_,
 			kHelperObjectPath,
 			crl::guard(&guard, [&](
 					GObject::Object source_object,
@@ -992,7 +992,7 @@ int Instance::exec() {
 
 	MasterProxy::new_(
 		connection,
-		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
+		Gio::DBusProxyFlags::NONE_,
 		kMasterObjectPath,
 		[&](GObject::Object source_object, Gio::AsyncResult res) {
 			_master = MasterProxy::new_finish(res, nullptr);
