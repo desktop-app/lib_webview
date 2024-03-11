@@ -8,8 +8,10 @@
 
 #include "webview/webview_data_stream.h"
 #include "webview/platform/win/webview_windows_data_stream.h"
+#include "base/algorithm.h"
 #include "base/basic_types.h"
 #include "base/flat_map.h"
+#include "base/variant.h"
 #include "base/weak_ptr.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_co_task_mem.h"
@@ -79,20 +81,26 @@ constexpr auto kDataUrlPrefix
 	return string ? FromWide(string.data()) : std::string();
 }
 
-class Handler final
-	: public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
-	, public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
-	, public ICoreWebView2WebMessageReceivedEventHandler
-	, public ICoreWebView2PermissionRequestedEventHandler
-	, public ICoreWebView2NavigationStartingEventHandler
-	, public ICoreWebView2NavigationCompletedEventHandler
-	, public ICoreWebView2NewWindowRequestedEventHandler
-	, public ICoreWebView2ScriptDialogOpeningEventHandler
-	, public ICoreWebView2WebResourceRequestedEventHandler
+class Handler
+	: public winrt::implements<
+		Handler,
+		ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
+		ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
+		ICoreWebView2WebMessageReceivedEventHandler,
+		ICoreWebView2PermissionRequestedEventHandler,
+		ICoreWebView2NavigationStartingEventHandler,
+		ICoreWebView2NavigationCompletedEventHandler,
+		ICoreWebView2NewWindowRequestedEventHandler,
+		ICoreWebView2ScriptDialogOpeningEventHandler,
+		ICoreWebView2WebResourceRequestedEventHandler>
 	, public base::has_weak_ptr {
 
 public:
-	Handler(Config config, std::function<void()> readyHandler);
+	Handler(
+		Config config,
+		std::function<void(not_null<Handler*>)> saveThis,
+		std::function<void()> readyHandler);
+	~Handler();
 
 	const winrt::com_ptr<ICoreWebView2Environment> &environment() const {
 		return _environment;
@@ -104,14 +112,11 @@ public:
 		return _webview;
 	}
 	[[nodiscard]] bool valid() const {
-		return _environment && _controller && _webview;
+		return _window && _environment && _controller && _webview;
 	}
 
 	void setOpaqueBg(QColor opaqueBg);
 
-	ULONG STDMETHODCALLTYPE AddRef();
-	ULONG STDMETHODCALLTYPE Release();
-	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv);
 	HRESULT STDMETHODCALLTYPE Invoke(
 		HRESULT res,
 		ICoreWebView2Environment *env) override;
@@ -157,9 +162,13 @@ private:
 
 	QColor _opaqueBg;
 	bool _debug = false;
+
 };
 
-Handler::Handler(Config config, std::function<void()> readyHandler)
+Handler::Handler(
+	Config config,
+	std::function<void(not_null<Handler*>)> saveThis,
+	std::function<void()> readyHandler)
 : _window(static_cast<HWND>(config.window))
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
@@ -169,32 +178,24 @@ Handler::Handler(Config config, std::function<void()> readyHandler)
 , _readyHandler(std::move(readyHandler))
 , _opaqueBg(config.opaqueBg)
 , _debug(config.debug) {
+	saveThis(this);
+	setOpaqueBg(_opaqueBg);
 }
+
+Handler::~Handler() = default;
 
 void Handler::setOpaqueBg(QColor opaqueBg) {
-	if (Platform::IsWindows10OrGreater()) {
-		opaqueBg = QColor(255, 255, 255, 0);
-	}
+	_opaqueBg = Platform::IsWindows10OrGreater()
+		? QColor(255, 255, 255, 0)
+		: opaqueBg;
 	if (const auto late = _controller.try_as<ICoreWebView2Controller2>()) {
 		late->put_DefaultBackgroundColor({
-			uchar(opaqueBg.alpha()),
-			uchar(opaqueBg.red()),
-			uchar(opaqueBg.green()),
-			uchar(opaqueBg.blue())
+			uchar(_opaqueBg.alpha()),
+			uchar(_opaqueBg.red()),
+			uchar(_opaqueBg.green()),
+			uchar(_opaqueBg.blue())
 		});
 	}
-}
-
-ULONG STDMETHODCALLTYPE Handler::AddRef() {
-	return 1;
-}
-
-ULONG STDMETHODCALLTYPE Handler::Release() {
-	return 1;
-}
-
-HRESULT STDMETHODCALLTYPE Handler::QueryInterface(REFIID riid, LPVOID *ppv) {
-	return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
@@ -221,6 +222,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		onstack();
 	});
 	if (!_controller) {
+		_window = nullptr;
 		return E_FAIL;
 	}
 
@@ -519,10 +521,12 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	return S_OK;
 }
 
-class Instance final : public Interface {
+class Instance final : public Interface, public base::has_weak_ptr {
 public:
-	Instance(void *window, std::unique_ptr<Handler> handler);
+	explicit Instance(Config &&config);
 	~Instance();
+
+	[[nodiscard]] bool failed() const;
 
 	bool finishEmbedding() override;
 
@@ -543,32 +547,145 @@ public:
 	void setOpaqueBg(QColor opaqueBg) override;
 
 private:
+	struct NavigateToUrl {
+		std::string url;
+	};
+	struct NavigateToData {
+		std::string id;
+	};
+	struct InitScript {
+		std::string script;
+	};
+	struct EvalScript {
+		std::string script;
+	};
+
+	using ReadyStep = std::variant<
+		NavigateToUrl,
+		NavigateToData,
+		InitScript,
+		EvalScript>;
+
+	void start(Config &&config);
+	[[nodiscard]] bool ready() const;
+	void processReadySteps();
+
 	HWND _window = nullptr;
-	std::unique_ptr<Handler> _handler;
+	winrt::com_ptr<IUnknown> _ownedHandler;
+	Handler *_handler = nullptr;
+	std::vector<ReadyStep> _waitingForReady;
+	bool _pendingResize = false;
+	bool _pendingFocus = false;
+	bool _readyFlag = false;
 
 };
 
-Instance::Instance(void *window, std::unique_ptr<Handler> handler)
-: _window(static_cast<HWND>(window))
-, _handler(std::move(handler)) {
+Instance::Instance(Config &&config)
+: _window(static_cast<HWND>(config.window)) {
+	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
 	init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}");
+	start(std::move(config));
 }
 
 Instance::~Instance() {
 	CoUninitialize();
 }
 
+void Instance::start(Config &&config) {
+	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
+		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
+		winrt::take_ownership_from_abi);
+	options->put_AdditionalBrowserArguments(
+		L"--disable-features=ElasticOverscroll");
+
+	auto handler = (Handler*)nullptr;
+	auto owned = winrt::make<Handler>(config, [&](not_null<Handler*> that) {
+		handler = that;
+	}, crl::guard(this, [=] {
+		_readyFlag = true;
+		if (_handler) {
+			processReadySteps();
+		}
+	}));
+	const auto wpath = ToWide(config.userDataPath);
+	const auto result = CreateCoreWebView2EnvironmentWithOptions(
+		nullptr,
+		wpath.empty() ? nullptr : wpath.c_str(),
+		options.get(),
+		handler);
+	if (result == S_OK) {
+		_ownedHandler = std::move(owned);
+		_handler = handler;
+		if (_readyFlag) {
+			processReadySteps();
+		}
+	}
+}
+
+bool Instance::failed() const {
+	return !_handler;
+}
+
+void Instance::processReadySteps() {
+	Expects(ready());
+
+	const auto guard = base::make_weak(this);
+	if (!_handler->valid()) {
+		_window = nullptr;
+		_handler = nullptr;
+		base::take(_ownedHandler);
+		return;
+	}
+	if (guard) {
+		_handler->controller()->put_IsVisible(TRUE);
+	}
+	if (guard && _pendingResize) {
+		resizeToWindow();
+	}
+	if (guard) {
+		for (const auto &step : base::take(_waitingForReady)) {
+			v::match(step, [&](const NavigateToUrl &data) {
+				navigate(data.url);
+			}, [&](const NavigateToData &data) {
+				navigateToData(data.id);
+			}, [&](const InitScript &data) {
+				init(data.script);
+			}, [&](const EvalScript &data) {
+				eval(data.script);
+			});
+			if (!guard) {
+				return;
+			}
+		}
+	}
+	if (guard && _pendingFocus) {
+		focus();
+	}
+}
+
+bool Instance::ready() const {
+	return _window && _handler && _readyFlag;
+}
+
 bool Instance::finishEmbedding() {
-	_handler->controller()->put_IsVisible(TRUE);
 	return true;
 }
 
 void Instance::navigate(std::string url) {
+	if (!ready()) {
+		_waitingForReady.push_back(NavigateToUrl{ std::move(url) });
+		return;
+	}
 	const auto wide = ToWide(url);
 	_handler->webview()->Navigate(wide.c_str());
 }
 
 void Instance::navigateToData(std::string id) {
+	if (!ready()) {
+		_waitingForReady.push_back(NavigateToData{ std::move(id) });
+		return;
+	}
 	auto full = std::string();
 	full.reserve(kDataUrlPrefix.size() + id.size());
 	full.append(kDataUrlPrefix);
@@ -577,16 +694,26 @@ void Instance::navigateToData(std::string id) {
 }
 
 void Instance::reload() {
-	_handler->webview()->Reload();
+	if (ready()) {
+		_handler->webview()->Reload();
+	}
 }
 
 void Instance::resizeToWindow() {
+	if (!ready()) {
+		_pendingResize = true;
+		return;
+	}
 	auto bounds = RECT{};
 	GetClientRect(_window, &bounds);
 	_handler->controller()->put_Bounds(bounds);
 }
 
 void Instance::init(std::string js) {
+	if (!ready()) {
+		_waitingForReady.push_back(InitScript{ std::move(js) });
+		return;
+	}
 	const auto wide = ToWide(js);
 	_handler->webview()->AddScriptToExecuteOnDocumentCreated(
 		wide.c_str(),
@@ -594,13 +721,23 @@ void Instance::init(std::string js) {
 }
 
 void Instance::eval(std::string js) {
+	if (!ready()) {
+		_waitingForReady.push_back(EvalScript{ std::move(js) });
+		return;
+	}
 	const auto wide = ToWide(js);
 	_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
 }
 
 void Instance::focus() {
-	SetForegroundWindow(_window);
-	SetFocus(_window);
+	if (_window) {
+		SetForegroundWindow(_window);
+		SetFocus(_window);
+	}
+	if (!ready()) {
+		_pendingFocus = true;
+		return;
+	}
 	_handler->controller()->MoveFocus(
 		COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
 }
@@ -614,7 +751,9 @@ void *Instance::winId() {
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
-	_handler->setOpaqueBg(opaqueBg);
+	if (_handler) {
+		_handler->setOpaqueBg(opaqueBg);
+	}
 }
 
 } // namespace
@@ -631,41 +770,8 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;
 	}
-	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-
-	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
-		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
-		winrt::take_ownership_from_abi);
-	options->put_AdditionalBrowserArguments(
-		L"--disable-features=ElasticOverscroll");
-
-	const auto event = CreateEvent(nullptr, false, false, nullptr);
-	const auto guard = gsl::finally([&] { CloseHandle(event); });
-	auto handler = std::make_unique<Handler>(config, [&] {
-		SetEvent(event);
-	});
-	const auto wpath = ToWide(config.userDataPath);
-	const auto result = CreateCoreWebView2EnvironmentWithOptions(
-		nullptr,
-		wpath.empty() ? nullptr : wpath.c_str(),
-		options.get(),
-		handler.get());
-	if (result != S_OK) {
-		CoUninitialize();
-		return nullptr;
-	}
-	HANDLE handles[] = { event };
-	auto index = DWORD{};
-	const auto flags = COWAIT_DISPATCH_WINDOW_MESSAGES |
-		COWAIT_DISPATCH_CALLS |
-		COWAIT_INPUTAVAILABLE;
-	CoWaitForMultipleHandles(flags, INFINITE, 1, handles, &index);
-
-	if (!handler->valid()) {
-		CoUninitialize();
-		return nullptr;
-	}
-	return std::make_unique<Instance>(config.window, std::move(handler));
+	auto result = std::make_unique<Instance>(std::move(config));
+	return result->failed() ? nullptr : std::move(result);
 }
 
 } // namespace Webview::EdgeChromium
