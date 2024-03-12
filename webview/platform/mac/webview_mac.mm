@@ -13,6 +13,7 @@
 #include "base/flat_map.h"
 
 #include <crl/crl_on_main.h>
+#include <crl/crl_time.h>
 #include <rpl/rpl.h>
 
 #include <QtCore/QUrl>
@@ -238,8 +239,8 @@ public:
 
 private:
 	struct Task {
-		bool cancelled = false;
-		rpl::lifetime destructor;
+		int index = 0;
+		crl::time started = 0;
 	};
 	struct PartialResource {
 		uint32 index = 0;
@@ -264,9 +265,10 @@ private:
 	using CacheKey = uint64;
 
 	static void TaskFail(TaskPointer task);
-	void taskFail(TaskPointer task);
+	void taskFail(TaskPointer task, int indexToCheck);
 	void taskDone(
 		TaskPointer task,
+		int indexToCheck,
 		const std::string &mime,
 		NSData *data,
 		int64 offset,
@@ -295,6 +297,7 @@ private:
 	base::flat_map<CacheKey, PartData> _partsCache;
 	std::vector<CacheKey> _partsLRU;
 	int64 _cacheTotal = 0;
+	int _taskAutoincrement = 0;
 
 };
 
@@ -342,18 +345,33 @@ void Instance::TaskFail(TaskPointer task) {
 	[task didFailWithError:[NSError errorWithDomain:@"org.telegram.desktop" code:404 userInfo:nil]];
 }
 
-void Instance::taskFail(TaskPointer task) {
-	const auto removed = _tasks.take(task);
+void Instance::taskFail(TaskPointer task, int indexToCheck) {
+	if (indexToCheck) {
+		const auto i = _tasks.find(task);
+		if (i == end(_tasks) || i->second.index != indexToCheck) {
+			return;
+		}
+		_tasks.erase(i);
+	}
 	TaskFail(task);
 }
 
 void Instance::taskDone(
 		TaskPointer task,
+		int indexToCheck,
 		const std::string &mime,
 		NSData *data,
 		int64 offset,
 		int64 total) {
 	Expects(data != nil);
+
+	if (indexToCheck) {
+		const auto i = _tasks.find(task);
+		if (i == end(_tasks) || i->second.index != indexToCheck) {
+			return;
+		}
+		_tasks.erase(i);
+	}
 
 	const auto length = int64([data length]);
 	const auto partial = (offset > 0) || (total != length);
@@ -530,9 +548,7 @@ Instance::CachedResult Instance::fillFromCache(
 
 void Instance::processDataRequest(TaskPointer task, bool started) {
 	if (!started) {
-		if (const auto i = _tasks.find(task); i != end(_tasks)) {
-			i->second.cancelled = true;
-		}
+		_tasks.remove(task);
 		return;
 	}
 
@@ -541,7 +557,7 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 	NSString *url = task.request.URL.absoluteString;
 	NSString *prefix = stdToNS(kFullDomain);
 	if (![url hasPrefix:prefix]) {
-		taskFail(task);
+		taskFail(task, 0);
 		return;
 	}
 
@@ -554,24 +570,27 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 		ParseRangeHeaderFor(prepared, std::string([rangeHeader UTF8String]));
 
 		if (const auto cached = fillFromCache(prepared)) {
-			taskDone(task, cached.mime, cached.data, prepared.offset, cached.total);
+			taskDone(task, 0, cached.mime, cached.data, prepared.offset, cached.total);
 			return;
 		}
 	}
+
+	const auto index = ++_taskAutoincrement;
+	_tasks[task] = Task{ .index = index, .started = crl::now() };
 
 	const auto requestedOffset = prepared.offset;
 	const auto requestedLimit = prepared.limit;
 	prepared.done = crl::guard(this, [=](DataResponse resolved) {
 		auto &stream = resolved.stream;
 		if (!stream) {
-			return taskFail(task);
+			return taskFail(task, index);
 		}
 		const auto length = stream->size();
 		Assert(length > 0);
 
 		const auto offset = resolved.streamOffset;
 		if (requestedOffset >= offset + length || offset > requestedOffset) {
-			return taskFail(task);
+			return taskFail(task, index);
 		}
 
 		auto bytes = std::unique_ptr<char[]>(new char[length]);
@@ -598,15 +617,13 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 			}
 			addToCache(partial.index, offset, { std::move(bytes), length });
 		}
-		taskDone(task, mime, data, requestedOffset, total);
+		taskDone(task, index, mime, data, requestedOffset, total);
 	});
 	const auto result = _dataRequestHandler
 		? _dataRequestHandler(prepared)
 		: DataResult::Failed;
 	if (result == DataResult::Failed) {
-		return taskFail(task);
-	} else if (result == DataResult::Pending) {
-		_tasks.emplace(task, Task());
+		return taskFail(task, index);
 	}
 
 	}
