@@ -677,6 +677,10 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
+bool NavigateToDataSupported() {
+	return true;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;

@@ -18,6 +18,10 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
+bool NavigateToDataSupported() {
+	return false;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return WebKitGTK::CreateInstance(std::move(config));
 }

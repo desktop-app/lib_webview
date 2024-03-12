@@ -123,6 +123,7 @@ void ParseRangeHeaderFor(DataRequest &request, std::string_view header);
 	return Availability().error == Available::Error::None;
 }
 [[nodiscard]] bool SupportsEmbedAfterCreate();
+[[nodiscard]] bool NavigateToDataSupported();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
