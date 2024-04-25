@@ -30,6 +30,7 @@
 			<arg type='i' name='g' direction='in'/>
 			<arg type='i' name='b' direction='in'/>
 			<arg type='i' name='a' direction='in'/>
+			<arg type='s' name='path' direction='in'/>
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>

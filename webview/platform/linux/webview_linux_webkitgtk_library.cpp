@@ -44,7 +44,6 @@ ResolveResult Resolve(bool wayland) {
 		&& (wayland
 			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid)
 			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid))
-		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_user_content_manager)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_content_manager_register_script_message_handler)
@@ -72,6 +71,19 @@ ResolveResult Resolve(bool wayland) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
+	{
+		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_new_with_context)
+			&& LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new)
+			&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
+
+		const auto available2 = LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
+			&& LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_new);
+		if (!available1 && !available2) {
+			return ResolveResult::NoLibrary;
+		}
+	}
+	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
 	{
 		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string);
 

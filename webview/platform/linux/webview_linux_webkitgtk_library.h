@@ -63,6 +63,9 @@ typedef struct _WebKitUserScript WebKitUserScript;
 typedef struct _WebKitWebView WebKitWebView;
 typedef struct _WebKitSettings WebKitSettings;
 typedef struct _WebKitScriptDialog WebKitScriptDialog;
+typedef struct _WebKitWebsiteDataManager WebKitWebsiteDataManager;
+typedef struct _WebKitWebContext WebKitWebContext;
+typedef struct _WebKitNetworkSession WebKitNetworkSession;
 
 typedef enum {
 	GTK_WINDOW_TOPLEVEL,
@@ -197,7 +200,8 @@ inline void (*webkit_script_dialog_prompt_set_text)(
 	WebKitScriptDialog *dialog,
 	const gchar *text);
 
-inline GtkWidget *(*webkit_web_view_new)(void);
+inline GtkWidget *(*webkit_web_view_new)();
+inline GtkWidget *(*webkit_web_view_new_with_context)(WebKitWebContext *context);
 inline GType (*webkit_web_view_get_type)(void);
 inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
 	WebKitWebView *web_view);
@@ -244,6 +248,14 @@ inline void (*webkit_web_view_run_javascript)(
 inline void (*webkit_web_view_set_background_color)(
 	WebKitWebView *web_view,
 	const GdkRGBA *rgba);
+inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
+	const gchar *first_option_name,
+	...);
+inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
+	WebKitWebsiteDataManager* manager);
+inline WebKitNetworkSession *(*webkit_network_session_new)(
+	const char* data_directory,
+	const char* cache_directory);
 
 enum class ResolveResult {
 	Success,

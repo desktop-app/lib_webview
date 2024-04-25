@@ -211,11 +211,13 @@ bool Instance::create(Config config) {
 
 		const ::base::has_weak_ptr guard;
 		std::optional<bool> success;
+		const auto debug = _debug;
 		const auto r = config.opaqueBg.red();
 		const auto g = config.opaqueBg.green();
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
-		_helper.call_create(_debug, r, g, b, a, crl::guard(&guard, [&](
+		const auto path = config.userDataPath;
+		_helper.call_create(debug, r, g, b, a, path, crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
@@ -263,7 +265,28 @@ bool Instance::create(Config config) {
 	} else {
 		gtk_widget_show_all(_window);
 	}
-	_webview = webkit_web_view_new();
+
+	const auto base = config.userDataPath;
+	const auto baseCache = base + "/cache";
+	const auto baseData = base + "/data";
+
+	if (webkit_network_session_new) {
+		_webview = GTK_WIDGET(g_object_new(
+			WEBKIT_TYPE_WEB_VIEW,
+			"network-session",
+			webkit_network_session_new(baseData.c_str(), baseCache.c_str())));
+	} else {
+		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
+			"base-cache-directory", baseCache.c_str(),
+			"base-data-directory", baseData.c_str(),
+			nullptr);
+		WebKitWebContext *context = webkit_web_context_new_with_website_data_manager(data);
+		g_object_unref(data);
+
+		_webview = webkit_web_view_new_with_context(context);
+		g_object_unref(context);		
+	}
+
 	WebKitUserContentManager *manager =
 		webkit_web_view_get_user_content_manager(WEBKIT_WEB_VIEW(_webview));
 	g_signal_connect_swapped(
@@ -1054,8 +1077,13 @@ void Instance::registerHelperMethodHandlers() {
 			int r,
 			int g,
 			int b,
-			int a) {
-		if (create({ .opaqueBg = QColor(r, g, b, a), .debug = debug })) {
+			int a,
+			const std::string &path) {
+		if (create({
+			.opaqueBg = QColor(r, g, b, a),
+			.userDataPath = path,
+			.debug = debug,
+		})) {
 			_helper.complete_create(invocation);
 		} else {
 			invocation.return_gerror(MethodError());
