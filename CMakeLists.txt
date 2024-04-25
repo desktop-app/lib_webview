@@ -12,6 +12,7 @@ get_filename_component(src_loc . REALPATH)
 
 nice_target_sources(lib_webview ${src_loc}
 PRIVATE
+    webview/webview_common.h
     webview/webview_data_stream.h
     webview/webview_data_stream_memory.cpp
     webview/webview_data_stream_memory.h

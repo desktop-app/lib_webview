@@ -27,6 +27,7 @@ namespace {
 constexpr auto kDataUrlScheme = std::string_view("desktop-app-resource");
 constexpr auto kFullDomain = std::string_view("desktop-app-resource://domain/");
 constexpr auto kPartsCacheLimit = 32 * 1024 * 1024;
+constexpr auto kUuidSize = 16;
 
 [[nodiscard]] NSString *stdToNS(std::string_view value) {
 	return [[NSString alloc]
@@ -301,6 +302,23 @@ private:
 
 };
 
+[[nodiscard]] NSUUID *UuidFromToken(const std::string &token) {
+	const auto bytes = reinterpret_cast<const unsigned char*>(token.data());
+	return (token.size() == kUuidSize)
+		? [[NSUUID alloc] initWithUUIDBytes:bytes]
+		: nil;
+}
+
+[[nodiscard]] std::string UuidToToken(NSUUID *uuid) {
+	if (!uuid) {
+		return std::string();
+	}
+	auto result = std::string(kUuidSize, ' ');
+	const auto bytes = reinterpret_cast<unsigned char*>(result.data());
+	[uuid getUUIDBytes:bytes];
+	return result;
+}
+
 Instance::Instance(Config config) {
 	const auto weak = base::make_weak(this);
 	const auto handleDataRequest = [=](id<WKURLSchemeTask> task, bool started) {
@@ -316,6 +334,13 @@ Instance::Instance(Config config) {
 	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(kDataUrlScheme)];
+	if (@available(macOS 14, *)) {
+		if (config.userDataToken != LegacyStorageIdToken().toStdString()) {
+			NSUUID *uuid = UuidFromToken(config.userDataToken);
+			[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
+			[uuid release];
+		}
+	}
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
 	if (@available(macOS 13.3, *)) {
 		_webview.inspectable = config.debug ? YES : NO;
@@ -698,11 +723,37 @@ bool NavigateToDataSupported() {
 	return true;
 }
 
+bool SeparateStorageIdSupported() {
+	return true;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;
 	}
 	return std::make_unique<Instance>(std::move(config));
+}
+
+std::string GenerateStorageToken() {
+	return UuidToToken([NSUUID UUID]);
+}
+
+void ClearStorageDataByToken(const std::string &token) {
+	if (@available(macOS 14, *)) {
+		if (!token.empty() && token != LegacyStorageIdToken().toStdString()) {
+			if (NSUUID *uuid = UuidFromToken(token)) {
+				// removeDataStoreForIdentifier crashes without that (if not created first).
+				WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+				[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
+				[configuration release];
+
+				[WKWebsiteDataStore
+					removeDataStoreForIdentifier:uuid
+					completionHandler:^(NSError *error) {}];
+				[uuid release];
+			}
+		}
+	}
 }
 
 } // namespace Webview

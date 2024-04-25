@@ -99,7 +99,8 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 			.navigationDoneHandler = navigationDoneHandler(),
 			.dialogHandler = dialogHandler(),
 			.dataRequestHandler = dataRequestHandler(),
-			.userDataPath = config.userDataPath.toStdString(),
+			.userDataPath = config.storageId.path.toStdString(),
+			.userDataToken = config.storageId.token.toStdString(),
 			.debug = OptionWebviewDebugEnabled.value(),
 		});
 	}

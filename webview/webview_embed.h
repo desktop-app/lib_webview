@@ -8,6 +8,7 @@
 
 #include "base/unique_qptr.h"
 #include "base/basic_types.h"
+#include "webview/webview_common.h"
 
 #include <rpl/lifetime.h>
 #include <QColor>
@@ -29,7 +30,7 @@ enum class DataResult;
 
 struct WindowConfig {
 	QColor opaqueBg;
-	QString userDataPath;
+	StorageId storageId;
 };
 
 class Window final {

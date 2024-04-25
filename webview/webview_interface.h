@@ -6,6 +6,8 @@
 //
 #pragma once
 
+#include "webview/webview_common.h"
+
 #include <memory>
 #include <string>
 #include <optional>
@@ -20,15 +22,6 @@ class QWidget;
 namespace Webview {
 
 class DataStream;
-
-struct ThemeParams {
-	QColor opaqueBg;
-	QColor scrollBg;
-	QColor scrollBgOver;
-	QColor scrollBarBg;
-	QColor scrollBarBgOver;
-	QByteArray json;
-};
 
 class Interface {
 public:
@@ -102,6 +95,7 @@ struct Config {
 	std::function<DialogResult(DialogArgs)> dialogHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
 	std::string userDataPath;
+	std::string userDataToken;
 	bool debug = false;
 };
 
@@ -124,8 +118,12 @@ void ParseRangeHeaderFor(DataRequest &request, std::string_view header);
 }
 [[nodiscard]] bool SupportsEmbedAfterCreate();
 [[nodiscard]] bool NavigateToDataSupported();
+[[nodiscard]] bool SeparateStorageIdSupported();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
+
+[[nodiscard]] std::string GenerateStorageToken();
+void ClearStorageDataByToken(const std::string &token);
 
 } // namespace Webview

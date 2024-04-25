@@ -6,6 +6,7 @@
 //
 #include "webview/platform/linux/webview_linux.h"
 
+#include "base/random.h"
 #include "webview/platform/linux/webview_linux_webkitgtk.h"
 
 namespace Webview {
@@ -22,8 +23,22 @@ bool NavigateToDataSupported() {
 	return false;
 }
 
+bool SeparateStorageIdSupported() {
+	return true;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return WebKitGTK::CreateInstance(std::move(config));
+}
+
+std::string GenerateStorageToken() {
+	constexpr auto kSize = 16;
+	auto result = std::string(kSize, ' ');
+	base::RandomFill(result.data(), result.size());
+	return result;
+}
+
+void ClearStorageDataByToken(const std::string &token) {
 }
 
 } // namespace Webview
