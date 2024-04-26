@@ -271,10 +271,14 @@ bool Instance::create(Config config) {
 	const auto baseData = base + "/data";
 
 	if (webkit_network_session_new) {
+		WebKitNetworkSession *session = webkit_network_session_new(
+			baseData.c_str(),
+			baseCache.c_str());
 		_webview = GTK_WIDGET(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
 			"network-session",
-			webkit_network_session_new(baseData.c_str(), baseCache.c_str())));
+			session));
+		g_object_unref(session);
 	} else {
 		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
 			"base-cache-directory", baseCache.c_str(),
