@@ -277,7 +277,8 @@ bool Instance::create(Config config) {
 		_webview = GTK_WIDGET(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
 			"network-session",
-			session));
+			session,
+			nullptr));
 		g_object_unref(session);
 	} else {
 		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
