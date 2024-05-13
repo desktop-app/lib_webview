@@ -260,10 +260,12 @@ bool Instance::create(Config config) {
 	}
 	setOpaqueBg(config.opaqueBg);
 	gtk_window_set_decorated(GTK_WINDOW(_window), false);
-	if (!gtk_widget_show_all) {
-		gtk_widget_set_visible(_window, true);
-	} else {
-		gtk_widget_show_all(_window);
+	if (!_wayland) {
+		if (!gtk_widget_show_all) {
+			gtk_widget_set_visible(_window, true);
+		} else {
+			gtk_widget_show_all(_window);
+		}
 	}
 
 	const auto base = config.userDataPath;
