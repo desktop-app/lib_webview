@@ -314,7 +314,7 @@ bool Instance::create(Config config) {
 			return instance->loadFailed(
 				loadEvent,
 				failingUri,
-				GLib::Error(error));
+				GLib::Error(g_error_copy(error)));
 		}),
 		this);
 	g_signal_connect_swapped(
