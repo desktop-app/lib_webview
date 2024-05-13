@@ -988,6 +988,8 @@ int Instance::exec() {
 		_helper.emit_started();
 	});
 
+	app.signal_activate().connect([](Gio::Application) {});
+
 	app.hold();
 
 	auto loop = GLib::MainLoop::new_();
