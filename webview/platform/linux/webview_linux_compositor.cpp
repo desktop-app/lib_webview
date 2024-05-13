@@ -43,18 +43,18 @@ private:
 
 class Output : public QWaylandQuickOutput {
 public:
-	Output(
-			QWaylandCompositor *compositor,
-			QWaylandXdgSurface *xdgSurface,
-			QQuickWindow *window = nullptr) {
-		setParent(xdgSurface);
+	Output(QWaylandCompositor *compositor, QObject *parent = nullptr) {
+		const auto xdgSurface = qobject_cast<QWaylandXdgSurface*>(parent);
+		const auto window = qobject_cast<QQuickWindow*>(parent);
+		setParent(parent);
 		setCompositor(compositor);
 		setWindow(window ? window : &_ownedWindow.emplace());
 		setScaleFactor(this->window()->devicePixelRatio());
 		setSizeFollowsWindow(true);
 		this->window()->setProperty("output", QVariant::fromValue(this));
-		QCoreApplication::processEvents();
-		_chrome.emplace(this, this->window(), xdgSurface, !window);
+		if (xdgSurface) {
+			_chrome.emplace(this, this->window(), xdgSurface, !window);
+		}
 	}
 
 	QQuickWindow *window() const {
@@ -63,6 +63,14 @@ public:
 
 	Chrome *chrome() const {
 		return _chrome;
+	}
+
+	void setXdgSurface(QWaylandXdgSurface *xdgSurface) {
+		if (xdgSurface) {
+			_chrome.emplace(this, window(), xdgSurface, bool(_ownedWindow));
+		} else {
+			_chrome.reset();
+		}
 	}
 
 private:
@@ -76,6 +84,13 @@ Chrome::Chrome(
 		QWaylandXdgSurface *xdgSurface,
 		bool windowFollowsSize)
 : QWaylandQuickShellSurfaceItem(window->contentItem()) {
+	base::qt_signal_producer(
+		xdgSurface,
+		&QObject::destroyed
+	) | rpl::start_with_next([=] {
+		delete this;
+	}, _lifetime);
+
 	rpl::single(rpl::empty) | rpl::then(
 		base::qt_signal_producer(
 			view(),
@@ -205,17 +220,14 @@ Compositor::Compositor(const QByteArray &socketName)
 	connect(&_private->shell, &QWaylandXdgShell::toplevelCreated, [=](
 			QWaylandXdgToplevel *toplevel,
 			QWaylandXdgSurface *xdgSurface) {
-		if (_private->output || !_private->widget) {
+		if (!_private->output || _private->output->chrome()) {
 			const auto output = new Output(this, xdgSurface);
 
 			output->chrome()->surfaceCompleted() | rpl::start_with_next([=] {
 				output->window()->show();
 			}, _private->lifetime);
 		} else {
-			_private->output.emplace(
-				this,
-				xdgSurface,
-				_private->widget->quickWindow());
+			_private->output->setXdgSurface(xdgSurface);
 		}
 	});
 
@@ -257,6 +269,11 @@ Compositor::Compositor(const QByteArray &socketName)
 
 void Compositor::setWidget(QQuickWidget *widget) {
 	_private->widget = widget;
+	if (widget) {
+		_private->output.emplace(this, widget->quickWindow());
+	} else {
+		_private->output.reset();
+	}
 }
 
 } // namespace Webview
