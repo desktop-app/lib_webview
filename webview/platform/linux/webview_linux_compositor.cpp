@@ -52,6 +52,15 @@ public:
 		setScaleFactor(this->window()->devicePixelRatio());
 		setSizeFollowsWindow(true);
 		this->window()->setProperty("output", QVariant::fromValue(this));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+		base::install_event_filter(this, this->window(), [=](
+				not_null<QEvent*> e) {
+			if (e->type() == QEvent::DevicePixelRatioChange) {
+				setScaleFactor(this->window()->devicePixelRatio());
+			}
+			return base::EventFilterResult::Continue;
+		});
+#endif // Qt >= 6.6.0
 		if (xdgSurface) {
 			_chrome.emplace(this, this->window(), xdgSurface, !window);
 		}
