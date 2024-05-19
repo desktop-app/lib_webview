@@ -1005,6 +1005,32 @@ int Instance::exec() {
 		return 1;
 	}
 
+	{
+		auto socketFile = Gio::File::new_for_path(socketPath);
+
+		auto socketMonitor = socketFile.monitor(
+			Gio::FileMonitorFlags::NONE_,
+			nullptr);
+
+		if (!socketMonitor) {
+			return 1;
+		}
+
+		socketMonitor.signal_changed().connect([&](
+				Gio::FileMonitor,
+				Gio::File file,
+				Gio::File otherFile,
+				Gio::FileMonitorEvent eventType) {
+			if (eventType == Gio::FileMonitorEvent::CREATED_) {
+				loop.quit();
+			}
+		});
+
+		if (!socketFile.query_exists()) {
+			loop.run();
+		}
+	}
+
 	auto connection = Gio::DBusConnection::new_for_address_sync(
 		SocketPathToDBusAddress(socketPath),
 		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_,
