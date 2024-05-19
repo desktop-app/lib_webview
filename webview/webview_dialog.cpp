@@ -71,6 +71,10 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		});
 		const auto raw = widget.get();
 
+		raw->setWindowFlag(Qt::WindowStaysOnTopHint, false);
+		raw->setAttribute(Qt::WA_DeleteOnClose, false);
+		raw->setAttribute(Qt::WA_ShowModal, true);
+
 		const auto titleHeight = args.title.isEmpty()
 			? st::separatePanelNoTitleHeight
 			: st::separatePanelTitleHeight;
@@ -200,10 +204,6 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 				input->setFocus();
 			}
 		}, container->lifetime());
-
-		raw->setWindowFlag(Qt::WindowStaysOnTopHint, false);
-		raw->setAttribute(Qt::WA_DeleteOnClose, false);
-		raw->setAttribute(Qt::WA_ShowModal, true);
 
 		raw->closeRequests() | rpl::start_with_next([=] {
 			raw->hideGetDuration();
