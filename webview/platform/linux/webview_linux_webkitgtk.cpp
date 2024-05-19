@@ -853,12 +853,16 @@ void Instance::startProcess() {
 	});
 
 	// timeout in case something goes wrong
+	bool timeoutHappened = false;
 	const auto timeout = GLib::timeout_add_seconds_once(5, [&] {
+		timeoutHappened = true;
 		loop.quit();
 	});
 
 	loop.run();
-	GLib::Source::remove(timeout);
+	if (!timeoutHappened) {
+		GLib::Source::remove(timeout);
+	}
 	if (_helper && started) {
 		_helper.disconnect(started);
 	}
