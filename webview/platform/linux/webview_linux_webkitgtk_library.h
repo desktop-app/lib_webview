@@ -200,7 +200,6 @@ inline void (*webkit_script_dialog_prompt_set_text)(
 	WebKitScriptDialog *dialog,
 	const gchar *text);
 
-inline GtkWidget *(*webkit_web_view_new)();
 inline GtkWidget *(*webkit_web_view_new_with_context)(WebKitWebContext *context);
 inline GType (*webkit_web_view_get_type)(void);
 inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
