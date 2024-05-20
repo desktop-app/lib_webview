@@ -216,6 +216,7 @@ inline void (*webkit_settings_set_javascript_can_access_clipboard)(
 inline void (*webkit_settings_set_enable_developer_extras)(
 	WebKitSettings *settings,
 	gboolean enabled);
+inline gboolean (*webkit_web_view_is_loading)(WebKitWebView *web_view);
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
 	const gchar *uri);

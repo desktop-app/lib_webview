@@ -410,11 +410,11 @@ bool Instance::loadFailed(
 }
 
 void Instance::loadChanged(WebKitLoadEvent loadEvent) {
-	if (loadEvent == WEBKIT_LOAD_FINISHED) {
-		const auto success = !_loadFailed;
+	if (loadEvent == WEBKIT_LOAD_STARTED) {
 		_loadFailed = false;
+	} else if (loadEvent == WEBKIT_LOAD_FINISHED) {
 		if (_master) {
-			_master.call_navigation_done(success, nullptr);
+			_master.call_navigation_done(!_loadFailed, nullptr);
 		}
 	}
 }
@@ -456,6 +456,13 @@ bool Instance::decidePolicy(
 	if (!result) {
 		webkit_policy_decision_ignore(decision);
 	}
+	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
+		if (!webkit_web_view_is_loading(WEBKIT_WEB_VIEW(_webview))) {
+			if (_master) {
+				_master.call_navigation_done(!_loadFailed, nullptr);
+			}
+		}
+	}));
 	return !result;
 }
 
