@@ -1106,6 +1106,7 @@ int Instance::exec() {
 		GLib::setenv("GSK_RENDERER", "cairo", true);
 		GLib::setenv("GDK_DEBUG", "gl-disable", true);
 		GLib::setenv("GDK_GL", "disable", true);
+		GLib::setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", true);
 	}
 
 	return app.run({});
