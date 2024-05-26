@@ -13,6 +13,7 @@
 
 #include <QtQuickWidgets/QQuickWidget>
 #include <QtWaylandCompositor/QWaylandXdgSurface>
+#include <QtWaylandCompositor/QWaylandXdgOutputV1>
 #include <QtWaylandCompositor/QWaylandQuickOutput>
 #include <QtWaylandCompositor/QWaylandQuickShellSurfaceItem>
 
@@ -20,12 +21,14 @@ namespace Webview {
 
 struct Compositor::Private {
 	Private(Compositor *parent)
-	: shell(parent) {
+	: shell(parent)
+	, xdgOutput(parent) {
 	}
 
 	QPointer<QQuickWidget> widget;
 	base::unique_qptr<Output> output;
 	QWaylandXdgShell shell;
+	QWaylandXdgOutputManagerV1 xdgOutput;
 	rpl::lifetime lifetime;
 };
 
@@ -51,7 +54,8 @@ private:
 
 class Compositor::Output : public QWaylandQuickOutput {
 public:
-	Output(Compositor *compositor, QObject *parent = nullptr) {
+	Output(Compositor *compositor, QObject *parent = nullptr)
+	: _xdg(this, &compositor->_private->xdgOutput) {
 		const auto xdgSurface = qobject_cast<QWaylandXdgSurface*>(parent);
 		const auto window = qobject_cast<QQuickWindow*>(parent);
 		setParent(parent);
@@ -69,6 +73,17 @@ public:
 			return base::EventFilterResult::Continue;
 		});
 #endif // Qt >= 6.6.0
+		rpl::single(rpl::empty) | rpl::then(
+			base::qt_signal_producer(
+				this,
+				&QWaylandOutput::geometryChanged
+			)
+		) | rpl::map([=] {
+			return geometry();
+		}) | rpl::start_with_next([=](QRect geometry) {
+			_xdg.setLogicalPosition(geometry.topLeft() / scaleFactor());
+			_xdg.setLogicalSize(geometry.size() / scaleFactor());
+		}, _lifetime);
 		if (xdgSurface) {
 			_chrome.emplace(this, this->window(), xdgSurface, !window);
 		}
@@ -91,8 +106,10 @@ public:
 	}
 
 private:
+	QWaylandXdgOutputV1 _xdg;
 	std::optional<QQuickWindow> _ownedWindow;
 	base::unique_qptr<Chrome> _chrome;
+	rpl::lifetime _lifetime;
 };
 
 Compositor::Chrome::Chrome(
