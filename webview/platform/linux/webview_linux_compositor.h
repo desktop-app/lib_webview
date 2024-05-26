@@ -19,6 +19,9 @@ public:
 	void setWidget(QQuickWidget *widget);
 
 private:
+	class Output;
+	class Chrome;
+
 	struct Private;
 	const std::unique_ptr<Private> _private;
 };
