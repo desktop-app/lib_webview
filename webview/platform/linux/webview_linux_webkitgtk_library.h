@@ -261,7 +261,7 @@ enum class ResolveResult {
 	Success,
 	NoLibrary,
 	CantInit,
-	OtherError,
+	IPCFailure,
 };
 
 [[nodiscard]] ResolveResult Resolve(bool wayland);
