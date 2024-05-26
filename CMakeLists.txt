@@ -68,6 +68,11 @@ elseif (LINUX)
 
         include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
         generate_dbus(lib_webview org.desktop_app.GtkIntegration.Webview. Webview ${src_loc}/webview/platform/linux/webview_linux_interface.xml)
+
+        target_compile_definitions(lib_webview
+        PRIVATE
+            G_LOG_DOMAIN="WebView"
+        )
     else()
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_compositor.cpp
