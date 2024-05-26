@@ -17,11 +17,19 @@
 #include <QtWaylandCompositor/QWaylandQuickShellSurfaceItem>
 
 namespace Webview {
-namespace {
 
-class Output;
+struct Compositor::Private {
+	Private(Compositor *parent)
+	: shell(parent) {
+	}
 
-class Chrome : public QWaylandQuickShellSurfaceItem {
+	QPointer<QQuickWidget> widget;
+	base::unique_qptr<Output> output;
+	QWaylandXdgShell shell;
+	rpl::lifetime lifetime;
+};
+
+class Compositor::Chrome : public QWaylandQuickShellSurfaceItem {
 public:
 	Chrome(
 		Output *output,
@@ -41,9 +49,9 @@ private:
 	rpl::lifetime _lifetime;
 };
 
-class Output : public QWaylandQuickOutput {
+class Compositor::Output : public QWaylandQuickOutput {
 public:
-	Output(QWaylandCompositor *compositor, QObject *parent = nullptr) {
+	Output(Compositor *compositor, QObject *parent = nullptr) {
 		const auto xdgSurface = qobject_cast<QWaylandXdgSurface*>(parent);
 		const auto window = qobject_cast<QQuickWindow*>(parent);
 		setParent(parent);
@@ -87,7 +95,7 @@ private:
 	base::unique_qptr<Chrome> _chrome;
 };
 
-Chrome::Chrome(
+Compositor::Chrome::Chrome(
 		Output *output,
 		QQuickWindow *window,
 		QWaylandXdgSurface *xdgSurface,
@@ -210,19 +218,6 @@ Chrome::Chrome(
 		}, _lifetime);
 	}
 }
-
-} // namespace
-
-struct Compositor::Private {
-	Private(Compositor *parent)
-	: shell(parent) {
-	}
-
-	QPointer<QQuickWidget> widget;
-	base::unique_qptr<Output> output;
-	QWaylandXdgShell shell;
-	rpl::lifetime lifetime;
-};
 
 Compositor::Compositor(const QByteArray &socketName)
 : _private(std::make_unique<Private>(this)) {
