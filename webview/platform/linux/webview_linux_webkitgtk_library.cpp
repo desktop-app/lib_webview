@@ -12,8 +12,8 @@ namespace Webview::WebKitGTK::Library {
 
 ResolveResult Resolve(bool wayland) {
 	const auto lib = base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
-			?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
-			?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
+		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
+		?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
 	const auto result = lib
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_init_check)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_type)
@@ -63,49 +63,30 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_confirm_set_confirmed)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_get_default_text)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_set_text)
-		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_background_color);
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_background_color)
+		&& ((LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_new_with_context)
+				&& LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new)
+				&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager))
+			|| (LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
+				&& LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_new)))
+		&& (LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string)
+			|| (LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_global_context)
+				&& LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_value)
+				&& LOAD_LIBRARY_SYMBOL(lib, JSValueToStringCopy)
+				&& LOAD_LIBRARY_SYMBOL(lib, JSStringGetMaximumUTF8CStringSize)
+				&& LOAD_LIBRARY_SYMBOL(lib, JSStringGetUTF8CString)
+				&& LOAD_LIBRARY_SYMBOL(lib, JSStringRelease)))
+		&& ((LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_navigation_action)
+				&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_action_get_request))
+			|| LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_request));
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
-	{
-		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_new_with_context)
-			&& LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new)
-			&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
-
-		const auto available2 = LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
-			&& LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_new);
-		if (!available1 && !available2) {
-			return ResolveResult::NoLibrary;
-		}
-	}
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
-	{
-		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string);
-
-		const auto available2 = LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_global_context)
-			&& LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_value)
-			&& LOAD_LIBRARY_SYMBOL(lib, JSValueToStringCopy)
-			&& LOAD_LIBRARY_SYMBOL(lib, JSStringGetMaximumUTF8CStringSize)
-			&& LOAD_LIBRARY_SYMBOL(lib, JSStringGetUTF8CString)
-			&& LOAD_LIBRARY_SYMBOL(lib, JSStringRelease);
-		if (!available1 && !available2) {
-			return ResolveResult::NoLibrary;
-		}
-	}
-	{
-		const auto available1 = LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_navigation_action)
-			&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_action_get_request);
-
-		const auto available2 = LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_request);
-
-		if (!available1 && !available2) {
-			return ResolveResult::NoLibrary;
-		}
-	}
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		gdk_set_allowed_backends(wayland ? "wayland" : "x11");
 	}
