@@ -56,14 +56,6 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
 
-bool PreferWayland() {
-	if (!Platform::IsX11()) {
-		return true;
-	}
-	const auto platform = Platform::GetWindowManager().toLower();
-	return platform.contains("mutter") || platform.contains("gnome");
-}
-
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(bool remoting = true);
@@ -143,7 +135,7 @@ private:
 Instance::Instance(bool remoting)
 : _remoting(remoting) {
 	if (_remoting) {
-		_wayland = PreferWayland();
+		_wayland = !Platform::IsX11();
 		startProcess();
 	}
 }
@@ -247,7 +239,9 @@ bool Instance::create(Config config) {
 		return success.value_or(false);
 	}
 
-	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	_window = _wayland
+		? gtk_window_new(GTK_WINDOW_TOPLEVEL)
+		: gtk_plug_new(0);
 	if (gtk_widget_add_css_class) {
 		gtk_widget_add_css_class(_window, "webviewWindow");
 	} else {
@@ -546,7 +540,7 @@ ResolveResult Instance::resolve() {
 			GLib::MainContext::default_().iteration(true);
 		}
 
-		if (!_wayland && result && *result == ResolveResult::CantInit) {
+		if (!_wayland && result && *result != ResolveResult::Success) {
 			_wayland = true;
 			stopProcess();
 			startProcess();
@@ -681,16 +675,7 @@ void *Instance::winId() {
 		return nullptr;
 	}
 
-	if (gdk_x11_surface_get_xid
-		&& gtk_widget_get_native
-		&& gtk_native_get_surface) {
-		return reinterpret_cast<void*>(gdk_x11_surface_get_xid(
-			gtk_native_get_surface(
-				gtk_widget_get_native(_window))));
-	} else {
-		return reinterpret_cast<void*>(gdk_x11_window_get_xid(
-			gtk_widget_get_window(_window)));
-	}
+	return reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)));
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
