@@ -17,6 +17,9 @@
 #define GTK_TYPE_WINDOW (gtk_window_get_type ())
 #define GTK_WINDOW(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_WINDOW, GtkWindow))
 
+#define GTK_TYPE_PLUG (gtk_plug_get_type ())
+#define GTK_PLUG(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_PLUG, GtkPlug))
+
 #define GTK_TYPE_STYLE_PROVIDER (gtk_style_provider_get_type ())
 #define GTK_STYLE_PROVIDER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_STYLE_PROVIDER, GtkStyleProvider))
 #define GTK_STYLE_PROVIDER_PRIORITY_APPLICATION 600
@@ -29,12 +32,11 @@
 
 typedef struct _GdkDisplay GdkDisplay;
 typedef struct _GdkScreen GdkScreen;
-typedef struct _GdkSurface GdkSurface;
-typedef struct _GdkWindow GdkWindow;
 typedef struct _GdkRGBA GdkRGBA;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
+typedef struct _GtkPlug GtkPlug;
 typedef struct _GtkNative GtkNative;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
@@ -114,9 +116,6 @@ inline void (*gtk_container_add)(
 inline void (*gtk_window_set_child)(
 	GtkWindow *window,
 	GtkWidget *child);
-inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
-inline GtkNative *(*gtk_widget_get_native)(GtkWidget *widget);
-inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
@@ -153,8 +152,9 @@ inline void (*gtk_css_provider_load_from_data)(
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here
-inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
-inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *window);
+inline GtkWidget *(*gtk_plug_new)(unsigned long socket_id);
+inline unsigned long (*gtk_plug_get_id)(GtkPlug *plug);
+inline GType (*gtk_plug_get_type)(void);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSStringRef (*JSValueToStringCopy)(

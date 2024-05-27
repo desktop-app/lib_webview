@@ -11,7 +11,9 @@
 namespace Webview::WebKitGTK::Library {
 
 ResolveResult Resolve(bool wayland) {
-	const auto lib = base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
+	const auto lib = (wayland
+			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
+			: nullptr)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
 	const auto result = lib
@@ -20,10 +22,6 @@ ResolveResult Resolve(bool wayland) {
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_child)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_container_get_type)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_container_add)))
-		&& (wayland
-			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_native)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface))
-			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
@@ -40,8 +38,9 @@ ResolveResult Resolve(bool wayland) {
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
 		&& (wayland
-			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid)
-			|| LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid))
+			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_user_content_manager)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_content_manager_register_script_message_handler)
