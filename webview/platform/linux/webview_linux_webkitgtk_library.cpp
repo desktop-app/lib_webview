@@ -23,6 +23,7 @@ ResolveResult Resolve(bool wayland) {
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_container_get_type)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_container_add)))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)

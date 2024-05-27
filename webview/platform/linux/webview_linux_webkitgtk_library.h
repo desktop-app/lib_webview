@@ -37,7 +37,7 @@ typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkPlug GtkPlug;
-typedef struct _GtkNative GtkNative;
+typedef struct _GtkAdjustment GtkAdjustment;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
@@ -117,6 +117,9 @@ inline void (*gtk_window_set_child)(
 	GtkWindow *window,
 	GtkWidget *child);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
+inline GtkWidget *(*gtk_scrolled_window_new)(
+	GtkAdjustment *hadjustment,
+	GtkAdjustment *vadjustment);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
