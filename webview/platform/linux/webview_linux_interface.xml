@@ -39,7 +39,6 @@
 		<method name='Navigate'>
 			<arg type='s' name='url' direction='in'/>
 		</method>
-		<method name='ResizeToWindow'/>
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>
