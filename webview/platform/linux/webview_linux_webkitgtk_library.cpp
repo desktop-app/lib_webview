@@ -17,7 +17,6 @@ ResolveResult Resolve(bool wayland) {
 	const auto result = lib
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_init_check)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_type)
-		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_grab_focus)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_child)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_container_get_type)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_container_add)))
@@ -30,7 +29,6 @@ ResolveResult Resolve(bool wayland) {
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
-		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_css_class)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_style_context)
