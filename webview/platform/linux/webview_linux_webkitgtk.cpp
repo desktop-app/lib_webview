@@ -120,6 +120,7 @@ private:
 	QPointer<Compositor> _compositor;
 
 	GtkWidget *_window = nullptr;
+	GtkWidget *_x11SizeFix = nullptr;
 	GtkWidget *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
 
@@ -153,6 +154,9 @@ Instance::~Instance() {
 		} else {
 			gtk_widget_destroy(_webview);
 		}
+	}
+	if (_x11SizeFix) {
+		gtk_widget_destroy(_x11SizeFix);
 	}
 	if (_window) {
 		if (gtk_window_destroy) {
@@ -263,6 +267,10 @@ bool Instance::create(Config config) {
 	}
 	setOpaqueBg(config.opaqueBg);
 
+	if (!_wayland) {
+		_x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
+	}
+
 	const auto base = config.userDataPath;
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
@@ -365,8 +373,11 @@ bool Instance::create(Config config) {
 	}
 	if (gtk_window_set_child) {
 		gtk_window_set_child(GTK_WINDOW(_window), _webview);
-	} else {
+	} else if (_wayland) {
 		gtk_container_add(GTK_CONTAINER(_window), _webview);
+	} else {
+		gtk_container_add(GTK_CONTAINER(_x11SizeFix), _webview);
+		gtk_container_add(GTK_CONTAINER(_window), _x11SizeFix);
 	}
 	if (!gtk_widget_show_all) {
 		gtk_widget_set_visible(_window, true);
