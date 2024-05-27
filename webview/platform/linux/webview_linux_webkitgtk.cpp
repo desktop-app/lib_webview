@@ -268,14 +268,6 @@ bool Instance::create(Config config) {
 			GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	}
 	setOpaqueBg(config.opaqueBg);
-	gtk_window_set_decorated(GTK_WINDOW(_window), false);
-	if (!_wayland) {
-		if (!gtk_widget_show_all) {
-			gtk_widget_set_visible(_window, true);
-		} else {
-			gtk_widget_show_all(_window);
-		}
-	}
 
 	const auto base = config.userDataPath;
 	const auto baseCache = base + "/cache";
@@ -371,6 +363,22 @@ bool Instance::create(Config config) {
 		nullptr);
 	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
 	webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(_webview), &rgba);
+	if (_debug) {
+		WebKitSettings *settings = webkit_web_view_get_settings(
+			WEBKIT_WEB_VIEW(_webview));
+		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
+		webkit_settings_set_enable_developer_extras(settings, true);
+	}
+	if (gtk_window_set_child) {
+		gtk_window_set_child(GTK_WINDOW(_window), _webview);
+	} else {
+		gtk_container_add(GTK_CONTAINER(_window), _webview);
+	}
+	if (!gtk_widget_show_all) {
+		gtk_widget_set_visible(_window, true);
+	} else {
+		gtk_widget_show_all(_window);
+	}
 	init(R"(
 window.external = {
 	invoke: function(s) {
@@ -551,50 +559,6 @@ ResolveResult Instance::resolve() {
 }
 
 bool Instance::finishEmbedding() {
-	if (_remoting) {
-		if (!_helper) {
-			return false;
-		}
-
-		const ::base::has_weak_ptr guard;
-		std::optional<bool> success;
-		_helper.call_finish_embedding(crl::guard(&guard, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			success = _helper.call_finish_embedding_finish(res, nullptr);
-			GLib::MainContext::default_().wakeup();
-		}));
-
-		while (!success && _connected) {
-			GLib::MainContext::default_().iteration(true);
-		}
-
-		if (success.value_or(false) && _widget) {
-			_widget->show();
-		}
-		return success.value_or(false);
-	}
-
-	if (gtk_window_set_child) {
-		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
-	} else {
-		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
-	}
-
-	if (_debug) {
-		WebKitSettings *settings = webkit_web_view_get_settings(
-			WEBKIT_WEB_VIEW(_webview));
-		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
-		webkit_settings_set_enable_developer_extras(settings, true);
-	}
-	gtk_widget_set_visible(_window, false);
-	if (!gtk_widget_show_all) {
-		gtk_widget_set_visible(_window, true);
-	} else {
-		gtk_widget_show_all(_window);
-	}
-	gtk_widget_grab_focus(GTK_WIDGET(_webview));
-
 	return true;
 }
 
@@ -1182,17 +1146,6 @@ void Instance::registerHelperMethodHandlers() {
 			Helper,
 			Gio::DBusMethodInvocation invocation) {
 		_helper.complete_resolve(invocation, int(resolve()));
-		return true;
-	});
-
-	_helper.signal_handle_finish_embedding().connect([=](
-			Helper,
-			Gio::DBusMethodInvocation invocation) {
-		if (finishEmbedding()) {
-			_helper.complete_finish_embedding(invocation);
-		} else {
-			invocation.return_gerror(MethodError());
-		}
 		return true;
 	});
 

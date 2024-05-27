@@ -107,7 +107,6 @@ namespace Webview::WebKitGTK::Library {
 inline gboolean (*gtk_init_check)(int *argc, char ***argv);
 inline void (*gdk_set_allowed_backends)(const gchar *backends);
 inline GType (*gtk_widget_get_type)(void);
-inline void (*gtk_widget_grab_focus)(GtkWidget *widget);
 inline GType (*gtk_container_get_type)(void);
 inline void (*gtk_container_add)(
 	GtkContainer *container,
@@ -124,7 +123,6 @@ inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
-inline void (*gtk_window_set_decorated)(GtkWindow *window, gboolean setting);
 inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);
 inline GdkScreen *(*gtk_widget_get_screen)(GtkWidget *widget);
 inline GtkStyleContext *(*gtk_widget_get_style_context)(GtkWidget *widget);
