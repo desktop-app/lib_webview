@@ -728,14 +728,6 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 }
 
 void Instance::resizeToWindow() {
-	if (_remoting) {
-		if (!_helper) {
-			return;
-		}
-
-		_helper.call_resize_to_window(nullptr);
-		return;
-	}
 }
 
 void Instance::startProcess() {
@@ -1155,14 +1147,6 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &url) {
 		navigate(url);
 		_helper.complete_navigate(invocation);
-		return true;
-	});
-
-	_helper.signal_handle_resize_to_window().connect([=](
-			Helper,
-			Gio::DBusMethodInvocation invocation) {
-		resizeToWindow();
-		_helper.complete_resize_to_window(invocation);
 		return true;
 	});
 
