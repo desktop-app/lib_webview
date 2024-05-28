@@ -987,7 +987,7 @@ int Instance::exec() {
 		std::to_string(getpid()));
 
 	if (socketPath.empty()) {
-		g_error("IPC socket path is not set.");
+		g_critical("IPC socket path is not set.");
 		return 1;
 	}
 
@@ -996,7 +996,7 @@ int Instance::exec() {
 
 		auto socketMonitor = socketFile.monitor(Gio::FileMonitorFlags::NONE_);
 		if (!socketMonitor) {
-			g_error("%s", socketMonitor.error().message_().c_str());
+			g_critical("%s", socketMonitor.error().message_().c_str());
 			return 1;
 		}
 
@@ -1020,7 +1020,7 @@ int Instance::exec() {
 		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_);
 
 	if (!connection) {
-		g_error("%s", connection.error().message_().c_str());
+		g_critical("%s", connection.error().message_().c_str());
 		return 1;
 	}
 
@@ -1041,7 +1041,7 @@ int Instance::exec() {
 			auto master = MasterProxy::new_finish(res);
 			if (!master) {
 				error = true;
-				g_error("%s", master.error().message_().c_str());
+				g_critical("%s", master.error().message_().c_str());
 				loop.quit();
 				return;
 			}
@@ -1053,7 +1053,7 @@ int Instance::exec() {
 					res);
 				if (!settings) {
 					error = true;
-					g_error("%s", settings.error().message_().c_str());
+					g_critical("%s", settings.error().message_().c_str());
 					loop.quit();
 					return;
 				}
