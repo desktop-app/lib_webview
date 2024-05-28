@@ -208,6 +208,7 @@ bool Instance::create(Config config) {
 			widget->setAttribute(Qt::WA_AlwaysStackOnTop);
 			widget->setClearColor(Qt::transparent);
 			_compositor->setWidget(widget);
+			widget->show();
 		}
 
 		if (!_helper) {
@@ -239,6 +240,7 @@ bool Instance::create(Config config) {
 					QWindow::fromWinId(WId(winId())),
 					config.parent,
 					Qt::FramelessWindowHint));
+			_widget->show();
 		}
 		return success.value_or(false);
 	}
