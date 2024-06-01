@@ -121,7 +121,7 @@ private:
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_x11SizeFix = nullptr;
-	GtkWidget *_webview = nullptr;
+	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
 
 	bool _debug = false;
@@ -152,7 +152,7 @@ Instance::~Instance() {
 		if (!gtk_widget_destroy) {
 			g_object_unref(_webview);
 		} else {
-			gtk_widget_destroy(_webview);
+			gtk_widget_destroy(GTK_WIDGET(_webview));
 		}
 	}
 	if (_x11SizeFix) {
@@ -281,7 +281,7 @@ bool Instance::create(Config config) {
 		WebKitNetworkSession *session = webkit_network_session_new(
 			baseData.c_str(),
 			baseCache.c_str());
-		_webview = GTK_WIDGET(g_object_new(
+		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
 			"network-session",
 			session,
@@ -295,12 +295,12 @@ bool Instance::create(Config config) {
 		WebKitWebContext *context = webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
 
-		_webview = webkit_web_view_new_with_context(context);
+		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
 		g_object_unref(context);		
 	}
 
 	WebKitUserContentManager *manager =
-		webkit_web_view_get_user_content_manager(WEBKIT_WEB_VIEW(_webview));
+		webkit_web_view_get_user_content_manager(_webview);
 	g_signal_connect_swapped(
 		manager,
 		"script-message-received::external",
@@ -366,20 +366,19 @@ bool Instance::create(Config config) {
 		"external",
 		nullptr);
 	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
-	webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(_webview), &rgba);
+	webkit_web_view_set_background_color(_webview, &rgba);
 	if (_debug) {
-		WebKitSettings *settings = webkit_web_view_get_settings(
-			WEBKIT_WEB_VIEW(_webview));
+		WebKitSettings *settings = webkit_web_view_get_settings(_webview);
 		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
 		webkit_settings_set_enable_developer_extras(settings, true);
 	}
 	if (gtk_window_set_child) {
-		gtk_window_set_child(GTK_WINDOW(_window), _webview);
+		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
 	} else if (_x11SizeFix) {
-		gtk_container_add(GTK_CONTAINER(_x11SizeFix), _webview);
+		gtk_container_add(GTK_CONTAINER(_x11SizeFix), GTK_WIDGET(_webview));
 		gtk_container_add(GTK_CONTAINER(_window), _x11SizeFix);
 	} else {
-		gtk_container_add(GTK_CONTAINER(_window), _webview);
+		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
 	if (!gtk_widget_show_all) {
 		gtk_widget_set_visible(_window, true);
@@ -481,7 +480,7 @@ bool Instance::decidePolicy(
 		webkit_policy_decision_ignore(decision);
 	}
 	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-		if (!webkit_web_view_is_loading(WEBKIT_WEB_VIEW(_webview))) {
+		if (!webkit_web_view_is_loading(_webview)) {
 			if (_master) {
 				_master.call_navigation_done(!_loadFailed, nullptr);
 			}
@@ -579,7 +578,7 @@ void Instance::navigate(std::string url) {
 		return;
 	}
 
-	webkit_web_view_load_uri(WEBKIT_WEB_VIEW(_webview), url.c_str());
+	webkit_web_view_load_uri(_webview, url.c_str());
 }
 
 void Instance::navigateToData(std::string id) {
@@ -596,7 +595,7 @@ void Instance::reload() {
 		return;
 	}
 
-	webkit_web_view_reload_bypass_cache(WEBKIT_WEB_VIEW(_webview));
+	webkit_web_view_reload_bypass_cache(_webview);
 }
 
 void Instance::init(std::string js) {
@@ -610,8 +609,7 @@ void Instance::init(std::string js) {
 	}
 
 	WebKitUserContentManager *manager
-		= webkit_web_view_get_user_content_manager(
-			WEBKIT_WEB_VIEW(_webview));
+		= webkit_web_view_get_user_content_manager(_webview);
 	webkit_user_content_manager_add_script(
 		manager,
 		webkit_user_script_new(
@@ -634,7 +632,7 @@ void Instance::eval(std::string js) {
 
 	if (webkit_web_view_evaluate_javascript) {
 		webkit_web_view_evaluate_javascript(
-			WEBKIT_WEB_VIEW(_webview),
+			_webview,
 			js.c_str(),
 			-1,
 			nullptr,
@@ -644,7 +642,7 @@ void Instance::eval(std::string js) {
 			nullptr);
 	} else {
 		webkit_web_view_run_javascript(
-			WEBKIT_WEB_VIEW(_webview),
+			_webview,
 			js.c_str(),
 			nullptr,
 			nullptr,
