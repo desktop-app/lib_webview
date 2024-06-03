@@ -16,7 +16,14 @@ namespace Webview {
 class DataStreamFromMemory final : public DataStream {
 public:
 	DataStreamFromMemory(QByteArray data, std::string mime);
+	~DataStreamFromMemory();
 
+	DataStreamFromMemory(const DataStreamFromMemory &other) = delete;
+	DataStreamFromMemory &operator=(const DataStreamFromMemory &other) = delete;
+	DataStreamFromMemory(DataStreamFromMemory &&other) = delete;
+	DataStreamFromMemory &operator=(DataStreamFromMemory &&other) = delete;
+
+	[[nodiscard]] int handle() override;
 	[[nodiscard]] std::int64_t size() override;
 	[[nodiscard]] std::string mime() override;
 
@@ -28,6 +35,7 @@ public:
 	}
 
 private:
+	int _handle = -1;
 	QByteArray _data;
 	std::string _mime;
 	int64 _offset = 0;
