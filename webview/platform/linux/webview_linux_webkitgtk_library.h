@@ -160,22 +160,7 @@ inline unsigned long (*gtk_plug_get_id)(GtkPlug *plug);
 inline GType (*gtk_plug_get_type)(void);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
-inline JSStringRef (*JSValueToStringCopy)(
-	JSContextRef ctx,
-	JSValueRef value,
-	JSValueRef *exception);
-inline size_t (*JSStringGetMaximumUTF8CStringSize)(JSStringRef string);
-inline size_t (*JSStringGetUTF8CString)(
-	JSStringRef string,
-	char *buffer,
-	size_t bufferSize);
-inline void (*JSStringRelease)(JSStringRef string);
-
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
-	WebKitJavascriptResult *js_result);
-inline JSGlobalContextRef (*webkit_javascript_result_get_global_context)(
-	WebKitJavascriptResult *js_result);
-inline JSValueRef (*webkit_javascript_result_get_value)(
 	WebKitJavascriptResult *js_result);
 
 inline GType (*webkit_navigation_policy_decision_get_type)(void);
@@ -183,8 +168,6 @@ inline WebKitNavigationAction *(*webkit_navigation_policy_decision_get_navigatio
 	WebKitNavigationPolicyDecision *decision);
 inline WebKitURIRequest *(*webkit_navigation_action_get_request)(
 	WebKitNavigationAction *navigation);
-inline WebKitURIRequest *(*webkit_navigation_policy_decision_get_request)(
-	WebKitNavigationPolicyDecision *decision);
 inline const gchar *(*webkit_uri_request_get_uri)(WebKitURIRequest *request);
 inline void (*webkit_policy_decision_ignore)(WebKitPolicyDecision *decision);
 
@@ -211,9 +194,6 @@ inline gboolean (*webkit_user_content_manager_register_script_message_handler)(
 	const gchar *world_name);
 inline WebKitSettings *(*webkit_web_view_get_settings)(
 	WebKitWebView *web_view);
-inline void (*webkit_settings_set_javascript_can_access_clipboard)(
-	WebKitSettings *settings,
-	gboolean enabled);
 inline void (*webkit_settings_set_enable_developer_extras)(
 	WebKitSettings *settings,
 	gboolean enabled);

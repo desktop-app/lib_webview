@@ -369,7 +369,6 @@ bool Instance::create(Config config) {
 	webkit_web_view_set_background_color(_webview, &rgba);
 	if (_debug) {
 		WebKitSettings *settings = webkit_web_view_get_settings(_webview);
-		//webkit_settings_set_javascript_can_access_clipboard(settings, true);
 		webkit_settings_set_enable_developer_extras(settings, true);
 	}
 	if (gtk_window_set_child) {
@@ -396,32 +395,20 @@ window.external = {
 }
 
 void Instance::scriptMessageReceived(void *message) {
-	auto result = std::string();
-	if (!webkit_javascript_result_get_js_value && jsc_value_to_string) {
-		const auto s = jsc_value_to_string(
-			reinterpret_cast<JSCValue*>(message));
-		result = s;
-		g_free(s);
-	} else if (webkit_javascript_result_get_js_value && jsc_value_to_string) {
-		const auto s = jsc_value_to_string(
-			webkit_javascript_result_get_js_value(
-				reinterpret_cast<WebKitJavascriptResult*>(message)));
-		result = s;
-		g_free(s);
-	} else {
-		auto jsResult = reinterpret_cast<WebKitJavascriptResult*>(message);
-		JSGlobalContextRef ctx
-			= webkit_javascript_result_get_global_context(jsResult);
-		JSValueRef value = webkit_javascript_result_get_value(jsResult);
-		JSStringRef js = JSValueToStringCopy(ctx, value, NULL);
-		size_t n = JSStringGetMaximumUTF8CStringSize(js);
-		result.resize(n, char(0));
-		JSStringGetUTF8CString(js, result.data(), n);
-		JSStringRelease(js);
+	if (!_master) {
+		return;
 	}
-	if (_master) {
-		_master.call_message_received(result, nullptr);
-	}
+	_master.call_message_received([&] {
+		const auto s = jsc_value_to_string(
+			!webkit_javascript_result_get_js_value
+				? reinterpret_cast<JSCValue*>(message)
+				: webkit_javascript_result_get_js_value(
+					reinterpret_cast<WebKitJavascriptResult*>(message)));
+		const auto guard = gsl::finally([&] {
+			g_free(s);
+		});
+		return std::string(s);
+	}(), nullptr);
 }
 
 bool Instance::loadFailed(
@@ -448,19 +435,12 @@ bool Instance::decidePolicy(
 	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
 		return false;
 	}
-	WebKitURIRequest *request = nullptr;
 	WebKitNavigationPolicyDecision *navigationDecision
 		= WEBKIT_NAVIGATION_POLICY_DECISION(decision);
-	if (webkit_navigation_policy_decision_get_navigation_action
-		&& webkit_navigation_action_get_request) {
-		WebKitNavigationAction *action
-			= webkit_navigation_policy_decision_get_navigation_action(
-				navigationDecision);
-		request = webkit_navigation_action_get_request(action);
-	} else {
-		request = webkit_navigation_policy_decision_get_request(
+	WebKitNavigationAction *action
+		= webkit_navigation_policy_decision_get_navigation_action(
 			navigationDecision);
-	}
+	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const gchar *uri = webkit_uri_request_get_uri(request);
 	bool result = false;
 	if (_master) {
