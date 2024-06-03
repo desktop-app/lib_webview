@@ -50,10 +50,6 @@ struct _GdkRGBA {
 };
 
 typedef struct _JSCValue JSCValue;
-typedef const struct OpaqueJSContext *JSContextRef;
-typedef struct OpaqueJSContext *JSGlobalContextRef;
-typedef struct OpaqueJSString *JSStringRef;
-typedef const struct OpaqueJSValue *JSValueRef;
 
 typedef struct _WebKitJavascriptResult WebKitJavascriptResult;
 typedef struct _WebKitNavigationAction WebKitNavigationAction;
