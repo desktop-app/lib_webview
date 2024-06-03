@@ -8,6 +8,7 @@
 
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
+#include "webview/webview_data_stream.h"
 #include "base/platform/base_platform_info.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
@@ -30,6 +31,7 @@
 #include <crl/crl.h>
 #include <rpl/rpl.h>
 #include <regex>
+#include <sys/mman.h>
 
 namespace Webview::WebKitGTK {
 namespace {
@@ -42,6 +44,8 @@ namespace GObject = gi::repository::GObject;
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview";
 constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master";
 constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper";
+constexpr auto kDataUrlScheme = "desktop-app-resource";
+constexpr auto kFullDomain = "desktop-app-resource://domain/";
 
 std::string SocketPath;
 
@@ -50,6 +54,13 @@ inline auto MethodError() {
 		Gio::DBusErrorNS_::quark(),
 		int(Gio::DBusError::UNKNOWN_METHOD_),
 		"Method does not exist.");
+}
+
+inline auto NotFoundError() {
+	return GLib::Error::new_literal(
+		G_IO_ERROR,
+		G_IO_ERROR_NOT_FOUND,
+		"Not Found");
 }
 
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
@@ -100,6 +111,14 @@ private:
 	GtkWidget *createAnother(WebKitNavigationAction *action);
 	bool scriptDialog(WebKitScriptDialog *dialog);
 
+	void dataRequest(WebKitURISchemeRequest *request);
+	void dataResponse(
+		WebKitURISchemeRequest *request,
+		int fd,
+		int64 offset,
+		int64 size,
+		std::string mime);
+
 	void startProcess();
 	void stopProcess();
 	void updateHistoryStates();
@@ -132,6 +151,9 @@ private:
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
+	std::function<DataResult(DataRequest)> _dataRequestHandler;
+	std::string _dataProtocol;
+	std::string _dataDomain;
 	bool _loadFailed = false;
 
 };
@@ -176,6 +198,13 @@ bool Instance::create(Config config) {
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_dialogHandler = std::move(config.dialogHandler);
+	_dataRequestHandler = std::move(config.dataRequestHandler);
+	_dataProtocol = kDataUrlScheme;
+	_dataDomain = kFullDomain;
+	if (!config.dataProtocolOverride.empty()) {
+		_dataProtocol = config.dataProtocolOverride;
+		_dataDomain = _dataProtocol + "://domain/";
+	}
 
 	if (_remoting) {
 		const auto resolveResult = resolve();
@@ -225,8 +254,9 @@ bool Instance::create(Config config) {
 		const auto g = config.opaqueBg.green();
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
+		const auto protocol = config.dataProtocolOverride;
 		const auto path = config.userDataPath;
-		_helper.call_create(debug, r, g, b, a, path, crl::guard(&guard, [&](
+		_helper.call_create(debug, r, g, b, a, protocol, path, crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
@@ -292,22 +322,27 @@ bool Instance::create(Config config) {
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
 
+	WebKitWebContext *context = nullptr;
 	if (webkit_network_session_new) {
+		context = webkit_web_context_new();
 		WebKitNetworkSession *session = webkit_network_session_new(
 			baseData.c_str(),
 			baseCache.c_str());
 		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
+			"web-context",
+			context,
 			"network-session",
 			session,
 			nullptr));
 		g_object_unref(session);
+		g_object_unref(context);
 	} else {
 		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
 			"base-cache-directory", baseCache.c_str(),
 			"base-data-directory", baseData.c_str(),
 			nullptr);
-		WebKitWebContext *context = webkit_web_context_new_with_website_data_manager(data);
+		context = webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
 
 		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
@@ -417,6 +452,16 @@ bool Instance::create(Config config) {
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external",
+		nullptr);
+	webkit_web_context_register_uri_scheme(
+		context,
+		_dataProtocol.c_str(),
+		WebKitURISchemeRequestCallback(+[](
+			WebKitURISchemeRequest *request,
+			Instance *instance) {
+			instance->dataRequest(request);
+		}),
+		this,
 		nullptr);
 	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
 	webkit_web_view_set_background_color(_webview, &rgba);
@@ -567,6 +612,71 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	return true;
 }
 
+void Instance::dataRequest(WebKitURISchemeRequest *request) {
+	if (!_master) {
+		webkit_uri_scheme_request_finish_error(
+			request,
+			NotFoundError().gobj_());
+		return;
+	}
+	g_object_ref(request);
+	_master.call_data_request(
+		uintptr_t(request),
+		webkit_uri_scheme_request_get_path(request) + 1,
+		0,
+		0,
+		[=](GObject::Object source_object, Gio::AsyncResult res) {
+			const auto ret = _master.call_data_request_finish(res);
+			if (!ret || DataResult(std::get<1>(*ret)) == DataResult::Failed) {
+				webkit_uri_scheme_request_finish_error(
+					request,
+					NotFoundError().gobj_());
+				g_object_unref(request);
+			}
+		});
+}
+
+void Instance::dataResponse(
+		WebKitURISchemeRequest *request,
+		int fd,
+		int64 offset,
+		int64 size,
+		std::string mime) {
+	const auto data = mmap(
+		nullptr,
+		offset + size,
+		PROT_READ,
+		MAP_PRIVATE,
+		fd,
+		0);
+
+	if (data == MAP_FAILED) {
+		webkit_uri_scheme_request_finish_error(
+			request,
+			NotFoundError().gobj_());
+		g_object_unref(request);
+		close(fd);
+		return;
+	}
+
+	const auto stream = Gio::MemoryInputStream::new_from_bytes(
+		GLib::Bytes::new_with_free_func(
+			reinterpret_cast<const uchar*>(data) + offset,
+			size,
+			[=] { munmap(data, offset + size); }));
+
+	const auto response = webkit_uri_scheme_response_new(
+		G_INPUT_STREAM(stream.gobj_()),
+		size);
+
+	webkit_uri_scheme_response_set_content_type(response, mime.c_str());
+	webkit_uri_scheme_request_finish_with_response(request, response);
+
+	g_object_unref(response);
+	g_object_unref(request);
+	close(fd);
+}
+
 ResolveResult Instance::resolve() {
 	if (_remoting) {
 		if (!_helper) {
@@ -609,7 +719,7 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::navigateToData(std::string id) {
-	Unexpected("WebKitGTK::Instance::navigateToData.");
+	navigate(_dataDomain + id);
 }
 
 void Instance::reload() {
@@ -960,20 +1070,18 @@ void Instance::registerMasterMethodHandlers() {
 			Gio::DBusMethodInvocation invocation,
 			const std::string &uri,
 			bool newWindow) {
-		if (!_navigationStartHandler) {
-			invocation.return_gerror(MethodError());
-			return true;
-		}
-
-		_master.complete_navigation_started(invocation, [&] {
-			if (newWindow) {
-				if (_navigationStartHandler(uri, true)) {
-					QDesktopServices::openUrl(QString::fromStdString(uri));
-				}
-				return false;
+		if (newWindow) {
+			if (_navigationStartHandler && _navigationStartHandler(uri, true)) {
+				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
-			return _navigationStartHandler(uri, false);
-		}());
+			_master.complete_navigation_started(invocation, false);
+		} else if (!std::string(uri).starts_with(_dataDomain)
+				&& _navigationStartHandler
+				&& !_navigationStartHandler(uri, false)) {
+			_master.complete_navigation_started(invocation, false);
+		} else {
+			_master.complete_navigation_started(invocation, true);
+		}
 
 		return true;
 	});
@@ -1035,6 +1143,51 @@ void Instance::registerMasterMethodHandlers() {
 			.canGoBack = canGoBack,
 			.canGoForward = canGoForward,
 		};
+		return true;
+	});
+
+	_master.signal_handle_data_request().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			uint64 req,
+			const std::string &id,
+			int64 offset,
+			int64 limit) {
+		if (!_dataRequestHandler) {
+			invocation.return_gerror(MethodError());
+			return true;
+		}
+
+		_master.complete_data_request(
+			invocation,
+			int(_dataRequestHandler(DataRequest{
+				.id = id,
+				.offset = offset,
+				.limit = limit,
+				.done = crl::guard(this, [=](DataResponse resolved) {
+					const auto request = reinterpret_cast<
+						WebKitURISchemeRequest*
+					>(uintptr_t(req));
+					auto &stream = resolved.stream;
+					const auto fd = stream ? dup(stream->handle()) : -1;
+					if (!_helper || !stream || fd == -1) {
+						webkit_uri_scheme_request_finish_error(
+							request,
+							NotFoundError().gobj_());
+						g_object_unref(request);
+					}
+					_helper.call_data_response(
+						req,
+						GLib::Variant::new_handle(0),
+						resolved.streamOffset,
+						resolved.totalSize ?: stream->size(),
+						stream->mime(),
+						Gio::UnixFDList::new_from_array(&fd, 1),
+						nullptr,
+						nullptr);
+				}),
+			})));
+
 		return true;
 	});
 }
@@ -1171,9 +1324,11 @@ void Instance::registerHelperMethodHandlers() {
 			int g,
 			int b,
 			int a,
+			const std::string &protocol,
 			const std::string &path) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
+			.dataProtocolOverride = protocol,
 			.userDataPath = path,
 			.debug = debug,
 		})) {
@@ -1246,6 +1401,22 @@ void Instance::registerHelperMethodHandlers() {
 			reinterpret_cast<uint64>(winId()));
 		return true;
 	});
+
+	_helper.signal_handle_data_response().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			Gio::UnixFDList fds,
+			uint64 req,
+			GLib::Variant fd,
+			int64 offset,
+			int64 size,
+			const std::string &mime) {
+		const auto request = (WebKitURISchemeRequest*)uintptr_t(req);
+		const auto handle = fds.get(fd.get_handle(), nullptr);
+		dataResponse(request, handle, offset, size, mime);
+		_helper.complete_data_response(invocation);
+		return true;
+	});
 }
 
 } // namespace
@@ -1277,6 +1448,11 @@ Available Availability() {
 		};
 	}
 	return Available{};
+}
+
+bool NavigateToDataSupported() {
+	return Instance().resolve() == ResolveResult::Success;
+	return false;
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {

@@ -49,6 +49,8 @@ typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
 
+typedef struct _SoupMessageHeaders SoupMessageHeaders;
+
 typedef struct _JSCValue JSCValue;
 
 typedef struct _WebKitJavascriptResult WebKitJavascriptResult;
@@ -56,6 +58,8 @@ typedef struct _WebKitNavigationAction WebKitNavigationAction;
 typedef struct _WebKitNavigationPolicyDecision WebKitNavigationPolicyDecision;
 typedef struct _WebKitPolicyDecision WebKitPolicyDecision;
 typedef struct _WebKitURIRequest WebKitURIRequest;
+typedef struct _WebKitURISchemeRequest WebKitURISchemeRequest;
+typedef struct _WebKitURISchemeResponse WebKitURISchemeResponse;
 typedef struct _WebKitUserContentManager WebKitUserContentManager;
 typedef struct _WebKitUserScript WebKitUserScript;
 typedef struct _WebKitWebView WebKitWebView;
@@ -75,6 +79,12 @@ typedef enum {
 	WEBKIT_WEB_PROCESS_EXCEEDED_MEMORY_LIMIT,
 	WEBKIT_WEB_PROCESS_TERMINATED_BY_API,
 } WebKitWebProcessTerminationReason;
+
+typedef enum {
+	SOUP_MESSAGE_HEADERS_REQUEST,
+	SOUP_MESSAGE_HEADERS_RESPONSE,
+	SOUP_MESSAGE_HEADERS_MULTIPART,
+} SoupMessageHeadersType;
 
 typedef enum {
 	WEBKIT_LOAD_STARTED,
@@ -105,6 +115,10 @@ typedef enum {
     WEBKIT_SCRIPT_DIALOG_PROMPT,
     WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM,
 } WebKitScriptDialogType;
+
+typedef void (*WebKitURISchemeRequestCallback)(
+	WebKitURISchemeRequest *request,
+	gpointer user_data);
 
 namespace Webview::WebKitGTK::Library {
 
@@ -161,6 +175,18 @@ inline void (*gtk_css_provider_load_from_data)(
 inline GtkWidget *(*gtk_plug_new)(unsigned long socket_id);
 inline unsigned long (*gtk_plug_get_id)(GtkPlug *plug);
 inline GType (*gtk_plug_get_type)(void);
+
+inline SoupMessageHeaders *(*soup_message_headers_new)(
+	SoupMessageHeadersType type);
+inline void (*soup_message_headers_append)(
+	SoupMessageHeaders *hdrs,
+	const char *name,
+	const char *value);
+inline const char *(*soup_message_headers_get_one)(
+	SoupMessageHeaders *hdrs,
+	const char *name);
+inline void (*soup_message_headers_unref)(SoupMessageHeaders *hdrs);
+inline void (*soup_message_headers_free)(SoupMessageHeaders *hdrs);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
@@ -241,11 +267,41 @@ inline void (*webkit_web_view_set_background_color)(
 inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
 	const gchar *first_option_name,
 	...);
+inline WebKitWebContext *(*webkit_web_context_new)(void);
 inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 	WebKitWebsiteDataManager* manager);
+inline void (*webkit_web_context_register_uri_scheme)(
+	WebKitWebContext *context,
+	const gchar *scheme,
+	WebKitURISchemeRequestCallback callback,
+	gpointer user_data,
+	GDestroyNotify user_data_destroy_func);
 inline WebKitNetworkSession *(*webkit_network_session_new)(
 	const char* data_directory,
 	const char* cache_directory);
+inline const gchar *(*webkit_uri_scheme_request_get_path)(
+	WebKitURISchemeRequest *request);
+inline void (*webkit_uri_scheme_request_finish_error)(
+	WebKitURISchemeRequest *request,
+	GError *error);
+inline void (*webkit_uri_scheme_request_finish_with_response)(
+	WebKitURISchemeRequest *request,
+	WebKitURISchemeResponse *response);
+inline SoupMessageHeaders *(*webkit_uri_scheme_request_get_http_headers)(
+	WebKitURISchemeRequest *request);
+inline WebKitURISchemeResponse *(*webkit_uri_scheme_response_new)(
+	GInputStream *stream,
+	gint64 stream_length);
+inline void (*webkit_uri_scheme_response_set_content_type)(
+	WebKitURISchemeResponse *response,
+	const gchar *content_type);
+inline void (*webkit_uri_scheme_response_set_http_headers)(
+	WebKitURISchemeResponse *response,
+	SoupMessageHeaders *headers);
+inline void (*webkit_uri_scheme_response_set_status)(
+	WebKitURISchemeResponse *response,
+	guint status_code,
+	const gchar *reason_phrase);
 
 enum class ResolveResult {
 	Success,

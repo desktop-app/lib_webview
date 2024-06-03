@@ -6,6 +6,10 @@
 //
 #include "webview/webview_data_stream_memory.h"
 
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
+#include <sys/mman.h>
+#endif // !Q_OS_WIN && !Q_OS_MAC
+
 namespace Webview {
 
 DataStreamFromMemory::DataStreamFromMemory(
@@ -13,6 +17,43 @@ DataStreamFromMemory::DataStreamFromMemory(
 	std::string mime)
 : _data(data)
 , _mime(mime) {
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
+	const auto handle = memfd_create("webview-data-stream", MFD_CLOEXEC);
+	if (handle == -1) {
+		return;
+	}
+	if (ftruncate(handle, data.size()) != 0) {
+		close(handle);
+		return;
+	}
+	const auto shared = mmap(
+		nullptr,
+		data.size(),
+		PROT_READ | PROT_WRITE,
+		MAP_SHARED,
+		handle,
+		0);
+	if (shared == MAP_FAILED) {
+		close(handle);
+		return;
+	}
+	memcpy(shared, data.constData(), data.size());
+	_handle = handle;
+	_data.setRawData((char*)shared, data.size());
+#endif // !Q_OS_WIN && !Q_OS_MAC
+}
+
+DataStreamFromMemory::~DataStreamFromMemory() {
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
+	if (_handle) {
+		munmap((void*)_data.constData(), _data.size());
+		close(_handle);
+	}
+#endif // !Q_OS_WIN && !Q_OS_MAC
+}
+
+int DataStreamFromMemory::handle() {
+	return _handle;
 }
 
 std::int64_t DataStreamFromMemory::size() {
