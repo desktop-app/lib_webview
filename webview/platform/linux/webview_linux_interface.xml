@@ -12,15 +12,15 @@
 			<arg type='b' name='newWindow' direction='in'/>
 			<arg type='b' name='result' direction='out'/>
 		</method>
+		<method name='NavigationDone'>
+			<arg type='b' name='success' direction='in'/>
+		</method>
 		<method name='ScriptDialog'>
 			<arg type='i' name='type' direction='in'/>
 			<arg type='s' name='text' direction='in'/>
 			<arg type='s' name='value' direction='in'/>
 			<arg type='b' name='accepted' direction='out'/>
 			<arg type='s' name='text' direction='out'/>
-		</method>
-		<method name='NavigationDone'>
-			<arg type='b' name='success' direction='in'/>
 		</method>
 	</interface>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
