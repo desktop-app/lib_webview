@@ -90,9 +90,7 @@ public:
 			_xdg.setLogicalPosition(geometry.topLeft() / scaleFactor);
 			_xdg.setLogicalSize(geometry.size() / scaleFactor);
 		}, _lifetime);
-		if (xdgSurface) {
-			_chrome.emplace(this, this->window(), xdgSurface, !window);
-		}
+		setXdgSurface(xdgSurface);
 	}
 
 	QQuickWindow *window() const {
