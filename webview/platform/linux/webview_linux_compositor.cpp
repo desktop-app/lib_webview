@@ -74,15 +74,21 @@ public:
 		});
 #endif // Qt >= 6.6.0
 		rpl::single(rpl::empty) | rpl::then(
-			base::qt_signal_producer(
-				this,
-				&QWaylandOutput::geometryChanged
+			rpl::merge(
+				base::qt_signal_producer(
+					this,
+					&QWaylandOutput::geometryChanged
+				),
+				base::qt_signal_producer(
+					this,
+					&QWaylandOutput::scaleFactorChanged
+				)
 			)
 		) | rpl::map([=] {
-			return geometry();
-		}) | rpl::start_with_next([=](QRect geometry) {
-			_xdg.setLogicalPosition(geometry.topLeft() / scaleFactor());
-			_xdg.setLogicalSize(geometry.size() / scaleFactor());
+			return std::make_tuple(geometry(), scaleFactor());
+		}) | rpl::start_with_next([=](QRect geometry, int scaleFactor) {
+			_xdg.setLogicalPosition(geometry.topLeft() / scaleFactor);
+			_xdg.setLogicalSize(geometry.size() / scaleFactor);
 		}, _lifetime);
 		if (xdgSurface) {
 			_chrome.emplace(this, this->window(), xdgSurface, !window);
