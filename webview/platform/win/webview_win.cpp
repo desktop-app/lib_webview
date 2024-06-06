@@ -12,15 +12,21 @@
 #include "webview/platform/win/webview_windows_edge_html.h"
 
 namespace Webview {
+namespace {
+
+[[nodiscard]] bool SystemTooOld() {
+	return true;// !Platform::IsWindows8Point1OrGreater();
+}
+
+} // namespace
 
 Available Availability() {
-	if (!Platform::IsWindows8Point1OrGreater()) {
+	if (SystemTooOld()) {
 		return Available{
 			.error = Available::Error::OldWindows,
 			.details = "Please update your system to Windows 8.1 or later.",
 		};
-	}
-	if (EdgeChromium::Supported() || EdgeHtml::Supported()) {
+	} else if (EdgeChromium::Supported() || EdgeHtml::Supported()) {
 		return Available{};
 	}
 	return Available{
@@ -30,22 +36,23 @@ Available Availability() {
 }
 
 bool SupportsEmbedAfterCreate() {
-	return !EdgeChromium::Supported() && EdgeHtml::Supported();
+	return !SystemTooOld()
+		&& !EdgeChromium::Supported()
+		&& EdgeHtml::Supported();
 }
 
 bool NavigateToDataSupported() {
-	return EdgeChromium::Supported();
+	return !SystemTooOld() && EdgeChromium::Supported();
 }
 
 bool SeparateStorageIdSupported() {
-	return EdgeChromium::Supported();
+	return !SystemTooOld() && EdgeChromium::Supported();
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (!Platform::IsWindows8Point1OrGreater()) {
+	if (SystemTooOld()) {
 		return nullptr;
-	}
-	if (auto result = EdgeChromium::CreateInstance(config)) {
+	} else if (auto result = EdgeChromium::CreateInstance(config)) {
 		return result;
 	}
 	return EdgeHtml::CreateInstance(config);
