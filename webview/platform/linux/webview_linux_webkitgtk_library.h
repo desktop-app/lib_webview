@@ -118,6 +118,7 @@ inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *vadjustment);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
+inline void (*gtk_window_fullscreen)(GtkWindow *window);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);

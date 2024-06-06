@@ -379,6 +379,9 @@ bool Instance::create(Config config) {
 	} else {
 		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
+	if (_wayland) {
+		gtk_window_fullscreen(GTK_WINDOW(_window));
+	}
 	if (!gtk_widget_show_all) {
 		gtk_widget_set_visible(_window, true);
 	} else {
