@@ -13,6 +13,7 @@
 #include "base/integration.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
+#include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
 
 #include <QtCore/QUrl>
@@ -235,9 +236,21 @@ bool Instance::create(Config config) {
 		}
 
 		if (success.value_or(false) && !_compositor) {
+			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
+			::base::install_event_filter(window, [=](
+					not_null<QEvent*> e) {
+				if (e->type() == QEvent::Show) {
+					GLib::timeout_add_seconds_once(1, crl::guard(window, [=] {
+						const auto size = window->size();
+						window->resize(0, 0);
+						window->resize(size);
+					}));
+				}
+				return ::base::EventFilterResult::Continue;
+			});
 			_widget.reset(
 				QWidget::createWindowContainer(
-					QWindow::fromWinId(WId(winId())),
+					window,
 					config.parent,
 					Qt::FramelessWindowHint));
 			_widget->show();
