@@ -15,7 +15,7 @@ namespace Webview {
 namespace {
 
 [[nodiscard]] bool SystemTooOld() {
-	return true;// !Platform::IsWindows8Point1OrGreater();
+	return !Platform::IsWindows8Point1OrGreater();
 }
 
 } // namespace
