@@ -113,7 +113,7 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::navigateToData(std::string id) {
-	navigate("http://desktop-app-resource/" + id);
+	Unexpected("EdgeHtml::Instance::navigateToData.");
 }
 
 void Instance::reload() {

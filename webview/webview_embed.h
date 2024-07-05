@@ -31,6 +31,7 @@ enum class DataResult;
 struct WindowConfig {
 	QColor opaqueBg;
 	StorageId storageId;
+	QString dataProtocolOverride;
 };
 
 class Window final {

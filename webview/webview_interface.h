@@ -94,6 +94,7 @@ struct Config {
 	std::function<void(bool)> navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> dialogHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
+	std::string dataProtocolOverride;
 	std::string userDataPath;
 	std::string userDataToken;
 	bool debug = false;

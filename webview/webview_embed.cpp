@@ -99,6 +99,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 			.navigationDoneHandler = navigationDoneHandler(),
 			.dialogHandler = dialogHandler(),
 			.dataRequestHandler = dataRequestHandler(),
+			.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
 			.userDataPath = config.storageId.path.toStdString(),
 			.userDataToken = config.storageId.token.toStdString(),
 			.debug = OptionWebviewDebugEnabled.value(),
@@ -273,9 +274,7 @@ void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
-		if (!lower.startsWith("http://")
-			&& !lower.startsWith("https://")
-			&& !lower.startsWith("desktop-app-resource://")) {
+		if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
 			return false;
 		}
 		auto result = true;
