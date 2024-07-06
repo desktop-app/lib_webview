@@ -93,14 +93,6 @@ Instance::Instance(Config config, WebViewControl webview)
 			QDesktopServices::openUrl(QString::fromStdString(url));
 		}
 	});
-	using UnsupportedUriSchemeIdentifiedEventArgs
-		= WebViewControlUnsupportedUriSchemeIdentifiedEventArgs;
-	_webview.UnsupportedUriSchemeIdentified([=](
-			const auto &sender,
-			const UnsupportedUriSchemeIdentifiedEventArgs &args) {
-		const auto url = winrt::to_string(args.Uri().AbsoluteUri());
-		int a = url.size();;
-	});
 	init("window.external.invoke = s => window.external.notify(s)");
 }
 
