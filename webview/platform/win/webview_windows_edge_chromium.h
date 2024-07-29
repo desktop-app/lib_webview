@@ -10,6 +10,8 @@
 
 namespace Webview::EdgeChromium {
 
+extern const char kOptionWebviewLegacyEdge[];
+
 [[nodiscard]] bool Supported();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 

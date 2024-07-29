@@ -11,6 +11,7 @@
 #include "base/algorithm.h"
 #include "base/basic_types.h"
 #include "base/flat_map.h"
+#include "base/options.h"
 #include "base/variant.h"
 #include "base/weak_ptr.h"
 #include "base/platform/base_platform_info.h"
@@ -35,6 +36,14 @@ namespace {
 
 constexpr auto kDataUrlPrefix
 	= std::string_view("http://desktop-app-resource/");
+
+base::options::toggle OptionWebviewLegacyEdge({
+	.id = kOptionWebviewLegacyEdge,
+	.name = "Force legacy Edge WebView.",
+	.description = "Skip modern CoreWebView2 check and force using legacy Edge WebView on Windows.",
+	.scope = base::options::windows,
+	.restartRequired = true,
+});
 
 [[nodiscard]] std::wstring ToWide(std::string_view string) {
 	const auto length = MultiByteToWideChar(
@@ -821,7 +830,12 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 
 } // namespace
 
+const char kOptionWebviewLegacyEdge[] = "webview-legacy-edge";
+
 bool Supported() {
+	if (OptionWebviewLegacyEdge.value()) {
+		return false;
+	}
 	auto version = LPWSTR(nullptr);
 	const auto result = GetAvailableCoreWebView2BrowserVersionString(
 		nullptr,
