@@ -22,6 +22,7 @@
 #include <QtGui/QDesktopServices>
 
 #include <crl/common/crl_common_on_main_guarded.h>
+#include <rpl/variable.h>
 
 #include <string>
 #include <locale>
@@ -90,6 +91,8 @@ class Handler
 		ICoreWebView2PermissionRequestedEventHandler,
 		ICoreWebView2NavigationStartingEventHandler,
 		ICoreWebView2NavigationCompletedEventHandler,
+		ICoreWebView2ContentLoadingEventHandler,
+		ICoreWebView2DocumentTitleChangedEventHandler,
 		ICoreWebView2NewWindowRequestedEventHandler,
 		ICoreWebView2ScriptDialogOpeningEventHandler,
 		ICoreWebView2WebResourceRequestedEventHandler>
@@ -137,6 +140,12 @@ public:
 		ICoreWebView2NavigationCompletedEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
+		ICoreWebView2ContentLoadingEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		IUnknown *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
 		ICoreWebView2NewWindowRequestedEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
@@ -145,7 +154,13 @@ public:
 		ICoreWebView2 *sender,
 		ICoreWebView2WebResourceRequestedEventArgs *args) override;
 
+	rpl::producer<NavigationHistoryState> navigationHistoryState() {
+		return _navigationHistoryState.value();
+	}
+
 private:
+	void updateHistoryStates();
+
 	HWND _window = nullptr;
 	winrt::com_ptr<ICoreWebView2Environment> _environment;
 	winrt::com_ptr<ICoreWebView2Controller> _controller;
@@ -159,6 +174,8 @@ private:
 	base::flat_map<
 		winrt::com_ptr<ICoreWebView2WebResourceRequestedEventArgs>,
 		winrt::com_ptr<ICoreWebView2Deferral>> _pending;
+
+	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 
 	QColor _opaqueBg;
 	bool _debug = false;
@@ -298,8 +315,10 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		if (_navigationStartHandler
 			&& !_navigationStartHandler(FromWide(uri), false)) {
 			args->put_Cancel(TRUE);
+			return S_OK;
 		}
 	}
+	updateHistoryStates();
 	return S_OK;
 }
 
@@ -312,7 +331,21 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	if (_navigationDoneHandler) {
 		_navigationDoneHandler(result == S_OK && isSuccess);
 	}
+	updateHistoryStates();
+	return S_OK;
+}
 
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ContentLoadingEventArgs *args) {
+	updateHistoryStates();
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		IUnknown *args) {
+	updateHistoryStates();
 	return S_OK;
 }
 
@@ -521,6 +554,26 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	return S_OK;
 }
 
+void Handler::updateHistoryStates() {
+	if (!_webview) {
+		return;
+	};
+	auto canGoBack = BOOL(FALSE);
+	auto canGoForward = BOOL(FALSE);
+	auto url = base::CoTaskMemString();
+	auto title = base::CoTaskMemString();
+	_webview->get_CanGoBack(&canGoBack);
+	_webview->get_CanGoForward(&canGoForward);
+	_webview->get_Source(url.put());
+	_webview->get_DocumentTitle(title.put());
+	_navigationHistoryState = NavigationHistoryState{
+		.url = FromWide(url),
+		.title = FromWide(title),
+		.canGoBack = (canGoBack == TRUE),
+		.canGoForward = (canGoForward == TRUE),
+	};
+}
+
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config &&config);
@@ -543,6 +596,9 @@ public:
 
 	QWidget *widget() override;
 	void *winId() override;
+
+	auto navigationHistoryState()
+	-> rpl::producer<NavigationHistoryState> override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
 
@@ -748,6 +804,13 @@ QWidget *Instance::widget() {
 
 void *Instance::winId() {
 	return nullptr;
+}
+
+auto Instance::navigationHistoryState()
+-> rpl::producer<NavigationHistoryState> {
+	return _handler
+		? _handler->navigationHistoryState()
+		: rpl::single(NavigationHistoryState());
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {

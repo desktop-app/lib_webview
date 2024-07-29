@@ -13,6 +13,8 @@
 #include <optional>
 #include <functional>
 
+#include <rpl/producer.h>
+
 #include <QtGui/QColor>
 
 // Inspired by https://github.com/webview/webview.
@@ -22,6 +24,17 @@ class QWidget;
 namespace Webview {
 
 class DataStream;
+
+struct NavigationHistoryState {
+	std::string url;
+	std::string title;
+	bool canGoBack : 1 = false;
+	bool canGoForward : 1 = false;
+
+	friend inline constexpr bool operator==(
+		NavigationHistoryState,
+		NavigationHistoryState) = default;
+};
 
 class Interface {
 public:
@@ -42,8 +55,11 @@ public:
 
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
-	virtual QWidget *widget() = 0;
-	virtual void *winId() = 0;
+	[[nodiscard]] virtual QWidget *widget() = 0;
+	[[nodiscard]] virtual void *winId() = 0;
+
+	[[nodiscard]] virtual auto navigationHistoryState()
+		-> rpl::producer<NavigationHistoryState> = 0;
 
 };
 

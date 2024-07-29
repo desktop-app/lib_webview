@@ -326,6 +326,9 @@ public:
 	QWidget *widget() override;
 	void *winId() override;
 
+	auto navigationHistoryState()
+	-> rpl::producer<NavigationHistoryState> override;
+
 	void setOpaqueBg(QColor opaqueBg) override;
 
 private:
@@ -795,6 +798,12 @@ QWidget *Instance::widget() {
 
 void *Instance::winId() {
 	return _webview;
+}
+
+
+auto Instance::navigationHistoryState()
+-> rpl::producer<NavigationHistoryState> {
+	return rpl::single(NavigationHistoryState());
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {

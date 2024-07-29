@@ -23,6 +23,7 @@
 
 #include <webview/webview.hpp>
 #include <crl/crl.h>
+#include <rpl/range.h>
 #include <regex>
 
 namespace Webview::WebKitGTK {
@@ -81,6 +82,9 @@ public:
 
 	QWidget *widget() override;
 	void *winId() override;
+
+	auto navigationHistoryState()
+		-> rpl::producer<NavigationHistoryState> override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
 
@@ -309,7 +313,7 @@ bool Instance::create(Config config) {
 		g_object_unref(data);
 
 		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
-		g_object_unref(context);		
+		g_object_unref(context);
 	}
 
 	WebKitUserContentManager *manager =
@@ -683,6 +687,11 @@ void *Instance::winId() {
 	}
 
 	return reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)));
+}
+
+auto Instance::navigationHistoryState()
+-> rpl::producer<NavigationHistoryState> {
+	return rpl::single(NavigationHistoryState());
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {

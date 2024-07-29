@@ -11,6 +11,7 @@
 #include "webview/webview_common.h"
 
 #include <rpl/lifetime.h>
+#include <rpl/producer.h>
 #include <QColor>
 
 class QString;
@@ -27,6 +28,7 @@ class Interface;
 struct Config;
 struct DataRequest;
 enum class DataResult;
+struct NavigationHistoryState;
 
 struct WindowConfig {
 	QColor opaqueBg;
@@ -65,6 +67,9 @@ public:
 	void eval(const QByteArray &js);
 
 	void focus();
+
+	[[nodiscard]] auto navigationHistoryState() const
+	-> rpl::producer<NavigationHistoryState>;
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;

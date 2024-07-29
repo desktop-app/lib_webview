@@ -219,6 +219,26 @@ void Window::focus() {
 	_webview->focus();
 }
 
+ auto Window::navigationHistoryState() const
+-> rpl::producer<NavigationHistoryState>{
+	Expects(_webview != nullptr);
+
+	return [data = _webview->navigationHistoryState()](
+			auto consumer) mutable {
+		auto result = rpl::lifetime();
+
+		std::move(
+			data
+		) | rpl::start_with_next([=](NavigationHistoryState state) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				consumer.put_next_copy(state);
+			});
+		}, result);
+
+		return result;
+	};
+}
+
 void Window::setMessageHandler(Fn<void(std::string)> handler) {
 	_messageHandler = std::move(handler);
 }
