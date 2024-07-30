@@ -40,13 +40,9 @@ class Interface {
 public:
 	virtual ~Interface() = default;
 
-	virtual bool finishEmbedding() = 0;
-
 	virtual void navigate(std::string url) = 0;
 	virtual void navigateToData(std::string id) = 0;
 	virtual void reload() = 0;
-
-	virtual void resizeToWindow() = 0;
 
 	virtual void init(std::string js) = 0;
 	virtual void eval(std::string js) = 0;
@@ -56,7 +52,6 @@ public:
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
-	[[nodiscard]] virtual void *winId() = 0;
 
 	[[nodiscard]] virtual auto navigationHistoryState()
 		-> rpl::producer<NavigationHistoryState> = 0;
@@ -103,7 +98,6 @@ enum class DataResult {
 
 struct Config {
 	QWidget *parent = nullptr;
-	void *window = nullptr;
 	QColor opaqueBg;
 	std::function<void(std::string)> messageHandler;
 	std::function<bool(std::string,bool)> navigationStartHandler;

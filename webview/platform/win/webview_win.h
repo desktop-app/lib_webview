@@ -6,4 +6,13 @@
 //
 #pragma once
 
+#include "base/unique_qptr.h"
 #include "webview/webview_interface.h"
+
+class QWindow;
+
+namespace Webview {
+
+[[nodiscard]] base::unique_qptr<QWindow> MakeFramelessWindow();
+
+} // namespace Webview

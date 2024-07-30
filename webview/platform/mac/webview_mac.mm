@@ -10,6 +10,7 @@
 #include "webview/webview_data_stream_memory.h"
 #include "base/algorithm.h"
 #include "base/debug_log.h"
+#include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
 #include "base/flat_map.h"
 
@@ -19,6 +20,8 @@
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QWindow>
+#include <QtWidgets/QWidget>
 
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
@@ -52,18 +55,19 @@ using TaskPointer = id<WKURLSchemeTask>;
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested dataDomain:(std::string)dataDomain;
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
+- (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
-- (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
-- (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
-- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler;
-- (void)webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler;
-- (void)webView:(WKWebView *)webView startURLSchemeTask:(id <WKURLSchemeTask>)task;
-- (void)webView:(WKWebView *)webView stopURLSchemeTask:(id <WKURLSchemeTask>)task;
+- (void) webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
+- (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
+- (void) webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler;
+- (void) webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler;
+- (void) webView:(WKWebView *)webView startURLSchemeTask:(id <WKURLSchemeTask>)task;
+- (void) webView:(WKWebView *)webView stopURLSchemeTask:(id <WKURLSchemeTask>)task;
 - (void) dealloc;
 
 @end // @interface Handler
@@ -74,18 +78,20 @@ using TaskPointer = id<WKURLSchemeTask>;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<Webview::DialogResult(Webview::DialogArgs)> _dialogHandler;
 	std::function<void(id<WKURLSchemeTask> task, bool started)> _dataRequested;
+	std::function<void()> _updateStates;
 	std::string _dataDomain;
 	base::flat_map<TaskPointer, NSURLSessionDataTask*> _redirectedTasks;
 	base::has_weak_ptr _guard;
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested dataDomain:(std::string)dataDomain {
+- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationStartHandler = std::move(navigationStartHandler);
 		_navigationDoneHandler = std::move(navigationDoneHandler);
 		_dialogHandler = std::move(dialogHandler);
 		_dataRequested = std::move(dataRequested);
+		_updateStates = std::move(updateStates);
 		_dataDomain = std::move(dataDomain);
 	}
 	return self;
@@ -122,9 +128,20 @@ using TaskPointer = id<WKURLSchemeTask>;
 	}
 }
 
+- (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+	if ([keyPath isEqualToString:@"URL"] || [keyPath isEqualToString:@"title"]) {
+		if (_updateStates) {
+			_updateStates();
+		}
+	}
+}
+
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
 	if (_navigationDoneHandler) {
 		_navigationDoneHandler(true);
+	}
+	if (_updateStates) {
+		_updateStates();
 	}
 }
 
@@ -132,9 +149,12 @@ using TaskPointer = id<WKURLSchemeTask>;
 	if (_navigationDoneHandler) {
 		_navigationDoneHandler(false);
 	}
+	if (_updateStates) {
+		_updateStates();
+	}
 }
 
-- (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
+- (nullable WKWebView *) webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
 	NSString *string = [[[navigationAction request] URL] absoluteString];
 	const auto url = [string UTF8String];
 	if (_navigationStartHandler && _navigationStartHandler(url, true)) {
@@ -143,7 +163,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 	return nil;
 }
 
-- (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
+- (void) webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
 
 	NSOpenPanel *openPanel = [NSOpenPanel openPanel];
 
@@ -162,7 +182,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 
 }
 
-- (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
+- (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
 	auto text = [message UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
 	auto url = [uri UTF8String];
@@ -174,7 +194,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 	completionHandler();
 }
 
-- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
+- (void) webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
 	auto text = [message UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
 	auto url = [uri UTF8String];
@@ -186,7 +206,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 	completionHandler(result.accepted ? YES : NO);
 }
 
-- (void)webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler {
+- (void) webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler {
 	auto text = [prompt UTF8String];
 	auto value = [defaultText UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
@@ -204,13 +224,13 @@ using TaskPointer = id<WKURLSchemeTask>;
 	}
 }
 
-- (void)webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
+- (void) webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
 	if (![self processRedirect:task]) {
 		_dataRequested(task, true);
 	}
 }
 
-- (BOOL)processRedirect:(id<WKURLSchemeTask>)task {
+- (BOOL) processRedirect:(id<WKURLSchemeTask>)task {
 	NSString *url = task.request.URL.absoluteString;
 	NSString *prefix = stdToNS(_dataDomain);
 	NSString *resource = [url substringFromIndex:[prefix length]];
@@ -272,7 +292,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 	return YES;
 }
 
-- (void)webView:(WKWebView *)webView stopURLSchemeTask:(id <WKURLSchemeTask>)task {
+- (void) webView:(WKWebView *)webView stopURLSchemeTask:(id <WKURLSchemeTask>)task {
 	const auto i = _redirectedTasks.find(task);
 	if (i != end(_redirectedTasks)) {
 		NSURLSessionDataTask *dataTask = i->second;
@@ -310,13 +330,9 @@ public:
 	explicit Instance(Config config);
 	~Instance();
 
-	bool finishEmbedding() override;
-
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
 	void reload() override;
-
-	void resizeToWindow() override;
 
 	void init(std::string js) override;
 	void eval(std::string js) override;
@@ -324,7 +340,6 @@ public:
 	void focus() override;
 
 	QWidget *widget() override;
-	void *winId() override;
 
 	auto navigationHistoryState()
 	-> rpl::producer<NavigationHistoryState> override;
@@ -375,6 +390,8 @@ private:
 	void removeCacheEntry(CacheKey key);
 	void pruneCache();
 
+	void updateHistoryStates();
+
 	[[nodiscard]] static CacheKey KeyFromValues(
 		uint32 resourceIndex,
 		int64 offset);
@@ -384,9 +401,12 @@ private:
 	WKUserContentController *_manager = nullptr;
 	WKWebView *_webview = nullptr;
 	Handler *_handler = nullptr;
+	base::unique_qptr<QWindow> _window;
+	base::unique_qptr<QWidget> _widget;
 	std::string _dataProtocol;
 	std::string _dataDomain;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
+	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 
 	base::flat_map<TaskPointer, Task> _tasks;
 	base::flat_map<std::string, PartialResource> _partialResources;
@@ -432,7 +452,13 @@ Instance::Instance(Config config) {
 		_dataProtocol = config.dataProtocolOverride;
 		_dataDomain = _dataProtocol + "://domain/";
 	}
-	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest dataDomain:_dataDomain];
+	if (config.debug) {
+		[configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+	}
+	const auto updateStates = [=] {
+		updateHistoryStates();
+	};
+	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(_dataProtocol)];
 	if (@available(macOS 14, *)) {
@@ -449,7 +475,21 @@ Instance::Instance(Config config) {
 	[_manager addScriptMessageHandler:_handler name:@"external"];
 	[_webview setNavigationDelegate:_handler];
 	[_webview setUIDelegate:_handler];
+
+	[_webview addObserver:_handler forKeyPath:@"URL" options:NSKeyValueObservingOptionNew context:nil];
+	[_webview addObserver:_handler forKeyPath:@"title" options:NSKeyValueObservingOptionNew context:nil];
+
 	[configuration release];
+
+	_window.reset(QWindow::fromWinId(WId(_webview)));
+	_widget.reset();
+
+	_widget.reset(
+		QWidget::createWindowContainer(
+			_window.get(),
+			config.parent,
+			Qt::FramelessWindowHint));
+	_widget->show();
 
 	setOpaqueBg(config.opaqueBg);
 	init(R"(
@@ -461,6 +501,8 @@ window.external = {
 }
 
 Instance::~Instance() {
+	base::take(_window);
+	base::take(_widget);
 	[_manager removeScriptMessageHandlerForName:@"external"];
 	[_webview setNavigationDelegate:nil];
 	[_handler release];
@@ -593,6 +635,15 @@ void Instance::pruneCache() {
 		Assert(!_partsLRU.empty());
 		removeCacheEntry(_partsLRU.front());
 	}
+}
+
+void Instance::updateHistoryStates() {
+	_navigationHistoryState = NavigationHistoryState{
+		.url = std::string([[[_webview URL] absoluteString] UTF8String]),
+		.title = std::string([[_webview title] UTF8String]),
+		.canGoBack = [_webview canGoBack],
+		.canGoForward = [_webview canGoForward],
+	};
 }
 
 void Instance::removeCacheEntry(CacheKey key) {
@@ -755,10 +806,6 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 	}
 }
 
-bool Instance::finishEmbedding() {
-	return true;
-}
-
 void Instance::navigate(std::string url) {
 	NSString *string = [NSString stringWithUTF8String:url.c_str()];
 	NSURL *native = [NSURL URLWithString:string];
@@ -789,21 +836,15 @@ void Instance::eval(std::string js) {
 }
 
 void Instance::focus() {
-
 }
 
 QWidget *Instance::widget() {
-	return nullptr;
+	return _widget.get();
 }
-
-void *Instance::winId() {
-	return _webview;
-}
-
 
 auto Instance::navigationHistoryState()
 -> rpl::producer<NavigationHistoryState> {
-	return rpl::single(NavigationHistoryState());
+	return _navigationHistoryState.value();
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
@@ -811,9 +852,6 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		[_webview setValue: @NO forKey: @"drawsBackground"];
 		[_webview setUnderPageBackgroundColor:[NSColor clearColor]];
 	}
-}
-
-void Instance::resizeToWindow() {
 }
 
 } // namespace

@@ -7,12 +7,16 @@
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 
 #include "webview/webview_data_stream.h"
+#include "webview/webview_embed.h"
 #include "webview/platform/win/webview_windows_data_stream.h"
 #include "base/algorithm.h"
 #include "base/basic_types.h"
+#include "base/event_filter.h"
 #include "base/flat_map.h"
+#include "base/invoke_queued.h"
 #include "base/options.h"
 #include "base/variant.h"
+#include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_co_task_mem.h"
@@ -21,6 +25,8 @@
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QWindow>
+#include <QtWidgets/QWidget>
 
 #include <crl/common/crl_common_on_main_guarded.h>
 #include <rpl/variable.h>
@@ -36,14 +42,6 @@ namespace {
 
 constexpr auto kDataUrlPrefix
 	= std::string_view("http://desktop-app-resource/");
-
-base::options::toggle OptionWebviewLegacyEdge({
-	.id = kOptionWebviewLegacyEdge,
-	.name = "Force legacy Edge WebView.",
-	.description = "Skip modern CoreWebView2 check and force using legacy Edge WebView on Windows.",
-	.scope = base::options::windows,
-	.restartRequired = true,
-});
 
 [[nodiscard]] std::wstring ToWide(std::string_view string) {
 	const auto length = MultiByteToWideChar(
@@ -110,6 +108,7 @@ class Handler
 public:
 	Handler(
 		Config config,
+		HWND handle,
 		std::function<void(not_null<Handler*>)> saveThis,
 		std::function<void()> readyHandler);
 	~Handler();
@@ -193,9 +192,10 @@ private:
 
 Handler::Handler(
 	Config config,
+	HWND handle,
 	std::function<void(not_null<Handler*>)> saveThis,
 	std::function<void()> readyHandler)
-: _window(static_cast<HWND>(config.window))
+: _window(handle)
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler))
@@ -590,13 +590,9 @@ public:
 
 	[[nodiscard]] bool failed() const;
 
-	bool finishEmbedding() override;
-
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
 	void reload() override;
-
-	void resizeToWindow() override;
 
 	void init(std::string js) override;
 	void eval(std::string js) override;
@@ -604,7 +600,6 @@ public:
 	void focus() override;
 
 	QWidget *widget() override;
-	void *winId() override;
 
 	auto navigationHistoryState()
 	-> rpl::producer<NavigationHistoryState> override;
@@ -634,19 +629,28 @@ private:
 	void start(Config &&config);
 	[[nodiscard]] bool ready() const;
 	void processReadySteps();
+	void resizeToWindow();
 
-	HWND _window = nullptr;
+	base::unique_qptr<QWindow> _window;
+	HWND _handle = nullptr;
 	winrt::com_ptr<IUnknown> _ownedHandler;
 	Handler *_handler = nullptr;
 	std::vector<ReadyStep> _waitingForReady;
-	bool _pendingResize = false;
+	base::unique_qptr<QWidget> _widget;
 	bool _pendingFocus = false;
 	bool _readyFlag = false;
 
 };
 
 Instance::Instance(Config &&config)
-: _window(static_cast<HWND>(config.window)) {
+: _window(MakeFramelessWindow())
+, _handle(HWND(_window->winId()))
+, _widget(
+	QWidget::createWindowContainer(
+		_window,
+		config.parent,
+		Qt::FramelessWindowHint)) {
+	_widget->show();
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
 	init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}");
@@ -665,14 +669,17 @@ void Instance::start(Config &&config) {
 		L"--disable-features=ElasticOverscroll");
 
 	auto handler = (Handler*)nullptr;
-	auto owned = winrt::make<Handler>(config, [&](not_null<Handler*> that) {
-		handler = that;
-	}, crl::guard(this, [=] {
+	const auto ready = [=] {
 		_readyFlag = true;
 		if (_handler) {
 			processReadySteps();
 		}
-	}));
+	};
+	auto owned = winrt::make<Handler>(
+		config,
+		_handle,
+		[&](not_null<Handler*> that) { handler = that; },
+		crl::guard(this, ready));
 	const auto wpath = ToWide(config.userDataPath);
 	const auto result = CreateCoreWebView2EnvironmentWithOptions(
 		nullptr,
@@ -697,6 +704,8 @@ void Instance::processReadySteps() {
 
 	const auto guard = base::make_weak(this);
 	if (!_handler->valid()) {
+		_widget = nullptr;
+		_handle = nullptr;
 		_window = nullptr;
 		_handler = nullptr;
 		base::take(_ownedHandler);
@@ -705,7 +714,13 @@ void Instance::processReadySteps() {
 	if (guard) {
 		_handler->controller()->put_IsVisible(TRUE);
 	}
-	if (guard && _pendingResize) {
+	if (const auto widget = guard ? _widget.get() : nullptr) {
+		base::install_event_filter(widget, [=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::Resize || e->type() == QEvent::Move) {
+				InvokeQueued(widget, [=] { resizeToWindow(); });
+			}
+			return base::EventFilterResult::Continue;
+		});
 		resizeToWindow();
 	}
 	if (guard) {
@@ -730,11 +745,7 @@ void Instance::processReadySteps() {
 }
 
 bool Instance::ready() const {
-	return _window && _handler && _readyFlag;
-}
-
-bool Instance::finishEmbedding() {
-	return true;
+	return _handle && _handler && _readyFlag;
 }
 
 void Instance::navigate(std::string url) {
@@ -765,12 +776,8 @@ void Instance::reload() {
 }
 
 void Instance::resizeToWindow() {
-	if (!ready()) {
-		_pendingResize = true;
-		return;
-	}
 	auto bounds = RECT{};
-	GetClientRect(_window, &bounds);
+	GetClientRect(_handle, &bounds);
 	_handler->controller()->put_Bounds(bounds);
 }
 
@@ -796,8 +803,11 @@ void Instance::eval(std::string js) {
 
 void Instance::focus() {
 	if (_window) {
-		SetForegroundWindow(_window);
-		SetFocus(_window);
+		_window->requestActivate();
+	}
+	if (_handle) {
+		SetForegroundWindow(_handle);
+		SetFocus(_handle);
 	}
 	if (!ready()) {
 		_pendingFocus = true;
@@ -808,11 +818,7 @@ void Instance::focus() {
 }
 
 QWidget *Instance::widget() {
-	return nullptr;
-}
-
-void *Instance::winId() {
-	return nullptr;
+	return _widget.get();
 }
 
 auto Instance::navigationHistoryState()
@@ -830,10 +836,8 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 
 } // namespace
 
-const char kOptionWebviewLegacyEdge[] = "webview-legacy-edge";
-
 bool Supported() {
-	if (OptionWebviewLegacyEdge.value()) {
+	if (base::options::value<bool>(kOptionWebviewLegacyEdge)) {
 		return false;
 	}
 	auto version = LPWSTR(nullptr);

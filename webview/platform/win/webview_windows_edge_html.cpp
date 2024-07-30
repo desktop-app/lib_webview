@@ -10,9 +10,13 @@
 #include "base/algorithm.h"
 #include "base/variant.h"
 #include "base/weak_ptr.h"
+#include "base/unique_qptr.h"
+#include "ui/rp_widget.h"
 
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QWindow>
+#include <QtWidgets/QWidget>
 
 #include <crl/crl_on_main.h>
 #include <rpl/variable.h>
@@ -36,14 +40,11 @@ using namespace base::WinRT;
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config config);
-
-	bool finishEmbedding() override;
+	~Instance();
 
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
 	void reload() override;
-
-	void resizeToWindow() override;
 
 	void init(std::string js) override;
 	void eval(std::string js) override;
@@ -51,7 +52,6 @@ public:
 	void focus() override;
 
 	QWidget *widget() override;
-	void *winId() override;
 
 	auto navigationHistoryState()
 	-> rpl::producer<NavigationHistoryState> override;
@@ -80,15 +80,17 @@ private:
 	void updateHistoryStates();
 
 	Config _config;
-	HWND _window = nullptr;
+	base::unique_qptr<QWindow> _window;
+	HWND _handle = nullptr;
 	WebViewControlProcess _process;
 	WebViewControl _webview = nullptr;
+	base::unique_qptr<Ui::RpWidget> _widget;
+	QPointer<QWidget> _embed;
 	std::string _initScript;
 
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 
 	std::vector<ReadyStep> _waitingForReady;
-	bool _pendingResize = false;
 	bool _pendingFocus = false;
 	bool _readyFlag = false;
 
@@ -96,14 +98,18 @@ private:
 
 Instance::Instance(Config config)
 : _config(std::move(config))
-, _window(static_cast<HWND>(_config.window)) {
+, _window(MakeFramelessWindow())
+, _handle(HWND(_window->winId()))
+, _widget(base::make_unique_q<Ui::RpWidget>(config.parent)) {
+	_widget->show();
+
 	setOpaqueBg(_config.opaqueBg);
 	init("window.external.invoke = s => window.external.notify(s)");
 
 	init_apartment(apartment_type::single_threaded);
 	const auto weak = base::make_weak(this);
 	_process.CreateWebViewControlAsync(
-		reinterpret_cast<int64_t>(config.window),
+		reinterpret_cast<int64_t>(_handle),
 		Rect()
 	).Completed([=](
 			IAsyncOperation<WebViewControl> that,
@@ -119,11 +125,33 @@ Instance::Instance(Config config)
 		if (!ok) {
 			crl::on_main([=] {
 				if (const auto that = weak.get()) {
+					that->_widget = nullptr;
+					that->_handle = nullptr;
 					that->_window = nullptr;
 				}
 			});
 		}
 	});
+
+	_process.ProcessExited([=](const auto &sender, const auto &args) {
+		_webview = nullptr;
+		crl::on_main([=] {
+			if (const auto that = weak.get()) {
+				that->_embed = nullptr;
+				that->_widget = nullptr;
+				that->_handle = nullptr;
+				that->_window = nullptr;
+			}
+		});
+	});
+}
+
+Instance::~Instance() {
+	if (ready()) {
+		base::WinRT::Try([&] {
+			std::exchange(_webview, WebViewControl(nullptr)).Close();
+		});
+	}
 }
 
 void Instance::ready(WebViewControl webview) {
@@ -171,21 +199,29 @@ void Instance::ready(WebViewControl webview) {
 		}
 	});
 
+	_embed = QWidget::createWindowContainer(
+		_window,
+		_widget.get(),
+		Qt::FramelessWindowHint);
+	_embed->show();
+
 	_readyFlag = true;
 	processReadySteps();
 }
 
 void Instance::updateHistoryStates() {
-	_navigationHistoryState = NavigationHistoryState{
-		.url = winrt::to_string(_webview.Source().AbsoluteUri()),
-		.title = winrt::to_string(_webview.DocumentTitle()),
-		.canGoBack = _webview.CanGoBack(),
-		.canGoForward = _webview.CanGoForward(),
-	};
+	base::WinRT::Try([&] {
+		_navigationHistoryState = NavigationHistoryState{
+			.url = winrt::to_string(_webview.Source().AbsoluteUri()),
+			.title = winrt::to_string(_webview.DocumentTitle()),
+			.canGoBack = _webview.CanGoBack(),
+			.canGoForward = _webview.CanGoForward(),
+		};
+	});
 }
 
 bool Instance::ready() const {
-	return _window && _webview && _readyFlag;
+	return _handle && _webview && _readyFlag;
 }
 
 void Instance::processReadySteps() {
@@ -193,15 +229,31 @@ void Instance::processReadySteps() {
 
 	const auto guard = base::make_weak(this);
 	if (!_webview) {
+		_widget = nullptr;
+		_handle = nullptr;
 		_window = nullptr;
 		return;
 	}
 	if (guard) {
-		_webview.Settings().IsScriptNotifyAllowed(true);
-		_webview.IsVisible(true);
+		base::WinRT::Try([&] {
+			_webview.Settings().IsScriptNotifyAllowed(true);
+			_webview.IsVisible(true);
+		});
 	}
-	if (guard && _pendingResize) {
-		resizeToWindow();
+	if (guard) {
+		_widget->sizeValue() | rpl::start_with_next([=](QSize size) {
+			_embed->setGeometry(QRect(QPoint(), size));
+
+			if (!ready()) {
+				return;
+			}
+			RECT r;
+			GetClientRect(_handle, &r);
+			Rect bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
+			base::WinRT::Try([&] {
+				_webview.Bounds(bounds);
+			});
+		}, _widget->lifetime());
 	}
 	if (guard) {
 		for (const auto &step : base::take(_waitingForReady)) {
@@ -222,16 +274,14 @@ void Instance::processReadySteps() {
 	}
 }
 
-bool Instance::finishEmbedding() {
-	return true;
-}
-
 void Instance::navigate(std::string url) {
 	if (!ready()) {
 		_waitingForReady.push_back(NavigateToUrl{ std::move(url) });
 		return;
 	}
-	_webview.Navigate(Uri(winrt::to_hstring(url)));
+	base::WinRT::Try([&] {
+		_webview.Navigate(Uri(winrt::to_hstring(url)));
+	});
 }
 
 void Instance::navigateToData(std::string id) {
@@ -239,7 +289,12 @@ void Instance::navigateToData(std::string id) {
 }
 
 void Instance::reload() {
-	_webview.Refresh();
+	if (!ready()) {
+		return;
+	}
+	base::WinRT::Try([&] {
+		_webview.Refresh();
+	});
 }
 
 void Instance::init(std::string js) {
@@ -251,35 +306,40 @@ void Instance::eval(std::string js) {
 		_waitingForReady.push_back(EvalScript{ std::move(js) });
 		return;
 	}
-	_webview.InvokeScriptAsync(
-		L"eval",
-		single_threaded_vector<hstring>({ winrt::to_hstring(js) }));
-	_webview.InvokeScriptAsync(
-		L"eval",
-		single_threaded_vector<hstring>({ winrt::to_hstring("document.body.style.backgroundColor='transparent';")}));
-	_webview.InvokeScriptAsync(
-		L"eval",
-		single_threaded_vector<hstring>({ winrt::to_hstring("document.getElementsByTagName('html')[0].style.backgroundColor='transparent';") }));
+	base::WinRT::Try([&] {
+		_webview.InvokeScriptAsync(
+			L"eval",
+			single_threaded_vector<hstring>({ winrt::to_hstring(js) }));
+		_webview.InvokeScriptAsync(
+			L"eval",
+			single_threaded_vector<hstring>({ winrt::to_hstring(
+				"document.body.style.backgroundColor='transparent';") }));
+		_webview.InvokeScriptAsync(
+			L"eval",
+			single_threaded_vector<hstring>({ winrt::to_hstring(
+				"document.getElementsByTagName('html')[0].style.backgroundColor='transparent';") }));
+	});
 }
 
 void Instance::focus() {
 	if (_window) {
-		SetForegroundWindow(_window);
-		SetFocus(_window);
+		_window->requestActivate();
+	}
+	if (_handle) {
+		SetForegroundWindow(_handle);
+		SetFocus(_handle);
 	}
 	if (!ready()) {
 		_pendingFocus = true;
 		return;
 	}
-	_webview.MoveFocus(WebViewControlMoveFocusReason::Programmatic);
+	base::WinRT::Try([&] {
+		_webview.MoveFocus(WebViewControlMoveFocusReason::Programmatic);
+	});
 }
 
 QWidget *Instance::widget() {
-	return nullptr;
-}
-
-void *Instance::winId() {
-	return nullptr;
+	return _widget.get();
 }
 
 auto Instance::navigationHistoryState()
@@ -292,23 +352,14 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		_waitingForReady.push_back(SetOpaqueBg{ opaqueBg });
 		return;
 	}
-	_webview.DefaultBackgroundColor({
-		uchar(opaqueBg.alpha()),
-		uchar(opaqueBg.red()),
-		uchar(opaqueBg.green()),
-		uchar(opaqueBg.blue())
+	base::WinRT::Try([&] {
+		_webview.DefaultBackgroundColor({
+			uchar(opaqueBg.alpha()),
+			uchar(opaqueBg.red()),
+			uchar(opaqueBg.green()),
+			uchar(opaqueBg.blue())
+		});
 	});
-}
-
-void Instance::resizeToWindow() {
-	if (!ready()) {
-		_pendingResize = true;
-		return;
-	}
-	RECT r;
-	GetClientRect(_window, &r);
-	Rect bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
-	_webview.Bounds(bounds);
 }
 
 } // namespace

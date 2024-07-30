@@ -185,6 +185,10 @@ inline GtkWidget *(*webkit_web_view_new_with_context)(WebKitWebContext *context)
 inline GType (*webkit_web_view_get_type)(void);
 inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
 	WebKitWebView *web_view);
+inline const gchar *(*webkit_web_view_get_uri)(WebKitWebView *web_view);
+inline const gchar *(*webkit_web_view_get_title)(WebKitWebView *web_view);
+inline gboolean (*webkit_web_view_can_go_back)(WebKitWebView *web_view);
+inline gboolean (*webkit_web_view_can_go_forward)(WebKitWebView *web_view);
 inline gboolean (*webkit_user_content_manager_register_script_message_handler)(
 	WebKitUserContentManager *manager,
 	const gchar *name,
