@@ -22,6 +22,12 @@
 			<arg type='b' name='accepted' direction='out'/>
 			<arg type='s' name='text' direction='out'/>
 		</method>
+		<method name='NavigationStateUpdate'>
+			<arg type='s' name='url' direction='in'/>
+			<arg type='s' name='title' direction='in'/>
+			<arg type='b' name='canGoBack' direction='in'/>
+			<arg type='b' name='canGoForward' direction='in'/>
+		</method>
 	</interface>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
 		<method name='Create'>

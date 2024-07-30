@@ -21,6 +21,7 @@ class QWindow;
 namespace Webview {
 
 extern const char kOptionWebviewDebugEnabled[];
+extern const char kOptionWebviewLegacyEdge[];
 
 struct DialogArgs;
 struct DialogResult;
@@ -43,10 +44,8 @@ public:
 		WindowConfig config = WindowConfig());
 	~Window();
 
-	// Returns 'nullptr' in case of an error.
-	QWidget *widget() {
-		return _widget.get();
-	}
+	// May be nullptr or destroyed any time (in case webview crashed).
+	[[nodiscard]] QWidget *widget() const;
 
 	void updateTheme(
 		QColor opaqueBg,
@@ -68,6 +67,7 @@ public:
 
 	void focus();
 
+	void refreshNavigationHistoryState();
 	[[nodiscard]] auto navigationHistoryState() const
 	-> rpl::producer<NavigationHistoryState>;
 
@@ -77,7 +77,6 @@ public:
 
 private:
 	bool createWebView(QWidget *parent, const WindowConfig &config);
-	bool finishWebviewEmbedding();
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
@@ -85,8 +84,6 @@ private:
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
 
 	std::unique_ptr<Interface> _webview;
-	base::unique_qptr<QWidget> _widget;
-	base::unique_qptr<QWindow> _window;
 	Fn<void(std::string)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;

@@ -23,7 +23,7 @@
 
 #include <webview/webview.hpp>
 #include <crl/crl.h>
-#include <rpl/range.h>
+#include <rpl/rpl.h>
 #include <regex>
 
 namespace Webview::WebKitGTK {
@@ -67,13 +67,9 @@ public:
 
 	ResolveResult resolve();
 
-	bool finishEmbedding() override;
-
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
 	void reload() override;
-
-	void resizeToWindow() override;
 
 	void init(std::string js) override;
 	void eval(std::string js) override;
@@ -81,8 +77,8 @@ public:
 	void focus() override;
 
 	QWidget *widget() override;
-	void *winId() override;
 
+	void refreshNavigationHistoryState() override;
 	auto navigationHistoryState()
 		-> rpl::producer<NavigationHistoryState> override;
 
@@ -108,9 +104,12 @@ private:
 
 	void startProcess();
 	void stopProcess();
+	void updateHistoryStates();
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
+
+	void *winId();
 
 	bool _remoting = false;
 	bool _connected = false;
@@ -134,6 +133,7 @@ private:
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
+	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	bool _loadFailed = false;
 
 };
@@ -352,6 +352,26 @@ bool Instance::create(Config config) {
 		this);
 	g_signal_connect_swapped(
 		_webview,
+		"notify::uri",
+		G_CALLBACK(+[](
+			Instance *instance,
+			GParamSpec *pspec) -> gboolean {
+			instance->updateHistoryStates();
+			return true;
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
+		"notify::title",
+		G_CALLBACK(+[](
+			Instance *instance,
+			GParamSpec *pspec) -> gboolean {
+			instance->updateHistoryStates();
+			return true;
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
 		"decide-policy",
 		G_CALLBACK(+[](
 			Instance *instance,
@@ -447,6 +467,7 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 			_master.call_navigation_done(!_loadFailed, nullptr);
 		}
 	}
+	updateHistoryStates();
 }
 
 bool Instance::decidePolicy(
@@ -564,10 +585,6 @@ ResolveResult Instance::resolve() {
 	return Resolve(_wayland);
 }
 
-bool Instance::finishEmbedding() {
-	return true;
-}
-
 void Instance::navigate(std::string url) {
 	if (_remoting) {
 		if (!_helper) {
@@ -651,6 +668,9 @@ void Instance::eval(std::string js) {
 }
 
 void Instance::focus() {
+	if (const auto widget = _widget.get()) {
+		widget->activateWindow();
+	}
 }
 
 QWidget *Instance::widget() {
@@ -689,9 +709,13 @@ void *Instance::winId() {
 	return reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)));
 }
 
+void Instance::refreshNavigationHistoryState() {
+	// Not needed here, there are events.
+}
+
 auto Instance::navigationHistoryState()
 -> rpl::producer<NavigationHistoryState> {
-	return rpl::single(NavigationHistoryState());
+	return _navigationHistoryState.value();
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
@@ -726,9 +750,6 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 			-1,
 			nullptr);
 	}
-}
-
-void Instance::resizeToWindow() {
 }
 
 void Instance::startProcess() {
@@ -864,6 +885,17 @@ void Instance::stopProcess() {
 	}
 }
 
+void Instance::updateHistoryStates() {
+	const auto url = webkit_web_view_get_uri(_webview);
+	const auto title = webkit_web_view_get_title(_webview);
+	_master.call_navigation_state_update(
+		url ? url : "",
+		title ? title : "",
+		webkit_web_view_can_go_back(_webview),
+		webkit_web_view_can_go_forward(_webview),
+		nullptr);
+}
+
 void Instance::registerMasterMethodHandlers() {
 	if (!_master) {
 		return;
@@ -968,6 +1000,22 @@ void Instance::registerMasterMethodHandlers() {
 			result.accepted,
 			result.text);
 
+		return true;
+	});
+
+	_master.signal_handle_navigation_state_update().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &url,
+			const std::string &title,
+			bool canGoBack,
+			bool canGoForward) {
+		_navigationHistoryState = NavigationHistoryState{
+			.url = url,
+			.title = title,
+			.canGoBack = canGoBack,
+			.canGoForward = canGoForward,
+		};
 		return true;
 	});
 }

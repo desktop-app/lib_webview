@@ -11,6 +11,8 @@
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 #include "webview/platform/win/webview_windows_edge_html.h"
 
+#include <QtGui/QWindow>
+
 namespace Webview {
 namespace {
 
@@ -19,6 +21,12 @@ namespace {
 }
 
 } // namespace
+
+base::unique_qptr<QWindow> MakeFramelessWindow() {
+	auto result = base::make_unique_q<QWindow>();
+	result->setFlag(Qt::FramelessWindowHint);
+	return result;
+}
 
 Available Availability() {
 	if (SystemTooOld()) {

@@ -25,106 +25,55 @@
 namespace Webview {
 namespace {
 
-[[nodiscard]] QWindow *CreateContainerWindow() {
-	if constexpr (Platform::IsWindows()) {
-		const auto result = new QWindow();
-		result->setFlag(Qt::FramelessWindowHint);
-		return result;
-	} else {
-		return nullptr;
-	}
-}
-
-[[nodiscard]] QWindow *CreateContainerWindow(not_null<Interface*> webview) {
-	const auto id = webview->winId();
-	return id ? QWindow::fromWinId(WId(id)) : nullptr;
-}
-
 base::options::toggle OptionWebviewDebugEnabled({
 	.id = kOptionWebviewDebugEnabled,
 	.name = "Enable webview inspecting",
 	.description = "Right click and choose Inspect in the webview windows. (on macOS launch Safari, open from Develop menu)",
 });
 
+base::options::toggle OptionWebviewLegacyEdge({
+	.id = kOptionWebviewLegacyEdge,
+	.name = "Force legacy Edge WebView.",
+	.description = "Skip modern CoreWebView2 check and force using legacy Edge WebView on Windows.",
+	.scope = base::options::windows,
+	.restartRequired = true,
+});
+
 } // namespace
 
 const char kOptionWebviewDebugEnabled[] = "webview-debug-enabled";
 
-Window::Window(QWidget *parent, WindowConfig config)
-: _window(CreateContainerWindow()) {
-	if (SupportsEmbedAfterCreate()) {
-		if (!createWebView(parent, config)) {
-			return;
-		}
-		if (_webview->widget()) {
-			_widget.reset(_webview->widget());
-		} else if (!_window) {
-			_window.reset(CreateContainerWindow(_webview.get()));
-		}
+const char kOptionWebviewLegacyEdge[] = "webview-legacy-edge";
+
+Window::Window(QWidget *parent, WindowConfig config) {
+	if (createWebView(parent, config)) {
+		setDialogHandler(nullptr);
 	}
-	if (!_widget) {
-		if (!_window) {
-			return;
-		}
-		_widget.reset(
-			QWidget::createWindowContainer(
-				_window,
-				parent,
-				Qt::FramelessWindowHint));
-		_widget->show();
-	}
-	if (!createWebView(parent, config) || !finishWebviewEmbedding()) {
-		return;
-	}
-	base::install_event_filter(_widget, [=](not_null<QEvent*> e) {
-		if (e->type() == QEvent::Resize || e->type() == QEvent::Move) {
-			InvokeQueued(_widget.get(), [=] { _webview->resizeToWindow(); });
-		}
-		return base::EventFilterResult::Continue;
-	});
-	_webview->resizeToWindow();
-	setDialogHandler(nullptr);
 }
 
 Window::~Window() = default;
 
 bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
-	if (!_webview) {
-		_webview = CreateInstance({
-			.parent = parent,
-			.window = _window ? (void*)_window->winId() : nullptr,
-			.opaqueBg = config.opaqueBg,
-			.messageHandler = messageHandler(),
-			.navigationStartHandler = navigationStartHandler(),
-			.navigationDoneHandler = navigationDoneHandler(),
-			.dialogHandler = dialogHandler(),
-			.dataRequestHandler = dataRequestHandler(),
-			.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
-			.userDataPath = config.storageId.path.toStdString(),
-			.userDataToken = config.storageId.token.toStdString(),
-			.debug = OptionWebviewDebugEnabled.value(),
-		});
-	}
-	if (_webview) {
-		return true;
-	}
-	_window = nullptr;
-	_widget = nullptr;
-	return false;
+	Expects(!_webview);
+
+	_webview = CreateInstance({
+		.parent = parent,
+		.opaqueBg = config.opaqueBg,
+		.messageHandler = messageHandler(),
+		.navigationStartHandler = navigationStartHandler(),
+		.navigationDoneHandler = navigationDoneHandler(),
+		.dialogHandler = dialogHandler(),
+		.dataRequestHandler = dataRequestHandler(),
+		.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
+		.userDataPath = config.storageId.path.toStdString(),
+		.userDataToken = config.storageId.token.toStdString(),
+		.debug = OptionWebviewDebugEnabled.value(),
+	});
+	return (_webview != nullptr);
 }
 
-bool Window::finishWebviewEmbedding() {
-	Expects(_webview != nullptr);
-	Expects(_widget != nullptr);
-	Expects(_webview->widget() != nullptr || _window != nullptr);
-
-	if (_webview->finishEmbedding()) {
-		return true;
-	}
-	_window = nullptr;
-	_widget = nullptr;
-	_webview = nullptr;
-	return false;
+QWidget *Window::widget() const {
+	return _webview ? _webview->widget() : nullptr;
 }
 
 void Window::updateTheme(
@@ -213,10 +162,13 @@ void Window::eval(const QByteArray &js) {
 void Window::focus() {
 	Expects(_webview != nullptr);
 
-	if (_window) {
-		_window->requestActivate();
-	}
 	_webview->focus();
+}
+
+void Window::refreshNavigationHistoryState() {
+	Expects(_webview != nullptr);
+
+	_webview->refreshNavigationHistoryState();
 }
 
  auto Window::navigationHistoryState() const
@@ -324,7 +276,7 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 		auto result = DialogResult();
 		if (_dialogHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
-				args.parent = _widget ? _widget->window() : nullptr;
+				args.parent = widget();
 				result = _dialogHandler(std::move(args));
 			});
 		}
