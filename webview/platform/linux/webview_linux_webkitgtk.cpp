@@ -154,6 +154,8 @@ private:
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
+	std::string _dataProtocol;
+	std::string _dataDomain;
 	bool _loadFailed = false;
 
 };
@@ -199,6 +201,13 @@ bool Instance::create(Config config) {
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
+
+	_dataProtocol = kDataUrlScheme;
+	_dataDomain = kFullDomain;
+	if (!config.dataProtocolOverride.empty()) {
+		_dataProtocol = config.dataProtocolOverride;
+		_dataDomain = _dataProtocol + "://domain/";
+	}
 
 	if (_remoting) {
 		const auto resolveResult = resolve();
@@ -249,7 +258,8 @@ bool Instance::create(Config config) {
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
 		const auto path = config.userDataPath;
-		_helper.call_create(debug, r, g, b, a, path, crl::guard(&guard, [&](
+		const auto protocol = config.dataProtocolOverride;
+		_helper.call_create(debug, r, g, b, a, path, protocol, crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
@@ -428,9 +438,10 @@ bool Instance::create(Config config) {
 		manager,
 		"external",
 		nullptr);
+
 	webkit_web_context_register_uri_scheme(
 		context,
-		kDataUrlScheme,
+		_dataProtocol.c_str(),
 		WebKitURISchemeRequestCallback(+[](
 			WebKitURISchemeRequest *request,
 			Instance *instance) {
@@ -691,7 +702,6 @@ void Instance::navigate(std::string url) {
 		if (!_helper) {
 			return;
 		}
-
 		_helper.call_navigate(url, nullptr);
 		return;
 	}
@@ -700,7 +710,7 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::navigateToData(std::string id) {
-	navigate(kFullDomain + id);
+	navigate(_dataDomain + id);
 }
 
 void Instance::reload() {
@@ -1050,7 +1060,7 @@ void Instance::registerMasterMethodHandlers() {
 				}
 				return false;
 			}
-			return _navigationStartHandler(uri, false);
+			return uri.starts_with(_dataDomain) || _navigationStartHandler(uri, false);
 		}());
 
 		return true;
@@ -1180,7 +1190,6 @@ int Instance::exec() {
 		SocketPath,
 		std::regex("%1"),
 		std::to_string(getpid()));
-
 	if (socketPath.empty()) {
 		g_critical("IPC socket path is not set.");
 		return 1;
@@ -1304,9 +1313,11 @@ void Instance::registerHelperMethodHandlers() {
 			int g,
 			int b,
 			int a,
-			const std::string &path) {
+			const std::string &path,
+			const std::string &protocol) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
+			.dataProtocolOverride = protocol,
 			.userDataPath = path,
 			.debug = debug,
 		})) {
@@ -1413,7 +1424,11 @@ Available Availability() {
 
 bool NavigateToDataSupported() {
 	// return Instance().resolve() == ResolveResult::Success;
+#ifdef NDEBUG
 	return false;
+#else // NDEBUG
+	return true;
+#endif // NDEBUG
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
