@@ -341,7 +341,7 @@ public:
 
 	QWidget *widget() override;
 
-	void refreshNavigationHistoryState() overide;
+	void refreshNavigationHistoryState() override;
 	auto navigationHistoryState()
 	-> rpl::producer<NavigationHistoryState> override;
 
@@ -642,8 +642,8 @@ void Instance::updateHistoryStates() {
 	_navigationHistoryState = NavigationHistoryState{
 		.url = std::string([[[_webview URL] absoluteString] UTF8String]),
 		.title = std::string([[_webview title] UTF8String]),
-		.canGoBack = [_webview canGoBack],
-		.canGoForward = [_webview canGoForward],
+		.canGoBack = ([_webview canGoBack] == YES),
+		.canGoForward = ([_webview canGoForward] == YES),
 	};
 }
 
