@@ -673,6 +673,10 @@ Instance::Instance(Config &&config)
 }
 
 Instance::~Instance() {
+	if (_handler->valid()) {
+		_handler->controller()->Close();
+	}
+	_handler = nullptr;
 	CoUninitialize();
 }
 
