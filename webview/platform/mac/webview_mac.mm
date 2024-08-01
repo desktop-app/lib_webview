@@ -639,9 +639,17 @@ void Instance::pruneCache() {
 }
 
 void Instance::updateHistoryStates() {
+	NSURL *maybeUrl = [_webview URL];
+	NSString *maybeTitle = [_webview title];
+	const auto url = maybeUrl
+		? std::string([[maybeUrl absoluteString] UTF8String])
+		: std::string();
+	const auto title = maybeTitle
+		? std::string([maybeTitle UTF8String])
+		: std::string();
 	_navigationHistoryState = NavigationHistoryState{
-		.url = std::string([[[_webview URL] absoluteString] UTF8String]),
-		.title = std::string([[_webview title] UTF8String]),
+		.url = url,
+		.title = title,
 		.canGoBack = ([_webview canGoBack] == YES),
 		.canGoForward = ([_webview canGoForward] == YES),
 	};
