@@ -13,6 +13,7 @@
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/integration.h"
+#include "ui/qt_object_factory.h"
 #include "base/invoke_queued.h"
 #include "base/unique_qptr.h"
 #include "base/integration.h"
