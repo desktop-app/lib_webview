@@ -1141,6 +1141,7 @@ int Instance::exec() {
 		GLib::setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "", true);
 		GLib::setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
 		GLib::setenv("GSK_RENDERER", "cairo", true);
+		GLib::setenv("GDK_DISABLE", "gl", true);
 		GLib::setenv("GDK_DEBUG", "gl-disable", true);
 		GLib::setenv("GDK_GL", "disable", true);
 		GLib::setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", true);
