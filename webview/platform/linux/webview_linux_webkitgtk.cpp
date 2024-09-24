@@ -329,6 +329,15 @@ bool Instance::create(Config config) {
 		this);
 	g_signal_connect_swapped(
 		_webview,
+		"web-process-terminated",
+		G_CALLBACK(+[](
+			Instance *instance,
+			WebKitWebProcessTerminationReason reason) {
+			return instance->stopProcess();
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
 		"load-failed",
 		G_CALLBACK(+[](
 			Instance *instance,
