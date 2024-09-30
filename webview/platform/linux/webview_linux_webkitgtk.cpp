@@ -333,7 +333,7 @@ bool Instance::create(Config config) {
 		G_CALLBACK(+[](
 			Instance *instance,
 			WebKitWebProcessTerminationReason reason) {
-			return instance->stopProcess();
+			Gio::Application::get_default().quit();
 		}),
 		this);
 	g_signal_connect_swapped(
