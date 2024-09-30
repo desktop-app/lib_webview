@@ -55,6 +55,7 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_get_default_text)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_prompt_set_text)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_is_web_process_responsive)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_user_content_manager)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_uri)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_title)
