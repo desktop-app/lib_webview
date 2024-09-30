@@ -440,7 +440,7 @@ window.external = {
 	}
 };)");
 
-	return true;
+	return webkit_web_view_get_is_web_process_responsive(_webview);
 }
 
 void Instance::scriptMessageReceived(void *message) {
