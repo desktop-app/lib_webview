@@ -338,6 +338,15 @@ bool Instance::create(Config config) {
 		this);
 	g_signal_connect_swapped(
 		_webview,
+		"notify::is-web-process-responsive",
+		G_CALLBACK(+[](
+			Instance *instance,
+			GParamSpec *pspec) {
+			Gio::Application::get_default().quit();
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
 		"load-failed",
 		G_CALLBACK(+[](
 			Instance *instance,
