@@ -103,7 +103,9 @@ class Handler
 		ICoreWebView2SourceChangedEventHandler,
 		ICoreWebView2NewWindowRequestedEventHandler,
 		ICoreWebView2ScriptDialogOpeningEventHandler,
-		ICoreWebView2WebResourceRequestedEventHandler>
+		ICoreWebView2WebResourceRequestedEventHandler,
+		ICoreWebView2ZoomFactorChangedEventHandler>
+	, public ZoomController
 	, public base::has_weak_ptr {
 
 public:
@@ -165,9 +167,25 @@ public:
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2WebResourceRequestedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2Controller *sender,
+		IUnknown *args) override;
+
+	rpl::producer<int> zoomValue() override {
+		return _zoomValue.value();
+	}
+	void setZoom(int zoom) {
+		if (_controller) {
+			_controller->put_ZoomFactor(zoom / 100.);
+		}
+	}
 
 	rpl::producer<NavigationHistoryState> navigationHistoryState() {
 		return _navigationHistoryState.value();
+	}
+
+	[[nodiscard]] ZoomController *zoomController() {
+		return this;
 	}
 
 private:
@@ -188,6 +206,7 @@ private:
 		winrt::com_ptr<ICoreWebView2Deferral>> _pending;
 
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
+	rpl::variable<int> _zoomValue;
 
 	QColor _opaqueBg;
 	bool _debug = false;
@@ -271,6 +290,8 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_webview->add_NewWindowRequested(this, &token);
 	_webview->add_ScriptDialogOpening(this, &token);
 	_webview->add_WebResourceRequested(this, &token);
+
+	_controller->add_ZoomFactorChanged(this, &token);
 
 	const auto filter = ToWide(kDataUrlPrefix) + L'*';
 	auto hr = _webview->AddWebResourceRequestedFilter(
@@ -440,6 +461,15 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 			args->put_ResultText(wide.c_str());
 		}
 	}
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2Controller *sender,
+		IUnknown *args) {
+	auto zoom = float64(0);
+	sender->get_ZoomFactor(&zoom);
+	_zoomValue = zoom * 100;
 	return S_OK;
 }
 
@@ -620,6 +650,8 @@ public:
 	-> rpl::producer<NavigationHistoryState> override;
 
 	void setOpaqueBg(QColor opaqueBg) override;
+
+	[[nodiscard]] ZoomController *zoomController() override;
 
 private:
 	struct NavigateToUrl {
@@ -849,6 +881,10 @@ auto Instance::navigationHistoryState()
 	return _handler
 		? _handler->navigationHistoryState()
 		: rpl::single(NavigationHistoryState());
+}
+
+ZoomController *Instance::zoomController() {
+	return _handler->zoomController();
 }
 
 void Instance::setOpaqueBg(QColor opaqueBg) {

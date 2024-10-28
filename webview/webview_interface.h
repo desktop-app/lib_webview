@@ -13,6 +13,7 @@
 #include <optional>
 #include <functional>
 
+#include <rpl/never.h>
 #include <rpl/producer.h>
 
 #include <QtGui/QColor>
@@ -36,6 +37,17 @@ struct NavigationHistoryState {
 		NavigationHistoryState) = default;
 };
 
+class ZoomController {
+public:
+	ZoomController() = default;
+
+	[[nodiscard]] virtual rpl::producer<int> zoomValue() {
+		return rpl::never<int>();
+	}
+	virtual void setZoom(int) {
+	}
+};
+
 class Interface {
 public:
 	virtual ~Interface() = default;
@@ -56,6 +68,10 @@ public:
 	virtual void refreshNavigationHistoryState() = 0;
 	[[nodiscard]] virtual auto navigationHistoryState()
 		-> rpl::producer<NavigationHistoryState> = 0;
+
+	[[nodiscard]] virtual ZoomController *zoomController() {
+		return nullptr;
+	}
 
 };
 

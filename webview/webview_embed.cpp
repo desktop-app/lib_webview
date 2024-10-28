@@ -171,7 +171,7 @@ void Window::refreshNavigationHistoryState() {
 	_webview->refreshNavigationHistoryState();
 }
 
- auto Window::navigationHistoryState() const
+auto Window::navigationHistoryState() const
 -> rpl::producer<NavigationHistoryState>{
 	Expects(_webview != nullptr);
 
@@ -189,6 +189,10 @@ void Window::refreshNavigationHistoryState() {
 
 		return result;
 	};
+}
+
+ZoomController *Window::zoomController() const {
+	return _webview ? _webview->zoomController() : nullptr;
 }
 
 void Window::setMessageHandler(Fn<void(std::string)> handler) {

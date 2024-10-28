@@ -26,6 +26,7 @@ extern const char kOptionWebviewLegacyEdge[];
 struct DialogArgs;
 struct DialogResult;
 class Interface;
+class ZoomController;
 struct Config;
 struct DataRequest;
 enum class DataResult;
@@ -70,6 +71,8 @@ public:
 	void refreshNavigationHistoryState();
 	[[nodiscard]] auto navigationHistoryState() const
 	-> rpl::producer<NavigationHistoryState>;
+
+	[[nodiscard]] ZoomController *zoomController() const;
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
