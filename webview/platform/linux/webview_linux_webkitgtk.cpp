@@ -19,7 +19,12 @@
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QWindow>
+#include <QtWidgets/QWidget>
+
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 #include <QtQuickWidgets/QQuickWidget>
+#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 #include <webview/webview.hpp>
 #include <crl/crl.h>
@@ -186,6 +191,7 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (_compositor && !qobject_cast<QQuickWidget*>(_widget)) {
 			if (Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
 					!= Ui::GL::Backend::OpenGL) {
@@ -199,6 +205,12 @@ bool Instance::create(Config config) {
 			_compositor->setWidget(widget);
 			widget->show();
 		}
+#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+		if (_compositor) {
+			LOG(("WebView Error: No Wayland support."));
+			return false;
+		}
+#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 		if (!_helper) {
 			return false;
