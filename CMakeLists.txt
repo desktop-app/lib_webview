@@ -29,7 +29,6 @@ PRIVATE
     webview/platform/linux/webview_linux.cpp
     webview/platform/linux/webview_linux_compositor.cpp
     webview/platform/linux/webview_linux_compositor.h
-    webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
     webview/platform/linux/webview_linux_webkitgtk_library.cpp
     webview/platform/linux/webview_linux_webkitgtk_library.h
     webview/platform/linux/webview_linux_webkitgtk.cpp
@@ -60,26 +59,11 @@ if (WIN32)
     nuget_add_webview(lib_webview)
     nuget_add_winrt(lib_webview)
 elseif (LINUX)
-    find_package(Qt${QT_VERSION_MAJOR} OPTIONAL_COMPONENTS Quick QuickWidgets WaylandCompositor)
-    if (TARGET Qt::Quick AND TARGET Qt::QuickWidgets AND TARGET Qt::WaylandCompositor)
-        remove_target_sources(lib_webview ${src_loc}
-            webview/platform/linux/webview_linux_webkitgtk_dummy.cpp
-        )
+    include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
+    generate_dbus(lib_webview org.desktop_app.GtkIntegration.Webview. Webview ${src_loc}/webview/platform/linux/webview_linux_interface.xml)
 
-        include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
-        generate_dbus(lib_webview org.desktop_app.GtkIntegration.Webview. Webview ${src_loc}/webview/platform/linux/webview_linux_interface.xml)
-
-        target_compile_definitions(lib_webview
-        PRIVATE
-            G_LOG_DOMAIN="WebView"
-        )
-    else()
-        remove_target_sources(lib_webview ${src_loc}
-            webview/platform/linux/webview_linux_compositor.cpp
-            webview/platform/linux/webview_linux_compositor.h
-            webview/platform/linux/webview_linux_webkitgtk_library.cpp
-            webview/platform/linux/webview_linux_webkitgtk_library.h
-            webview/platform/linux/webview_linux_webkitgtk.cpp
-        )
-    endif()
+    target_compile_definitions(lib_webview
+    PRIVATE
+        G_LOG_DOMAIN="WebView"
+    )
 endif()

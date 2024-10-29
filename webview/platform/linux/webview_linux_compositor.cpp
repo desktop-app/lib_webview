@@ -6,6 +6,7 @@
 //
 #include "webview/platform/linux/webview_linux_compositor.h"
 
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 #include "base/flat_map.h"
 #include "base/unique_qptr.h"
 #include "base/qt_signal_producer.h"
@@ -302,3 +303,4 @@ void Compositor::setWidget(QQuickWidget *widget) {
 }
 
 } // namespace Webview
+#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR

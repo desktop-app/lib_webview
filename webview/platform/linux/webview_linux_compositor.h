@@ -6,7 +6,15 @@
 //
 #pragma once
 
+#include <QtCore/QObject>
+
+#if defined QT_QUICKWIDGETS_LIB && defined QT_WAYLANDCOMPOSITOR_LIB
+#include <QtWaylandCompositor/qtwaylandcompositor-config.h>
+
+#if QT_CONFIG(wayland_compositor_quick)
 #include <QtWaylandCompositor/QWaylandQuickCompositor>
+
+#define DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 class QQuickWidget;
 
@@ -27,3 +35,17 @@ private:
 };
 
 } // namespace Webview
+#endif // QT_CONFIG(wayland_compositor_quick)
+#endif // QT_QUICKWIDGETS_LIB && QT_WAYLANDCOMPOSITOR_LIB
+
+#ifndef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+namespace Webview {
+
+class Compositor : public QObject {
+public:
+	Compositor(const QByteArray &socketName = {}) {}
+	QString socketName() { return {}; }
+};
+
+} // namespace Webview
+#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
