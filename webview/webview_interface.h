@@ -132,6 +132,7 @@ struct Available {
 		None,
 		NoWebview2,
 		NoWebKitGTK,
+		NoOpenGL,
 		OldWindows,
 	};
 	Error error = Error::None;
