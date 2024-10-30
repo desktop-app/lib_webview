@@ -38,13 +38,6 @@ constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview";
 constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master";
 constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper";
 
-void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-	QQuickWindow::setGraphicsApi;
-#else // Qt >= 6.0.0
-	QQuickWindow::setSceneGraphBackend;
-#endif // Qt < 6.0.0
-
 std::string SocketPath;
 
 inline auto MethodError() {
@@ -194,20 +187,6 @@ bool Instance::create(Config config) {
 		}
 
 		if (_compositor && !qobject_cast<QQuickWidget*>(_widget)) {
-			[[maybe_unused]] static const auto Inited = [] {
-				const auto backend = Ui::GL::ChooseBackendDefault(
-					Ui::GL::CheckCapabilities(nullptr));
-				switch (backend) {
-				case Ui::GL::Backend::Raster:
-					SetGraphicsApi(QSGRendererInterface::Software);
-					break;
-				case Ui::GL::Backend::OpenGL:
-					SetGraphicsApi(QSGRendererInterface::OpenGL);
-					break;
-				}
-				return true;
-			}();
-
 			_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
 			const auto widget = static_cast<QQuickWidget*>(_widget.get());
 			widget->setAttribute(Qt::WA_AlwaysStackOnTop);
@@ -1244,6 +1223,14 @@ void Instance::registerHelperMethodHandlers() {
 } // namespace
 
 Available Availability() {
+	if (!Platform::IsX11()
+			&& Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
+				!= Ui::GL::Backend::OpenGL) {
+		return Available{
+			.error = Available::Error::NoOpenGL,
+			.details = "Please enable OpenGL in application settings.",
+		};
+	}
 	if (Instance().resolve() == ResolveResult::NoLibrary) {
 		return Available{
 			.error = Available::Error::NoWebKitGTK,
