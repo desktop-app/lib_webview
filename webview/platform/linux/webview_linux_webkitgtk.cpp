@@ -1242,6 +1242,7 @@ void Instance::registerHelperMethodHandlers() {
 } // namespace
 
 Available Availability() {
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 	if (!Platform::IsX11()
 			&& Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
 				!= Ui::GL::Backend::OpenGL) {
@@ -1250,6 +1251,14 @@ Available Availability() {
 			.details = "Please enable OpenGL in application settings.",
 		};
 	}
+#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+	if (!Platform::IsX11()) {
+		return Available{
+			.error = Available::Error::NonX11,
+			.details = "Unsupported display server. Please switch to X11.",
+		};
+	}
+#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 	if (Instance().resolve() == ResolveResult::NoLibrary) {
 		return Available{
 			.error = Available::Error::NoWebKitGTK,
