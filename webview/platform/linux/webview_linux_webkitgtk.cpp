@@ -591,12 +591,6 @@ ResolveResult Instance::resolve() {
 			GLib::MainContext::default_().iteration(true);
 		}
 
-		if (!_wayland && result && *result != ResolveResult::Success) {
-			_wayland = true;
-			stopProcess();
-			startProcess();
-			return resolve();
-		}
 		return result.value_or(ResolveResult::IPCFailure);
 	}
 
