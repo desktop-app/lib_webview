@@ -876,9 +876,11 @@ void Instance::stopProcess() {
 	if (_serviceProcess) {
 		_serviceProcess.send_signal(SIGTERM);
 	}
-	if (_compositor) {
-		_compositor->deleteLater();
-	}
+	GLib::timeout_add_seconds_once(1, [compositor = _compositor] {
+		if (compositor) {
+			compositor->deleteLater();
+		}
+	});
 }
 
 void Instance::updateHistoryStates() {
