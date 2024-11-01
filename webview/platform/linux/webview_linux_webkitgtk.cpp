@@ -893,6 +893,7 @@ void Instance::stopProcess() {
 			compositor->deleteLater();
 		}
 	});
+	_compositor = nullptr;
 }
 
 void Instance::updateHistoryStates() {
