@@ -28,7 +28,8 @@ struct StorageId {
 }
 
 struct ThemeParams {
-	QColor opaqueBg;
+	QColor bodyBg;
+	QColor titleBg;
 	QColor scrollBg;
 	QColor scrollBgOver;
 	QColor scrollBarBg;
