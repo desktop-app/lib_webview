@@ -192,17 +192,19 @@ bool Instance::create(Config config) {
 		}
 
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-		if (_compositor && !qobject_cast<QQuickWidget*>(_widget)) {
-			if (Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
-					!= Ui::GL::Backend::OpenGL) {
-				LOG(("WebView Error: OpenGL is disabled."));
-				return false;
+		if (_compositor) {
+			auto widget = qobject_cast<QQuickWidget*>(_widget);
+			if (!widget) {
+				if (Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
+						!= Ui::GL::Backend::OpenGL) {
+					LOG(("WebView Error: OpenGL is disabled."));
+					return false;
+				}
+				_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
+				widget = static_cast<QQuickWidget*>(_widget.get());
+				_compositor->setWidget(widget);
 			}
-			_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
-			const auto widget = static_cast<QQuickWidget*>(_widget.get());
-			widget->setAttribute(Qt::WA_AlwaysStackOnTop);
-			widget->setClearColor(Qt::transparent);
-			_compositor->setWidget(widget);
+			widget->setClearColor(config.opaqueBg);
 			widget->show();
 		}
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
@@ -728,6 +730,10 @@ auto Instance::navigationHistoryState()
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
 	if (_remoting) {
+		if (const auto widget = qobject_cast<QQuickWidget*>(_widget.get())) {
+			widget->setClearColor(opaqueBg);
+		}
+
 		if (!_helper) {
 			return;
 		}
