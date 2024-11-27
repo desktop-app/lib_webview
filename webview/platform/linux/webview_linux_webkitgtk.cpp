@@ -730,9 +730,11 @@ auto Instance::navigationHistoryState()
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
 	if (_remoting) {
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (const auto widget = qobject_cast<QQuickWidget*>(_widget.get())) {
 			widget->setClearColor(opaqueBg);
 		}
+#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 		if (!_helper) {
 			return;
