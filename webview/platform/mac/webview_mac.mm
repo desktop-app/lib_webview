@@ -325,6 +325,44 @@ using TaskPointer = id<WKURLSchemeTask>;
 namespace Webview {
 namespace {
 
+class PartialResourceCache final {
+public:
+	struct CachedFields {
+		std::string mime;
+		int64 total = 0;
+
+		explicit operator bool() const {
+			return total > 0;
+		}
+	};
+	[[nodiscard]] CachedFields fill(
+		const DataRequest &request,
+		Fn<void(const void *data, int64 size)> record);
+
+private:
+	using CacheKey = uint64;
+
+	struct PartData {
+		std::unique_ptr<char[]> bytes;
+		int64 length = 0;
+	};
+	struct PartialResource {
+		uint32 index = 0;
+		uint32 total = 0;
+		std::string mime;
+	};
+
+	void addToCache(uint32 resourceIndex, int64 offset, PartData data);
+	void removeCacheEntry(CacheKey key);
+	void pruneCache();
+
+	base::flat_map<std::string, PartialResource> _partialResources;
+	base::flat_map<CacheKey, PartData> _partsCache;
+	std::vector<CacheKey> _partsLRU;
+	int64 _cacheTotal = 0;
+
+};
+
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config config);
@@ -352,27 +390,14 @@ private:
 		int index = 0;
 		crl::time started = 0;
 	};
-	struct PartialResource {
-		uint32 index = 0;
-		uint32 total = 0;
-		std::string mime;
-	};
-	struct PartData {
-		std::unique_ptr<char[]> bytes;
-		int64 length = 0;
-	};
 	struct CachedResult {
-		std::string mime;
+		PartialResourceCache::CachedFields fields;
 		NSData *data = nil;
-		int64 requestFrom = 0;
-		int64 requestLength = 0;
-		int64 total = 0;
 
 		explicit operator bool() const {
 			return data != nil;
 		}
 	};
-	using CacheKey = uint64;
 
 	static void TaskFail(TaskPointer task);
 	void taskFail(TaskPointer task, int indexToCheck);
@@ -387,9 +412,6 @@ private:
 	void processDataRequest(TaskPointer task, bool started);
 
 	[[nodiscard]] CachedResult fillFromCache(const DataRequest &request);
-	void addToCache(uint32 resourceIndex, int64 offset, PartData data);
-	void removeCacheEntry(CacheKey key);
-	void pruneCache();
 
 	void updateHistoryStates();
 
@@ -408,12 +430,9 @@ private:
 	std::string _dataDomain;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
+	PartialResourceCache _partialCache;
 
 	base::flat_map<TaskPointer, Task> _tasks;
-	base::flat_map<std::string, PartialResource> _partialResources;
-	base::flat_map<CacheKey, PartData> _partsCache;
-	std::vector<CacheKey> _partsLRU;
-	int64 _cacheTotal = 0;
 	int _taskAutoincrement = 0;
 
 };
