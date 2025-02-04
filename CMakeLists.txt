@@ -21,7 +21,8 @@ PRIVATE
     webview/webview_embed.cpp
     webview/webview_embed.h
     webview/webview_interface.h
-
+    webview/webview_partial_cache.h
+    webview/webview_partial_cache.cpp
     webview/platform/mac/webview_mac.h
     webview/platform/mac/webview_mac.mm
 

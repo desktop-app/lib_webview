@@ -8,6 +8,7 @@
 
 #include "webview/webview_data_stream.h"
 #include "webview/webview_data_stream_memory.h"
+#include "webview/webview_partial_cache.h"
 #include "base/algorithm.h"
 #include "base/debug_log.h"
 #include "base/unique_qptr.h"
@@ -30,7 +31,6 @@ namespace {
 
 constexpr auto kDataUrlScheme = std::string_view("desktop-app-resource");
 constexpr auto kFullDomain = std::string_view("desktop-app-resource://domain/");
-constexpr auto kPartsCacheLimit = 32 * 1024 * 1024;
 constexpr auto kUuidSize = 16;
 
 using TaskPointer = id<WKURLSchemeTask>;
@@ -40,14 +40,6 @@ using TaskPointer = id<WKURLSchemeTask>;
 		initWithBytes:value.data()
 		length:value.length()
 		encoding:NSUTF8StringEncoding];
-}
-
-[[nodiscard]] std::unique_ptr<char[]> WrapBytes(const char *data, int64 length) {
-	Expects(length > 0);
-
-	auto result = std::unique_ptr<char[]>(new char[length]);
-	memcpy(result.get(), data, length);
-	return result;
 }
 
 } // namespace
@@ -325,44 +317,6 @@ using TaskPointer = id<WKURLSchemeTask>;
 namespace Webview {
 namespace {
 
-class PartialResourceCache final {
-public:
-	struct CachedFields {
-		std::string mime;
-		int64 total = 0;
-
-		explicit operator bool() const {
-			return total > 0;
-		}
-	};
-	[[nodiscard]] CachedFields fill(
-		const DataRequest &request,
-		Fn<void(const void *data, int64 size)> record);
-
-private:
-	using CacheKey = uint64;
-
-	struct PartData {
-		std::unique_ptr<char[]> bytes;
-		int64 length = 0;
-	};
-	struct PartialResource {
-		uint32 index = 0;
-		uint32 total = 0;
-		std::string mime;
-	};
-
-	void addToCache(uint32 resourceIndex, int64 offset, PartData data);
-	void removeCacheEntry(CacheKey key);
-	void pruneCache();
-
-	base::flat_map<std::string, PartialResource> _partialResources;
-	base::flat_map<CacheKey, PartData> _partsCache;
-	std::vector<CacheKey> _partsLRU;
-	int64 _cacheTotal = 0;
-
-};
-
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config config);
@@ -391,7 +345,7 @@ private:
 		crl::time started = 0;
 	};
 	struct CachedResult {
-		PartialResourceCache::CachedFields fields;
+		PartialCache::CachedFields fields;
 		NSData *data = nil;
 
 		explicit operator bool() const {
@@ -415,12 +369,6 @@ private:
 
 	void updateHistoryStates();
 
-	[[nodiscard]] static CacheKey KeyFromValues(
-		uint32 resourceIndex,
-		int64 offset);
-	[[nodiscard]] static uint32 ResourceIndexFromKey(CacheKey key);
-	[[nodiscard]] static int64 OffsetFromKey(CacheKey key);
-
 	WKUserContentController *_manager = nullptr;
 	WKWebView *_webview = nullptr;
 	Handler *_handler = nullptr;
@@ -430,7 +378,7 @@ private:
 	std::string _dataDomain;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
-	PartialResourceCache _partialCache;
+	PartialCache _partialCache;
 
 	base::flat_map<TaskPointer, Task> _tasks;
 	int _taskAutoincrement = 0;
@@ -588,75 +536,6 @@ void Instance::taskDone(
 	[task didFinish];
 }
 
-Instance::CacheKey Instance::KeyFromValues(uint32 resourceIndex, int64 offset) {
-	return (uint64(resourceIndex) << 32) | uint32(offset);
-}
-
-uint32 Instance::ResourceIndexFromKey(CacheKey key) {
-	return uint32(key >> 32);
-}
-
-int64 Instance::OffsetFromKey(CacheKey key) {
-	return int64(key & 0xFFFFFFFFULL);
-}
-
-void Instance::addToCache(uint32 resourceIndex, int64 offset, PartData data) {
-	auto key = KeyFromValues(resourceIndex, offset);
-	while (true) { // Remove parts that are already in cache.
-		auto i = _partsCache.upper_bound(key);
-		if (i != begin(_partsCache)) {
-			--i;
-			const auto alreadyIndex = ResourceIndexFromKey(i->first);
-			if (alreadyIndex == resourceIndex) {
-				const auto &already = i->second;
-				const auto alreadyOffset = OffsetFromKey(i->first);
-				const auto alreadyTill = alreadyOffset + already.length;
-				if (alreadyTill >= offset + data.length) {
-					return; // Fully in cache.
-				} else if (alreadyTill > offset) {
-					const auto delta = alreadyTill - offset;
-					offset += delta;
-					data.length -= delta;
-					data.bytes = WrapBytes(data.bytes.get() + delta, data.length);
-					key = KeyFromValues(resourceIndex, offset);
-					continue;
-				}
-			}
-			++i;
-		}
-		if (i != end(_partsCache)) {
-			const auto alreadyIndex = ResourceIndexFromKey(i->first);
-			if (alreadyIndex == resourceIndex) {
-				const auto &already = i->second;
-				const auto alreadyOffset = OffsetFromKey(i->first);
-				Assert(alreadyOffset > offset);
-				const auto alreadyTill = alreadyOffset + already.length;
-				if (alreadyTill <= offset + data.length) {
-					removeCacheEntry(i->first);
-					continue;
-				} else if (alreadyOffset < offset + data.length) {
-					const auto delta = offset + data.length - alreadyOffset;
-					data.length -= delta;
-					data.bytes = WrapBytes(data.bytes.get(), data.length);
-					continue;
-				}
-			}
-		}
-		break;
-	}
-	_partsLRU.push_back(key);
-	_cacheTotal += data.length;
-	_partsCache[key] = std::move(data);
-	pruneCache();
-}
-
-void Instance::pruneCache() {
-	while (_cacheTotal > kPartsCacheLimit) {
-		Assert(!_partsLRU.empty());
-		removeCacheEntry(_partsLRU.front());
-	}
-}
-
 void Instance::updateHistoryStates() {
 	NSURL *maybeUrl = [_webview URL];
 	NSString *maybeTitle = [_webview title];
@@ -674,81 +553,20 @@ void Instance::updateHistoryStates() {
 	};
 }
 
-void Instance::removeCacheEntry(CacheKey key) {
-	auto &part = _partsCache[key];
-	Assert(part.length > 0);
-	Assert(_cacheTotal >= part.length);
-	_cacheTotal -= part.length;
-	_partsCache.remove(key);
-	_partsLRU.erase(
-		std::remove(begin(_partsLRU), end(_partsLRU), key),
-		end(_partsLRU));
-}
-
 Instance::CachedResult Instance::fillFromCache(
 		const DataRequest &request) {
-	auto &partial = _partialResources[request.id];
-	const auto index = partial.index;
-	if (!index) {
-		partial.index = uint32(_partialResources.size());
-		return {};
-	}
-	auto i = _partsCache.upper_bound(
-		KeyFromValues(partial.index, request.offset));
-	if (i == begin(_partsCache)) {
-		return {};
-	}
-	--i;
-	if (ResourceIndexFromKey(i->first) != index) {
-		return {};
-	}
-	const auto alreadyOffset = OffsetFromKey(i->first);
-	const auto alreadyTill = alreadyOffset + i->second.length;
-	if (alreadyTill <= request.offset) {
-		return {};
-	}
-	auto till = alreadyTill;
-	for (auto j = i + 1; j != end(_partsCache); ++j) {
-		const auto offset = OffsetFromKey(j->first);
-		if (ResourceIndexFromKey(j->first) != index || offset > till) {
-			break;
+	auto result = (NSMutableData*)nil;
+	auto bytes = (char*)nullptr;
+	const auto record = [&](const void *data, int64 size, int64 total) {
+		if (!result) {
+			result = [NSMutableData dataWithLength:total];
+			bytes = static_cast<char*>([result mutableBytes]);
 		}
-		till = offset + j->second.length;
-		if (request.limit <= 0 || till >= request.offset + request.limit) {
-			break;
-		}
-	}
-	const auto length = (request.limit > 0) ? request.limit : (till - request.offset);
-	if (till < request.offset + length) {
-		return {};
-	}
-	auto result = [NSMutableData dataWithLength:length];
-	auto from = request.offset;
-	auto fill = length;
-	auto bytes = static_cast<char*>([result mutableBytes]);
-	for (auto j = i; j != end(_partsCache); ++j) {
-		const auto offset = OffsetFromKey(j->first);
-		const auto copy = std::min(fill, offset + j->second.length - from);
-		Assert(copy > 0);
-		Assert(from >= offset);
-		memcpy(bytes, j->second.bytes.get() + (from - offset), copy);
-		from += copy;
-		fill -= copy;
-		bytes += copy;
-
-		const auto lru = std::find(begin(_partsLRU), end(_partsLRU), j->first);
-		Assert(lru != end(_partsLRU));
-		if (const auto next = lru + 1; next != end(_partsLRU)) {
-			std::rotate(lru, next, end(_partsLRU));
-		}
-
-		if (!fill) {
-			break;
-		}
-		Assert(fill > 0);
-	}
-	Assert(fill == 0);
-	return { .mime = partial.mime, .data = result, .total = partial.total };
+		memcpy(bytes, data, size);
+		bytes += size;
+	};
+	const auto fields = _partialCache.fill(request, record);
+	return { .fields = fields, .data = result };
 }
 
 void Instance::processDataRequest(TaskPointer task, bool started) {
@@ -775,7 +593,8 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 		ParseRangeHeaderFor(prepared, std::string([rangeHeader UTF8String]));
 
 		if (const auto cached = fillFromCache(prepared)) {
-			taskDone(task, 0, cached.mime, cached.data, prepared.offset, cached.total);
+			const auto &fields = cached.fields;
+			taskDone(task, 0, fields.mime, cached.data, prepared.offset, fields.total);
 			return;
 		}
 	}
@@ -811,17 +630,13 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 
 		const auto mime = stream->mime();
 		const auto total = resolved.totalSize ? resolved.totalSize : length;
-		const auto i = _partialResources.find(resourceId);
-		if (i != end(_partialResources)) {
-			auto &partial = i->second;
-			if (partial.mime.empty()) {
-				partial.mime = mime;
-			}
-			if (!partial.total) {
-				partial.total = total;
-			}
-			addToCache(partial.index, offset, { std::move(bytes), length });
-		}
+		_partialCache.maybeAdd(
+			resourceId,
+			offset,
+			length,
+			total,
+			mime,
+			std::move(bytes));
 		taskDone(task, index, mime, data, requestedOffset, total);
 	});
 	const auto result = _dataRequestHandler
