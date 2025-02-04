@@ -18,10 +18,6 @@ public:
 	struct CachedFields {
 		std::string mime;
 		int64 total = 0;
-
-		explicit operator bool() const {
-			return total > 0;
-		}
 	};
 	[[nodiscard]] CachedFields fill(
 		const DataRequest &request,

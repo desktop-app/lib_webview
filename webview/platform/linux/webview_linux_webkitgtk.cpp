@@ -9,6 +9,8 @@
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
 #include "webview/webview_data_stream.h"
+#include "webview/webview_data_stream_memory.h"
+#include "webview/webview_partial_cache.h"
 #include "base/platform/base_platform_info.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
@@ -96,6 +98,15 @@ public:
 	int exec();
 
 private:
+	struct CachedResult {
+		PartialCache::CachedFields fields;
+		mutable GLib::Bytes data; // get_size requires non-const ref!
+
+		explicit operator bool() const {
+			return data.get_size() != 0;
+		}
+	};
+
 	void scriptMessageReceived(void *message);
 
 	bool loadFailed(
@@ -117,10 +128,19 @@ private:
 	void dataResponse(
 		WebKitURISchemeRequest *request,
 		int fd,
+		const std::string &resourceId,
+		int64 requestedOffset,
+		int64 requestedLimit,
+		int64 resolvedOffset,
+		int64 resolvedLength,
+		int64 resolvedTotal,
+		const std::string &resolvedMime);
+	void provideResponse(
+		WebKitURISchemeRequest *request,
+		GLib::Bytes data,
 		int64 offset,
-		int64 size,
 		int64 total,
-		std::string mime);
+		const std::string &mime);
 
 	void startProcess();
 	void stopProcess();
@@ -130,6 +150,8 @@ private:
 	void registerHelperMethodHandlers();
 
 	void *winId();
+
+	[[nodiscard]] CachedResult fillFromCache(const DataRequest &request);
 
 	bool _remoting = false;
 	bool _connected = false;
@@ -158,6 +180,8 @@ private:
 	std::string _dataProtocol;
 	std::string _dataDomain;
 	bool _loadFailed = false;
+
+	PartialCache _partialCache;
 
 };
 
@@ -628,18 +652,36 @@ void Instance::dataRequest(WebKitURISchemeRequest *request) {
 	}
 
 	// Get the Range header string
-	std::string rangeHeader;
+	auto prepared = DataRequest{
+		.id = webkit_uri_scheme_request_get_path(request) + 1,
+	};
 	if (auto headers = webkit_uri_scheme_request_get_http_headers(request)) {
+		std::cout << "HEADERS GOT!!" << std::endl;
 		if (const auto range = soup_message_headers_get_one(headers, "Range")) {
-			rangeHeader = range;
+			std::cout << "RANGE GOT!! " << range << std::endl;
+			ParseRangeHeaderFor(prepared, range);
+			std::cout << "Parsed RANGE: " << prepared.offset << " " << prepared.limit << std::endl;
+			if (const auto cached = fillFromCache(prepared)) {
+				std::cout << "Cached data: " << cached.data.get_size() << std::endl;
+				provideResponse(
+					request,
+					cached.data,
+					prepared.offset,
+					cached.fields.total,
+					cached.fields.mime);
+				std::cout << "Provided response" << std::endl;
+				return;
+			}
 		}
 	}
 
+	std::cout << "No cached data, requesting" << std::endl;
 	g_object_ref(request);
 	_master.call_data_request(
 		uintptr_t(request),
-		webkit_uri_scheme_request_get_path(request) + 1,
-		rangeHeader,
+		prepared.id,
+		prepared.offset,
+		prepared.limit,
 		[=](GObject::Object source_object, Gio::AsyncResult res) {
 			const auto ret = _master.call_data_request_finish(res);
 			if (!ret || DataResult(std::get<1>(*ret)) == DataResult::Failed) {
@@ -651,41 +693,21 @@ void Instance::dataRequest(WebKitURISchemeRequest *request) {
 		});
 }
 
-void Instance::dataResponse(
+void Instance::provideResponse(
 		WebKitURISchemeRequest *request,
-		int fd,
+		GLib::Bytes data,
 		int64 offset,
-		int64 length,
 		int64 total,
-		std::string mime) {
-	const auto data = mmap(
-		nullptr,
-		offset + length,
-		PROT_READ,
-		MAP_PRIVATE,
-		fd,
-		0);
-
-	if (data == MAP_FAILED) {
-		webkit_uri_scheme_request_finish_error(
-			request,
-			NotFoundError().gobj_());
-		g_object_unref(request);
-		close(fd);
-		return;
-	}
-
-	const auto stream = Gio::MemoryInputStream::new_from_bytes(
-		GLib::Bytes::new_with_free_func(
-			reinterpret_cast<const uchar*>(data) + offset,
-			length,
-			[=] { munmap(data, offset + length); }));
-
+		const std::string &mime) {
+	const auto length = data.get_size();
+	auto stream = Gio::MemoryInputStream::new_from_bytes(data);
 	const auto response = webkit_uri_scheme_response_new(
 		G_INPUT_STREAM(stream.gobj_()),
 		length);
 
 	webkit_uri_scheme_response_set_content_type(response, mime.c_str());
+
+	std::cout << "PROVIDING RESPONSE!! LENGTH: " << length << std::endl;
 
 	auto headers = soup_message_headers_new(SOUP_MESSAGE_HEADERS_RESPONSE);
 	soup_message_headers_append(headers, "Accept-Ranges", "bytes");
@@ -729,7 +751,70 @@ void Instance::dataResponse(
 
 	g_object_unref(response);
 	g_object_unref(request);
-	close(fd);
+}
+
+void Instance::dataResponse(
+		WebKitURISchemeRequest *request,
+		int fd,
+		const std::string &resourceId,
+		int64 requestedOffset,
+		int64 requestedLimit,
+		int64 resolvedOffset,
+		int64 resolvedLength,
+		int64 resolvedTotal,
+		const std::string &resolvedMime) {
+	const auto guard1 = gsl::finally([&] {
+		g_object_unref(request);
+		if (fd != -1) {
+			close(fd);
+		}
+	});
+	const auto fail = [&] {
+		webkit_uri_scheme_request_finish_error(
+			request,
+			NotFoundError().gobj_());
+	};
+
+	const auto data = (fd == -1)
+		? MAP_FAILED
+		: mmap(nullptr, resolvedLength, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (data == MAP_FAILED) {
+		return fail();
+	}
+	const auto guard2 = gsl::finally([&] {
+		munmap(data, resolvedLength);
+	});
+
+	const auto offset = resolvedOffset;
+	const auto length = resolvedLength;
+	if (requestedOffset >= offset + length
+		|| offset > requestedOffset) {
+		return fail();
+	}
+
+	const auto total = resolvedTotal ? resolvedTotal : length;
+	const auto &mime = resolvedMime;
+
+	auto bytes = std::unique_ptr<char[]>(new char[length]);
+	memcpy(bytes.get(), data, length);
+
+	const auto useLength = (requestedLimit > 0)
+		? std::min(requestedLimit, (offset + length - requestedOffset))
+		: (offset + length - requestedOffset);
+
+	const auto useBytes = bytes.get() + (requestedOffset - offset);
+	auto wrap = GLib::Bytes::new_(
+		reinterpret_cast<const guint8*>(useBytes),
+		useLength);
+
+	_partialCache.maybeAdd(
+		resourceId,
+		offset,
+		length,
+		total,
+		mime,
+		std::move(bytes));
+	provideResponse(request, std::move(wrap), requestedOffset, total, mime);
 }
 
 ResolveResult Instance::resolve() {
@@ -1080,6 +1165,30 @@ void Instance::updateHistoryStates() {
 		nullptr);
 }
 
+Instance::CachedResult Instance::fillFromCache(
+		const DataRequest &request) {
+	auto bytes = (char*)nullptr;
+	auto length = int64();
+	const auto record = [&](const void *data, int64 size, int64 total) {
+		if (!bytes) {
+			bytes = reinterpret_cast<char*>(g_malloc(total));
+			length = total;
+		}
+		memcpy(bytes, data, size);
+		bytes += size;
+	};
+	const auto fields = _partialCache.fill(request, record);
+	if (!bytes || !fields.total) {
+		return {};
+	}
+	return {
+		.fields = fields,
+		.data = GLib::Bytes::new_take(
+			reinterpret_cast<const guint8*>(bytes),
+			length),
+	};
+}
+
 void Instance::registerMasterMethodHandlers() {
 	if (!_master) {
 		return;
@@ -1206,122 +1315,40 @@ void Instance::registerMasterMethodHandlers() {
 			Gio::DBusMethodInvocation invocation,
 			uint64 req,
 			const std::string &resourceId,
-			const std::string &rangeHeader) {
+			int64 offset,
+			int64 limit) {
 		if (!_dataRequestHandler) {
 			invocation.return_gerror(MethodError());
 			return true;
 		}
 
+		std::cout << "Got data request, offset: " << offset << ", limit: " << limit << std::endl;
 		auto prepared = DataRequest{
 			.id = resourceId,
+			.offset = offset,
+			.limit = limit,
 		};
-
-		// Parse range header if present
-		if (!rangeHeader.empty()) {
-			ParseRangeHeaderFor(prepared, rangeHeader);
-
-			if (const auto cached = fillFromCache(prepared)) {
-				// taskDone(task, 0, cached.mime, cached.data, prepared.offset, cached.total);
-				return;
-			}
-		}
-
-		// // Try to fill from cache first, just like in macOS
-		// if (const auto cached = fillFromCache(prepared)) {
-		// 	const auto request = reinterpret_cast<WebKitURISchemeRequest*>(req);
-		// 	if (!_helper) {
-		// 		webkit_uri_scheme_request_finish_error(
-		// 			request,
-		// 			NotFoundError().gobj_());
-		// 		g_object_unref(request);
-		// 		return true;
-		// 	}
-		// 	_helper.call_data_response(
-		// 		req,
-		// 		GLib::Variant::new_handle(0),
-		// 		cached.requestFrom,
-		// 		cached.total,
-		// 		cached.mime,
-		// 		Gio::UnixFDList::new_from_array(&cached.fd, 1),
-		// 		nullptr,
-		// 		nullptr);
-		// 	return true;
-		// }
-
-		const auto requestedOffset = prepared.offset;
-		const auto requestedLimit = prepared.limit;
 		prepared.done = crl::guard(this, [=](DataResponse resolved) {
 			auto &stream = resolved.stream;
-			if (!stream) {
-				return taskFail(task, index);
-			}
-			const auto length = stream->size();
-			Assert(length > 0);
-
-			const auto offset = resolved.streamOffset;
-			if (requestedOffset >= offset + length || offset > requestedOffset) {
-				return taskFail(task, index);
-			}
-
-			auto bytes = std::unique_ptr<char[]>(new char[length]);
-			const auto read = stream->read(bytes.get(), length);
-			Assert(read == length);
-
-			const auto useLength = (requestedLimit > 0)
-				? std::min(requestedLimit, (offset + length - requestedOffset))
-				: (offset + length - requestedOffset);
-
-			const auto useBytes = bytes.get() + (requestedOffset - offset);
-			const auto data = [NSData dataWithBytes:useBytes length:useLength];
-
-			const auto mime = stream->mime();
-			const auto total = resolved.totalSize ? resolved.totalSize : length;
-			const auto i = _partialResources.find(resourceId);
-			if (i != end(_partialResources)) {
-				auto &partial = i->second;
-				if (partial.mime.empty()) {
-					partial.mime = mime;
-				}
-				if (!partial.total) {
-					partial.total = total;
-				}
-				addToCache(partial.index, offset, { std::move(bytes), length });
-			}
-			taskDone(task, index, mime, data, requestedOffset, total);
-
-
-
-
-			const auto request = reinterpret_cast<
-				WebKitURISchemeRequest*
-			>(uintptr_t(req));
-			auto &stream = resolved.stream;
+			std::cout << "Resolved " << resourceId << ", stream: " << stream->size() << std::endl;
 			const auto fd = stream ? dup(stream->handle()) : -1;
-			if (!_helper || !stream || fd == -1) {
-				webkit_uri_scheme_request_finish_error(
-					request,
-					NotFoundError().gobj_());
-				g_object_unref(request);
-				return;
+			const auto success = (fd != -1);
+			std::cout << "Success: " << (success ? 1 : 0) << std::endl;
+			if (_helper) {
+				_helper.call_data_response(
+					req,
+					GLib::Variant::new_handle(0),
+					resourceId,
+					offset,
+					limit,
+					success ? resolved.streamOffset : 0,
+					success ? stream->size() : 0,
+					success ? (resolved.totalSize ?: stream->size()) : 0,
+					success ? stream->mime() : std::string(),
+					Gio::UnixFDList::new_from_array(&fd, 1),
+					nullptr,
+					nullptr);
 			}
-
-			// Add to cache if needed
-			if (resolved.streamOffset > 0 || resolved.totalSize) {
-				addToCache(id, resolved.streamOffset, {
-					.bytes = WrapBytes(stream->bytes(), stream->size()),
-					.length = stream->size(),
-				});
-			}
-
-			_helper.call_data_response(
-				req,
-				GLib::Variant::new_handle(0),
-				resolved.streamOffset,
-				resolved.totalSize ?: stream->size(),
-				stream->mime(),
-				Gio::UnixFDList::new_from_array(&fd, 1),
-				nullptr,
-				nullptr);
 		});
 
 		const auto result = _dataRequestHandler
@@ -1550,13 +1577,26 @@ void Instance::registerHelperMethodHandlers() {
 			Gio::UnixFDList fds,
 			uint64 req,
 			GLib::Variant fd,
-			int64 offset,
-			int64 size,
-			int64 total,
-			const std::string &mime) {
-		const auto request = (WebKitURISchemeRequest*)uintptr_t(req);
-		const auto handle = fds.get(fd.get_handle(), nullptr);
-		dataResponse(request, handle, offset, size, total, mime);
+			const std::string &resourceId,
+			int64 requestedOffset,
+			int64 requestedLimit,
+			int64 resolvedOffset,
+			int64 resolvedLength,
+			int64 resolvedTotal,
+			const std::string &resolvedMime) {
+		const auto handle = (resolvedLength > 0)
+			? fds.get(fd.get_handle(), nullptr)
+			: -1;
+		dataResponse(
+			reinterpret_cast<WebKitURISchemeRequest*>(uintptr_t(req)),
+			handle,
+			resourceId,
+			requestedOffset,
+			requestedLimit,
+			resolvedOffset,
+			resolvedLength,
+			resolvedTotal,
+			resolvedMime);
 		_helper.complete_data_response(invocation);
 		return true;
 	});
@@ -1677,6 +1717,7 @@ Available Availability() {
 	const auto success = (resolved == ResolveResult::Success);
 	return Available{
 		.customSchemeRequests = success,
+		.customRangeRequests = success,
 		.customReferer = success,
 	};
 }

@@ -558,7 +558,7 @@ Instance::CachedResult Instance::fillFromCache(
 	auto result = (NSMutableData*)nil;
 	auto bytes = (char*)nullptr;
 	const auto record = [&](const void *data, int64 size, int64 total) {
-		if (!result) {
+		if (!bytes) {
 			result = [NSMutableData dataWithLength:total];
 			bytes = static_cast<char*>([result mutableBytes]);
 		}

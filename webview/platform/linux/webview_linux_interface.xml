@@ -31,7 +31,8 @@
 		<method name='DataRequest'>
 			<arg type='t' name='request' direction='in'/>
 			<arg type='s' name='id' direction='in'/>
-			<arg type='s' name='range' direction='in'/>
+			<arg type='x' name='offset' direction='in'/>
+			<arg type='x' name='limit' direction='in'/>
 			<arg type='i' name='result' direction='out'/>
 		</method>
 	</interface>
@@ -71,10 +72,13 @@
 			<annotation name="org.gtk.GDBus.C.UnixFD" value="true"/>
 			<arg type='t' name='request' direction='in'/>
 			<arg type='h' name='fd' direction='in'/>
-			<arg type='x' name='offset' direction='in'/>
-			<arg type='x' name='size' direction='in'/>
-			<arg type='x' name='total' direction='in'/>
-			<arg type='s' name='mime' direction='in'/>
+			<arg type='s' name='resourceId' direction='in'/>
+			<arg type='x' name='requestedOffset' direction='in'/>
+			<arg type='x' name='requestedLimit' direction='in'/>
+			<arg type='x' name='resolvedOffset' direction='in'/>
+			<arg type='x' name='resolvedLength' direction='in'/>
+			<arg type='x' name='resolvedTotal' direction='in'/>
+			<arg type='s' name='resolvedMime' direction='in'/>
 		</method>
 		<signal name='Started'/>
 	</interface>
