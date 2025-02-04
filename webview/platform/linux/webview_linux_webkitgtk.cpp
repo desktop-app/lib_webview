@@ -111,6 +111,8 @@ private:
 	GtkWidget *createAnother(WebKitNavigationAction *action);
 	bool scriptDialog(WebKitScriptDialog *dialog);
 
+	bool processRedirect(WebKitURISchemeRequest *request);
+
 	void dataRequest(WebKitURISchemeRequest *request);
 	void dataResponse(
 		WebKitURISchemeRequest *request,
@@ -619,6 +621,11 @@ void Instance::dataRequest(WebKitURISchemeRequest *request) {
 			NotFoundError().gobj_());
 		return;
 	}
+
+	if (processRedirect(request)) {
+		return;
+	}
+
 	g_object_ref(request);
 	_master.call_data_request(
 		uintptr_t(request),
@@ -1419,6 +1426,89 @@ void Instance::registerHelperMethodHandlers() {
 	});
 }
 
+bool Instance::processRedirect(WebKitURISchemeRequest *request) {
+	const auto url = webkit_uri_scheme_request_get_uri(request);
+	const auto prefix = _dataDomain;
+	if (!url || !std::string(url).starts_with(prefix)) {
+		return false;
+	}
+	const auto id = url + prefix.size();
+	const auto dot = strchr(id, '.');
+	const auto slash = strchr(id, '/');
+	if (!dot || !slash || dot > slash) {
+		return false;
+	}
+
+	auto session = soup_session_new();
+	const auto target = std::string("https://") + id;
+	auto msg = soup_message_new("GET", target.c_str());
+	if (!msg) {
+		g_object_unref(session);
+		return false;
+	}
+
+	// Copy specific headers from the original request
+	const auto originalHeaders = webkit_uri_scheme_request_get_http_headers(request);
+	if (originalHeaders) {
+		const auto newHeaders = soup_message_get_request_headers(msg);
+		const auto copyIfPresent = [&](const char *name) {
+			const auto value = soup_message_headers_get_one(
+				originalHeaders,
+				name);
+			if (value) {
+				soup_message_headers_append(
+					newHeaders,
+					name,
+					value);
+			}
+		};
+		copyIfPresent("Accept");
+		copyIfPresent("User-Agent");
+		copyIfPresent("Range");
+		copyIfPresent("Accept-Language");
+		copyIfPresent("Accept-Encoding");
+	}
+
+	// Always set our own Referer
+	soup_message_headers_append(
+		soup_message_get_request_headers(msg),
+		"Referer",
+		"http://desktop-app-resource/page.html");
+
+	g_object_ref(request);
+	soup_session_send_async(
+		session,
+		msg,
+		G_PRIORITY_DEFAULT,
+		nullptr,
+		[](::GObject *source, ::GAsyncResult *result, gpointer data) {
+			auto request = (WebKitURISchemeRequest*)data;
+			auto session = (SoupSession*)source;
+			auto input = soup_session_send_finish(session, result, nullptr);
+			if (!input) {
+				webkit_uri_scheme_request_finish_error(
+					request,
+					g_error_new(
+						G_IO_ERROR,
+						G_IO_ERROR_FAILED,
+						"Network request failed"));
+			} else {
+				auto response = webkit_uri_scheme_response_new(input, -1);
+				webkit_uri_scheme_request_finish_with_response(
+					request,
+					response);
+				g_object_unref(response);
+				g_object_unref(input);
+			}
+			g_object_unref(request);
+			g_object_unref(session);
+		},
+		request);
+
+	g_object_unref(msg);
+	return true;
+}
+
 } // namespace
 
 Available Availability() {
@@ -1439,7 +1529,8 @@ Available Availability() {
 		};
 	}
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-	if (Instance().resolve() == ResolveResult::NoLibrary) {
+	const auto resolved = Instance().resolve();
+	if (resolved == ResolveResult::NoLibrary) {
 		return Available{
 			.error = Available::Error::NoWebKitGTK,
 			.details = "Please install WebKitGTK "
@@ -1447,12 +1538,11 @@ Available Availability() {
 			"from your package manager.",
 		};
 	}
-	return Available{};
-}
-
-bool NavigateToDataSupported() {
-	return Instance().resolve() == ResolveResult::Success;
-	return false;
+	const auto success = (resolved == ResolveResult::Success);
+	return Available{
+		.customSchemeRequests = success,
+		.customReferer = success,
+	};
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {

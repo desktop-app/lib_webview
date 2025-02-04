@@ -870,14 +870,14 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 } // namespace
 
 Available Availability() {
-	return Available{};
+	return Available{
+		.customSchemeRequests = true,
+		.customRangeRequests = true,
+		.customReferer = true,
+	};
 }
 
 bool SupportsEmbedAfterCreate() {
-	return true;
-}
-
-bool NavigateToDataSupported() {
 	return true;
 }
 

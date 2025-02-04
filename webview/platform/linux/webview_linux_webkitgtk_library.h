@@ -50,6 +50,8 @@ typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
 
 typedef struct _SoupMessageHeaders SoupMessageHeaders;
+typedef struct _SoupSession SoupSession;
+typedef struct _SoupMessage SoupMessage;
 
 typedef struct _JSCValue JSCValue;
 
@@ -187,6 +189,7 @@ inline const char *(*soup_message_headers_get_one)(
 	const char *name);
 inline void (*soup_message_headers_unref)(SoupMessageHeaders *hdrs);
 inline void (*soup_message_headers_free)(SoupMessageHeaders *hdrs);
+inline SoupMessageHeaders *(*soup_message_get_request_headers)(SoupMessage *msg);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
@@ -287,6 +290,8 @@ inline void (*webkit_uri_scheme_request_finish_error)(
 inline void (*webkit_uri_scheme_request_finish_with_response)(
 	WebKitURISchemeRequest *request,
 	WebKitURISchemeResponse *response);
+inline const gchar *(*webkit_uri_scheme_request_get_uri)(
+	WebKitURISchemeRequest *request);
 inline SoupMessageHeaders *(*webkit_uri_scheme_request_get_http_headers)(
 	WebKitURISchemeRequest *request);
 inline WebKitURISchemeResponse *(*webkit_uri_scheme_response_new)(
@@ -302,6 +307,20 @@ inline void (*webkit_uri_scheme_response_set_status)(
 	WebKitURISchemeResponse *response,
 	guint status_code,
 	const gchar *reason_phrase);
+
+inline SoupSession *(*soup_session_new)(void);
+inline SoupMessage *(*soup_message_new)(const char *method, const char *uri);
+inline void (*soup_session_send_async)(
+	SoupSession *session,
+	SoupMessage *msg,
+	int priority,
+	GCancellable *cancellable,
+	GAsyncReadyCallback callback,
+	gpointer user_data);
+inline GInputStream *(*soup_session_send_finish)(
+	SoupSession *session,
+	GAsyncResult *result,
+	GError **error);
 
 enum class ResolveResult {
 	Success,

@@ -137,6 +137,9 @@ struct Available {
 		OldWindows,
 	};
 	Error error = Error::None;
+	bool customSchemeRequests = false;
+	bool customRangeRequests = false;
+	bool customReferer = false;
 	std::string details;
 };
 
@@ -147,7 +150,6 @@ void ParseRangeHeaderFor(DataRequest &request, std::string_view header);
 	return Availability().error == Available::Error::None;
 }
 [[nodiscard]] bool SupportsEmbedAfterCreate();
-[[nodiscard]] bool NavigateToDataSupported();
 [[nodiscard]] bool SeparateStorageIdSupported();
 
 // HWND on Windows, nullptr on macOS, GtkWindow on Linux.

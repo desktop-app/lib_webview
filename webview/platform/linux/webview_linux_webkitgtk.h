@@ -11,7 +11,6 @@
 namespace Webview::WebKitGTK {
 
 [[nodiscard]] Available Availability();
-[[nodiscard]] bool NavigateToDataSupported();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
 int Exec();

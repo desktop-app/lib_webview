@@ -19,10 +19,6 @@ bool SupportsEmbedAfterCreate() {
 	return true;
 }
 
-bool NavigateToDataSupported() {
-	return WebKitGTK::NavigateToDataSupported();
-}
-
 bool SeparateStorageIdSupported() {
 	return true;
 }

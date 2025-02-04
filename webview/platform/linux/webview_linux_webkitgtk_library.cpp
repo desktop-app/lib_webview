@@ -86,11 +86,22 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_request_get_path)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_request_finish_error)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_request_finish_with_response)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_request_get_uri)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_request_get_http_headers)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_content_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_http_headers)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_status);
+
+	// Load libsoup symbols
+	if (!LOAD_LIBRARY_SYMBOL(lib, soup_session_new)
+		|| !LOAD_LIBRARY_SYMBOL(lib, soup_message_new)
+		|| !LOAD_LIBRARY_SYMBOL(lib, soup_session_send_async)
+		|| !LOAD_LIBRARY_SYMBOL(lib, soup_session_send_finish)
+		|| !LOAD_LIBRARY_SYMBOL(lib, soup_message_get_request_headers)) {
+		return ResolveResult::NoLibrary;
+	}
+
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
