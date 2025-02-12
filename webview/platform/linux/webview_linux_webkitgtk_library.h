@@ -235,15 +235,6 @@ inline WebKitSettings *(*webkit_web_view_get_settings)(
 inline void (*webkit_settings_set_enable_developer_extras)(
 	WebKitSettings *settings,
 	gboolean enabled);
-inline void (*webkit_settings_set_enable_media)(
-	WebKitSettings *settings,
-	gboolean enabled);
-inline void (*webkit_settings_set_enable_media_stream)(
-	WebKitSettings *settings,
-	gboolean enabled);
-inline void (*webkit_settings_set_media_playback_requires_user_gesture)(
-	WebKitSettings *settings,
-	gboolean enabled);
 inline gboolean (*webkit_web_view_is_loading)(WebKitWebView *web_view);
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
