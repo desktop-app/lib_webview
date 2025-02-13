@@ -49,7 +49,6 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_get_one)
 		&& (LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_unref)
 			|| LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_free))
-		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_get_request_headers)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_send_async)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_send_finish)

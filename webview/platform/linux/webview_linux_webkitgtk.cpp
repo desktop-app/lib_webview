@@ -1450,7 +1450,8 @@ bool Instance::processRedirect(WebKitURISchemeRequest *request) {
 	// Copy specific headers from the original request
 	const auto originalHeaders = webkit_uri_scheme_request_get_http_headers(request);
 	if (originalHeaders) {
-		const auto newHeaders = soup_message_get_request_headers(msg);
+		SoupMessageHeaders *newHeaders = nullptr;
+		g_object_get(msg, "request-headers", &newHeaders, nullptr);
 		const auto copyIfPresent = [&](const char *name) {
 			const auto value = soup_message_headers_get_one(
 				originalHeaders,
@@ -1471,7 +1472,11 @@ bool Instance::processRedirect(WebKitURISchemeRequest *request) {
 
 	// Always set our own Referer
 	soup_message_headers_append(
-		soup_message_get_request_headers(msg),
+		[&] {
+			SoupMessageHeaders *headers = nullptr;
+			g_object_get(msg, "request-headers", &headers, nullptr);
+			return headers;
+		}(),
 		"Referer",
 		"http://desktop-app-resource/page.html");
 
