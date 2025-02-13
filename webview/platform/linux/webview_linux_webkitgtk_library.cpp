@@ -43,11 +43,16 @@ ResolveResult Resolve(bool wayland) {
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
+		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_append)
 		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_get_one)
 		&& (LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_unref)
 			|| LOAD_LIBRARY_SYMBOL(lib, soup_message_headers_free))
+		&& LOAD_LIBRARY_SYMBOL(lib, soup_message_get_request_headers)
+		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_new)
+		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_send_async)
+		&& LOAD_LIBRARY_SYMBOL(lib, soup_session_send_finish)
 		&& LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_navigation_action)
@@ -92,16 +97,6 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_content_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_http_headers)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_scheme_response_set_status);
-
-	// Load libsoup symbols
-	if (!LOAD_LIBRARY_SYMBOL(lib, soup_session_new)
-		|| !LOAD_LIBRARY_SYMBOL(lib, soup_message_new)
-		|| !LOAD_LIBRARY_SYMBOL(lib, soup_session_send_async)
-		|| !LOAD_LIBRARY_SYMBOL(lib, soup_session_send_finish)
-		|| !LOAD_LIBRARY_SYMBOL(lib, soup_message_get_request_headers)) {
-		return ResolveResult::NoLibrary;
-	}
-
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
