@@ -178,6 +178,20 @@ inline GtkWidget *(*gtk_plug_new)(unsigned long socket_id);
 inline unsigned long (*gtk_plug_get_id)(GtkPlug *plug);
 inline GType (*gtk_plug_get_type)(void);
 
+
+inline SoupSession *(*soup_session_new)(void);
+inline GInputStream *(*soup_session_send_finish)(
+	SoupSession *session,
+	GAsyncResult *result,
+	GError **error);
+inline void (*soup_session_send_async)(
+	SoupSession *session,
+	SoupMessage *msg,
+	int priority,
+	GCancellable *cancellable,
+	GAsyncReadyCallback callback,
+	gpointer user_data);
+inline SoupMessage *(*soup_message_new)(const char *method, const char *uri);
 inline SoupMessageHeaders *(*soup_message_headers_new)(
 	SoupMessageHeadersType type);
 inline void (*soup_message_headers_append)(
@@ -306,20 +320,6 @@ inline void (*webkit_uri_scheme_response_set_status)(
 	WebKitURISchemeResponse *response,
 	guint status_code,
 	const gchar *reason_phrase);
-
-inline SoupSession *(*soup_session_new)(void);
-inline SoupMessage *(*soup_message_new)(const char *method, const char *uri);
-inline void (*soup_session_send_async)(
-	SoupSession *session,
-	SoupMessage *msg,
-	int priority,
-	GCancellable *cancellable,
-	GAsyncReadyCallback callback,
-	gpointer user_data);
-inline GInputStream *(*soup_session_send_finish)(
-	SoupSession *session,
-	GAsyncResult *result,
-	GError **error);
 
 enum class ResolveResult {
 	Success,
