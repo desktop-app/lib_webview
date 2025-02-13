@@ -34,14 +34,14 @@ Available Availability() {
 			.error = Available::Error::OldWindows,
 			.details = "Please update your system to Windows 8.1 or later.",
 		};
-	} else if (EdgeHtml::Supported()) {
-		return Available{};
 	} else if (EdgeChromium::Supported()) {
 		return Available{
 			.customSchemeRequests = true,
 			.customRangeRequests = true,
 			.customReferer = true,
 		};
+	} else if (EdgeHtml::Supported()) {
+		return Available{};
 	}
 	return Available{
 		.error = Available::Error::NoWebview2,
