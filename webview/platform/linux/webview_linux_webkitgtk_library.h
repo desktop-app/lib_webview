@@ -189,7 +189,6 @@ inline const char *(*soup_message_headers_get_one)(
 	const char *name);
 inline void (*soup_message_headers_unref)(SoupMessageHeaders *hdrs);
 inline void (*soup_message_headers_free)(SoupMessageHeaders *hdrs);
-inline SoupMessageHeaders *(*soup_message_get_request_headers)(SoupMessage *msg);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
