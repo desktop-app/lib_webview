@@ -1172,23 +1172,17 @@ void Instance::registerMasterMethodHandlers() {
 				.offset = offset,
 				.limit = limit,
 				.done = crl::guard(this, [=](DataResponse resolved) {
-					const auto request = reinterpret_cast<
-						WebKitURISchemeRequest*
-					>(uintptr_t(req));
 					auto &stream = resolved.stream;
 					const auto fd = stream ? dup(stream->handle()) : -1;
-					if (!_helper || !stream || fd == -1) {
-						webkit_uri_scheme_request_finish_error(
-							request,
-							NotFoundError().gobj_());
-						g_object_unref(request);
+					if (!_helper) {
+						return;
 					}
 					_helper.call_data_response(
 						req,
 						GLib::Variant::new_handle(0),
 						resolved.streamOffset,
-						resolved.totalSize ?: stream->size(),
-						stream->mime(),
+						resolved.totalSize ?: stream ? stream->size() : 0,
+						stream ? stream->mime() : "",
 						Gio::UnixFDList::new_from_array(&fd, 1),
 						nullptr,
 						nullptr);
