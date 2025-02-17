@@ -176,16 +176,6 @@ Instance::~Instance() {
 	if (_backgroundProvider) {
 		g_object_unref(_backgroundProvider);
 	}
-	if (_webview) {
-		if (!gtk_widget_destroy) {
-			g_object_unref(_webview);
-		} else {
-			gtk_widget_destroy(GTK_WIDGET(_webview));
-		}
-	}
-	if (_x11SizeFix) {
-		gtk_widget_destroy(_x11SizeFix);
-	}
 	if (_window) {
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(_window));
