@@ -119,6 +119,7 @@ private:
 		int fd,
 		int64 offset,
 		int64 size,
+		int64 total,
 		std::string mime);
 
 	void startProcess();
@@ -648,6 +649,7 @@ void Instance::dataResponse(
 		int fd,
 		int64 offset,
 		int64 size,
+		int64 total,
 		std::string mime) {
 	const auto data = mmap(
 		nullptr,
@@ -1181,6 +1183,7 @@ void Instance::registerMasterMethodHandlers() {
 						req,
 						GLib::Variant::new_handle(0),
 						resolved.streamOffset,
+						stream ? stream->size() : 0,
 						resolved.totalSize ?: stream ? stream->size() : 0,
 						stream ? stream->mime() : "",
 						Gio::UnixFDList::new_from_array(&fd, 1),
@@ -1411,10 +1414,11 @@ void Instance::registerHelperMethodHandlers() {
 			GLib::Variant fd,
 			int64 offset,
 			int64 size,
+			int64 total,
 			const std::string &mime) {
 		const auto request = (WebKitURISchemeRequest*)uintptr_t(req);
 		const auto handle = fds.get(fd.get_handle(), nullptr);
-		dataResponse(request, handle, offset, size, mime);
+		dataResponse(request, handle, offset, size, total, mime);
 		_helper.complete_data_response(invocation);
 		return true;
 	});
