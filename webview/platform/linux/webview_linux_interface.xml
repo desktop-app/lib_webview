@@ -73,6 +73,7 @@
 			<arg type='t' name='request' direction='in'/>
 			<arg type='h' name='fd' direction='in'/>
 			<arg type='x' name='offset' direction='in'/>
+			<arg type='x' name='requestedOffset' direction='in'/>
 			<arg type='x' name='size' direction='in'/>
 			<arg type='x' name='total' direction='in'/>
 			<arg type='s' name='mime' direction='in'/>
