@@ -118,6 +118,7 @@ private:
 		WebKitURISchemeRequest *request,
 		int fd,
 		int64 offset,
+		int64 requestedOffset,
 		int64 size,
 		int64 total,
 		std::string mime);
@@ -638,9 +639,26 @@ void Instance::dataResponse(
 		WebKitURISchemeRequest *request,
 		int fd,
 		int64 offset,
+		int64 requestedOffset,
 		int64 size,
 		int64 total,
 		std::string mime) {
+	const auto guard = gsl::finally([&] {
+		g_object_unref(request);
+		close(fd);
+	});
+
+	const auto fail = [&] {
+		webkit_uri_scheme_request_finish_error(
+			request,
+			NotFoundError().gobj_());
+	};
+
+	if (fd == -1 || offset < 0 || size <= 0) {
+		fail();
+		return;
+	}
+
 	const auto data = mmap(
 		nullptr,
 		offset + size,
@@ -650,11 +668,7 @@ void Instance::dataResponse(
 		0);
 
 	if (data == MAP_FAILED) {
-		webkit_uri_scheme_request_finish_error(
-			request,
-			NotFoundError().gobj_());
-		g_object_unref(request);
-		close(fd);
+		fail();
 		return;
 	}
 
@@ -670,10 +684,7 @@ void Instance::dataResponse(
 
 	webkit_uri_scheme_response_set_content_type(response, mime.c_str());
 	webkit_uri_scheme_request_finish_with_response(request, response);
-
 	g_object_unref(response);
-	g_object_unref(request);
-	close(fd);
 }
 
 ResolveResult Instance::resolve() {
@@ -1164,17 +1175,23 @@ void Instance::registerMasterMethodHandlers() {
 				.offset = offset,
 				.limit = limit,
 				.done = crl::guard(this, [=](DataResponse resolved) {
-					auto &stream = resolved.stream;
-					const auto fd = stream ? dup(stream->handle()) : -1;
 					if (!_helper) {
 						return;
 					}
+					auto &stream = resolved.stream;
+					const auto fd = stream ? dup(stream->handle()) : -1;
+					const auto size = stream ? stream->size() : 0;
+					const auto relatedOffset = offset - resolved.streamOffset;
+					const auto relatedSize = size - relatedOffset;
 					_helper.call_data_response(
 						req,
 						GLib::Variant::new_handle(0),
-						resolved.streamOffset,
-						stream ? stream->size() : 0,
-						resolved.totalSize ?: stream ? stream->size() : 0,
+						relatedOffset,
+						offset,
+						limit > 0
+							? std::min(limit, relatedSize)
+							: relatedSize,
+						resolved.totalSize ?: size,
 						stream ? stream->mime() : "",
 						Gio::UnixFDList::new_from_array(&fd, 1),
 						nullptr,
@@ -1403,12 +1420,18 @@ void Instance::registerHelperMethodHandlers() {
 			uint64 req,
 			GLib::Variant fd,
 			int64 offset,
+			int64 requestedOffset,
 			int64 size,
 			int64 total,
 			const std::string &mime) {
-		const auto request = (WebKitURISchemeRequest*)uintptr_t(req);
-		const auto handle = fds.get(fd.get_handle(), nullptr);
-		dataResponse(request, handle, offset, size, total, mime);
+		dataResponse(
+			(WebKitURISchemeRequest*)uintptr_t(req),
+			fds.get(fd.get_handle(), nullptr),
+			offset,
+			requestedOffset,
+			size,
+			total,
+			mime);
 		_helper.complete_data_response(invocation);
 		return true;
 	});
