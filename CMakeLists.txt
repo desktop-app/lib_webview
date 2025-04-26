@@ -57,7 +57,6 @@ PUBLIC
 
 if (WIN32)
     nuget_add_webview(lib_webview)
-    nuget_add_winrt(lib_webview)
 elseif (LINUX)
     include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
     generate_dbus(lib_webview org.desktop_app.GtkIntegration.Webview. Webview ${src_loc}/webview/platform/linux/webview_linux_interface.xml)
