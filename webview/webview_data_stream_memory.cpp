@@ -7,6 +7,7 @@
 #include "webview/webview_data_stream_memory.h"
 
 #if !defined Q_OS_WIN && !defined Q_OS_MAC
+#include <unistd.h>
 #include <sys/mman.h>
 #endif // !Q_OS_WIN && !Q_OS_MAC
 
