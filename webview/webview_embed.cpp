@@ -250,7 +250,10 @@ void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
-		if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+		if (!lower.startsWith(u"http://"_q)
+			&& !lower.startsWith(u"https://"_q)
+			&& !lower.startsWith(u"tonsite://"_q)
+			&& !lower.startsWith(u"ton://"_q)) {
 			return false;
 		}
 		auto result = true;
