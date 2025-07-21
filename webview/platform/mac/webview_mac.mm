@@ -177,6 +177,8 @@ using TaskPointer = id<WKURLSchemeTask>;
 	[openPanel beginWithCompletionHandler:^(NSInteger result){
 		if (result == NSModalResponseOK) {
 			completionHandler([openPanel URLs]);
+		} else {
+			completionHandler(nil);
 		}
 	}];
 
