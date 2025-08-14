@@ -229,6 +229,11 @@ bool Instance::create(Config config) {
 			}
 			widget->setClearColor(config.opaqueBg);
 			widget->show();
+			const auto since = crl::now();
+			while (crl::now() - since < 1000) {
+				_compositor->processWaylandEvents();
+				GLib::MainContext::default_().iteration(false);
+			}
 		}
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (_compositor) {
