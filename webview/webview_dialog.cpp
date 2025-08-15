@@ -177,17 +177,12 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 			}
 		}, buttons->lifetime());
 
-		buttons->heightValue(
-		) | rpl::start_with_next([=](int height) {
-			const auto full = titleHeight
-				+ label->height()
-				+ (input ? (skip + input->height()) : 0)
-				+ buttonPadding.top()
-				+ height
-				+ buttonPadding.bottom();
-			raw->setInnerSize({ st::boxWideWidth, full });
-		}, buttons->lifetime());
 		container->resizeToWidth(st::boxWideWidth);
+
+		container->heightValue(
+		) | rpl::start_with_next([=](int height) {
+			raw->setInnerSize({ st::boxWideWidth, titleHeight + height });
+		}, container->lifetime());
 
 		if (input) {
 			input->selectAll();
