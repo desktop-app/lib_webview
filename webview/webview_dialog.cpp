@@ -28,7 +28,7 @@ namespace Webview {
 namespace {
 
 constexpr auto kPopupsQuicklyLimit = 3;
-constexpr auto kPopupsQuicklyDelay = 3 * crl::time(1000);
+constexpr auto kPopupsQuicklyDelay = 8 * crl::time(1000);
 
 bool InBlockingPopup/* = false*/;
 int PopupsShownQuickly/* = 0*/;
