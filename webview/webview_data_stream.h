@@ -15,7 +15,6 @@ class DataStream {
 public:
 	virtual ~DataStream() = default;
 
-	[[nodiscard]] virtual int handle() = 0;
 	[[nodiscard]] virtual std::int64_t size() = 0;
 	[[nodiscard]] virtual std::string mime() = 0;
 

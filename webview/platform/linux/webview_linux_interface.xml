@@ -28,13 +28,10 @@
 			<arg type='b' name='canGoBack' direction='in'/>
 			<arg type='b' name='canGoForward' direction='in'/>
 		</method>
-		<method name='DataRequest'>
-			<arg type='t' name='request' direction='in'/>
-			<arg type='s' name='id' direction='in'/>
-			<arg type='x' name='offset' direction='in'/>
-			<arg type='x' name='limit' direction='in'/>
-			<arg type='i' name='result' direction='out'/>
-		</method>
+		<signal name='DataServerStarted'>
+			<arg type='q' name='port'/>
+			<arg type='s' name='password'/>
+		</signal>
 	</interface>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
 		<method name='Create'>
@@ -43,7 +40,6 @@
 			<arg type='i' name='g' direction='in'/>
 			<arg type='i' name='b' direction='in'/>
 			<arg type='i' name='a' direction='in'/>
-			<arg type='s' name='protocol' direction='in'/>
 			<arg type='s' name='path' direction='in'/>
 		</method>
 		<method name='Reload'/>
@@ -67,16 +63,6 @@
 		</method>
 		<method name='GetWinId'>
 			<arg type='t' name='result' direction='out'/>
-		</method>
-		<method name='DataResponse'>
-			<annotation name="org.gtk.GDBus.C.UnixFD" value="true"/>
-			<arg type='t' name='request' direction='in'/>
-			<arg type='h' name='fd' direction='in'/>
-			<arg type='x' name='offset' direction='in'/>
-			<arg type='x' name='requestedOffset' direction='in'/>
-			<arg type='x' name='size' direction='in'/>
-			<arg type='x' name='total' direction='in'/>
-			<arg type='s' name='mime' direction='in'/>
 		</method>
 		<signal name='Started'/>
 	</interface>
