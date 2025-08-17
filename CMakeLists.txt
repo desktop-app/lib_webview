@@ -29,6 +29,8 @@ PRIVATE
     webview/platform/linux/webview_linux.cpp
     webview/platform/linux/webview_linux_compositor.cpp
     webview/platform/linux/webview_linux_compositor.h
+    webview/platform/linux/webview_linux_http_server.cpp
+    webview/platform/linux/webview_linux_http_server.h
     webview/platform/linux/webview_linux_webkitgtk_library.cpp
     webview/platform/linux/webview_linux_webkitgtk_library.h
     webview/platform/linux/webview_linux_webkitgtk.cpp

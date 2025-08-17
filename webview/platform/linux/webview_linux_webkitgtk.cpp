@@ -8,6 +8,7 @@
 
 #include "webview/platform/linux/webview_linux_webkitgtk_library.h"
 #include "webview/platform/linux/webview_linux_compositor.h"
+#include "webview/platform/linux/webview_linux_http_server.h"
 #include "webview/webview_data_stream.h"
 #include "base/platform/base_platform_info.h"
 #include "base/debug_log.h"
@@ -18,6 +19,7 @@
 #include "ui/gl/gl_detection.h"
 
 #include <QtCore/QUrl>
+#include <QtNetwork/QTcpSocket>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QWindow>
@@ -31,7 +33,6 @@
 #include <crl/crl.h>
 #include <rpl/rpl.h>
 #include <format>
-#include <sys/mman.h>
 
 namespace Webview::WebKitGTK {
 namespace {
@@ -46,8 +47,7 @@ constexpr auto kMasterObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Master";
 constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
-constexpr auto kDataUrlScheme = "desktop-app-resource";
-constexpr auto kFullDomain = "desktop-app-resource://domain/";
+constexpr auto kDataHost = "127.0.0.1";
 
 std::string SocketPath;
 
@@ -56,13 +56,6 @@ inline auto MethodError() {
 		Gio::DBusErrorNS_::quark(),
 		int(Gio::DBusError::UNKNOWN_METHOD_),
 		"Method does not exist.");
-}
-
-inline auto NotFoundError() {
-	return GLib::Error::new_literal(
-		G_IO_ERROR,
-		G_IO_ERROR_NOT_FOUND,
-		"Not Found");
 }
 
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
@@ -75,8 +68,8 @@ public:
 	~Instance();
 
 	bool create(Config config);
-
 	ResolveResult resolve();
+	bool startDataServer();
 
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
@@ -112,18 +105,17 @@ private:
 		WebKitPolicyDecisionType decisionType);
 	GtkWidget *createAnother(WebKitNavigationAction *action);
 	bool scriptDialog(WebKitScriptDialog *dialog);
+	bool authenticate(WebKitAuthenticationRequest *request);
 
-	bool processRedirect(WebKitURISchemeRequest *request);
-
-	void dataRequest(WebKitURISchemeRequest *request);
-	void dataResponse(
-		WebKitURISchemeRequest *request,
-		int fd,
-		int64 offset,
-		int64 requestedOffset,
-		int64 size,
-		int64 total,
-		std::string mime);
+	std::string dataDomain();
+	void dataRequest(
+		DataResponse resolved,
+		QTcpSocket *socket,
+		const std::string &resourceId,
+		std::int64_t requestedOffset,
+		std::int64_t requestedLimit,
+		bool headersWritten,
+		const std::shared_ptr<HttpServer::Guard> &guard);
 
 	void startProcess();
 	void stopProcess();
@@ -145,6 +137,7 @@ private:
 	bool _wayland = false;
 	::base::unique_qptr<QWidget> _widget;
 	QPointer<Compositor> _compositor;
+	std::optional<HttpServer> _dataServer;
 
 	GtkWidget *_window = nullptr;
 	GtkWidget *_x11SizeFix = nullptr;
@@ -158,8 +151,8 @@ private:
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
-	std::string _dataProtocol;
-	std::string _dataDomain;
+	std::uint16_t _dataPort = 0;
+	std::string _dataPassword;
 	bool _loadFailed = false;
 
 };
@@ -195,12 +188,6 @@ bool Instance::create(Config config) {
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
-	_dataProtocol = kDataUrlScheme;
-	_dataDomain = kFullDomain;
-	if (!config.dataProtocolOverride.empty()) {
-		_dataProtocol = config.dataProtocolOverride;
-		_dataDomain = _dataProtocol + "://domain/";
-	}
 
 	if (_remoting) {
 		const auto resolveResult = resolve();
@@ -255,22 +242,13 @@ bool Instance::create(Config config) {
 		const auto g = config.opaqueBg.green();
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
-		const auto protocol = config.dataProtocolOverride;
 		const auto path = config.userDataPath;
-		_helper.call_create(
-			debug,
-			r,
-			g,
-			b,
-			a,
-			protocol,
-			path,
-			crl::guard(&guard, [&](
-					GObject::Object source_object,
-					Gio::AsyncResult res) {
-				success = _helper.call_create_finish(res, nullptr);
-				GLib::MainContext::default_().wakeup();
-			}));
+		_helper.call_create(debug, r, g, b, a, path, crl::guard(&guard, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			success = _helper.call_create_finish(res, nullptr);
+			GLib::MainContext::default_().wakeup();
+		}));
 
 		while (!success && _connected) {
 			GLib::MainContext::default_().iteration(true);
@@ -331,27 +309,23 @@ bool Instance::create(Config config) {
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
 
-	WebKitWebContext *context = nullptr;
 	if (webkit_network_session_new) {
-		context = webkit_web_context_new();
 		WebKitNetworkSession *session = webkit_network_session_new(
 			baseData.c_str(),
 			baseCache.c_str());
 		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
-			"web-context",
-			context,
 			"network-session",
 			session,
 			nullptr));
 		g_object_unref(session);
-		g_object_unref(context);
 	} else {
 		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
 			"base-cache-directory", baseCache.c_str(),
 			"base-data-directory", baseData.c_str(),
 			nullptr);
-		context = webkit_web_context_new_with_website_data_manager(data);
+		WebKitWebContext *context
+			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
 
 		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
@@ -458,19 +432,18 @@ bool Instance::create(Config config) {
 			return instance->scriptDialog(dialog);
 		}),
 		this);
+	g_signal_connect_swapped(
+		_webview,
+		"authenticate",
+		G_CALLBACK(+[](
+			Instance *instance,
+			WebKitAuthenticationRequest *request) -> gboolean {
+			return instance->authenticate(request);
+		}),
+		this);
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external",
-		nullptr);
-	webkit_web_context_register_uri_scheme(
-		context,
-		_dataProtocol.c_str(),
-		WebKitURISchemeRequestCallback(+[](
-			WebKitURISchemeRequest *request,
-			Instance *instance) {
-			instance->dataRequest(request);
-		}),
-		this,
 		nullptr);
 	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
 	webkit_web_view_set_background_color(_webview, &rgba);
@@ -621,85 +594,175 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	return true;
 }
 
-void Instance::dataRequest(WebKitURISchemeRequest *request) {
-	if (!_master) {
-		webkit_uri_scheme_request_finish_error(
-			request,
-			NotFoundError().gobj_());
-		return;
+bool Instance::authenticate(WebKitAuthenticationRequest *request) {
+	if (strcmp(webkit_authentication_request_get_host(request), kDataHost)
+			|| webkit_authentication_request_get_port(request) != _dataPort) {
+		return false;
 	}
-
-	if (processRedirect(request)) {
-		return;
-	}
-
-	g_object_ref(request);
-	_master.call_data_request(
-		uintptr_t(request),
-		webkit_uri_scheme_request_get_path(request) + 1,
-		0,
-		0,
-		[=](GObject::Object source_object, Gio::AsyncResult res) {
-			const auto ret = _master.call_data_request_finish(res);
-			if (!ret || DataResult(std::get<1>(*ret)) == DataResult::Failed) {
-				webkit_uri_scheme_request_finish_error(
-					request,
-					NotFoundError().gobj_());
-				g_object_unref(request);
-			}
-		});
+	const auto credential = webkit_credential_new(
+		"",
+		_dataPassword.c_str(),
+		WEBKIT_CREDENTIAL_PERSISTENCE_FOR_SESSION);
+	webkit_authentication_request_authenticate(request, credential);
+	webkit_credential_free(credential);
+	return true;
 }
 
-void Instance::dataResponse(
-		WebKitURISchemeRequest *request,
-		int fd,
-		int64 offset,
-		int64 requestedOffset,
-		int64 size,
-		int64 total,
-		std::string mime) {
-	const auto guard = gsl::finally([&] {
-		g_object_unref(request);
-		close(fd);
+// https://bugs.webkit.org/show_bug.cgi?id=146351
+bool Instance::startDataServer() {
+	if (_dataServer) {
+		return true;
+	}
+
+	_dataServer.emplace(
+		(_dataPassword = GLib::uuid_string_random()).c_str(),
+		[=](
+				QTcpSocket *socket,
+				const QByteArray &id,
+				const ::base::flat_map<QByteArray, QByteArray> &headers,
+				const std::shared_ptr<HttpServer::Guard> &guard) {
+			if (!_dataRequestHandler) {
+				return;
+			}
+			const auto resourceId = id.toStdString();
+			auto prepared = DataRequest{
+				.id = resourceId,
+			};
+			const auto getHeader = [&](const QByteArray &key) {
+				const auto it = headers.find(key);
+				return it != headers.end()
+					? it->second
+					: QByteArray();
+			};
+			const auto rangeHeader = getHeader("Range");
+			if (!rangeHeader.isEmpty()) {
+				ParseRangeHeaderFor(prepared, rangeHeader.toStdString());
+			}
+			const auto requestedOffset = prepared.offset;
+			const auto requestedLimit = prepared.limit;
+			prepared.done = crl::guard(socket, [=](DataResponse resolved) {
+				dataRequest(
+					std::move(resolved),
+					socket,
+					resourceId,
+					requestedOffset,
+					requestedLimit,
+					false,
+					guard);
+			});
+			_dataRequestHandler(prepared);
+		});
+
+	if (!_dataServer->listen(QHostAddress::LocalHost)) {
+		LOG(("WebView Error: %1").arg(_dataServer->errorString()));
+		_dataServer.reset();
+		return false;
+	}
+
+	_dataPort = _dataServer->serverPort();
+
+	if (_master) {
+		_master.emit_data_server_started(_dataPort, _dataPassword);
+	}
+
+	return true;
+}
+
+std::string Instance::dataDomain() {
+	return std::format("http://{}:{}/", kDataHost, std::to_string(_dataPort));
+}
+
+void Instance::dataRequest(
+		DataResponse resolved,
+		QTcpSocket *socket,
+		const std::string &resourceId,
+		std::int64_t requestedOffset,
+		std::int64_t requestedLimit,
+		bool headersWritten,
+		const std::shared_ptr<HttpServer::Guard> &guard) {
+	auto &stream = resolved.stream;
+	if (!stream) {
+		return;
+	}
+	const auto length = stream->size();
+	Assert(length > 0);
+
+	const auto offset = resolved.streamOffset;
+	if (requestedOffset >= offset + length || offset > requestedOffset) {
+		return;
+	}
+
+	auto bytes = QByteArray();
+	bytes.resize(length);
+	const auto read = stream->read(bytes.data(), length);
+	Assert(read == length);
+
+	const auto useOffset = (requestedOffset - offset);
+	const auto useLength = (requestedLimit > 0)
+		? std::min(requestedLimit, (length - useOffset))
+		: (length - useOffset);
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	bytes.slice(useOffset, useLength);
+#else // Qt >= 6.8.0
+	bytes = std::move(bytes.mid(useOffset, useLength));
+#endif // Qt < 6.8.0
+
+	const auto total = resolved.totalSize ? resolved.totalSize : length;
+	if (requestedLimit <= 0) {
+		requestedLimit = (total - requestedOffset);
+	}
+	
+	if (!headersWritten) {
+		const auto partial = (requestedOffset > 0) || (requestedLimit > 0);
+		socket->write("HTTP/1.1 ");
+		socket->write(partial ? "206 Partial Content\r\n" : "200 OK\r\n");
+
+		const auto mime = QByteArray(stream->mime());
+		socket->write("Content-Type: " + mime + "\r\n");
+		socket->write("Accept-Ranges: bytes\r\n");
+		socket->write("Cache-Control: no-store\r\n");
+		socket->write("Content-Length: "
+			+ QByteArray::number(requestedLimit)
+			+ "\r\n");
+
+		if (partial) {
+			socket->write("Content-Range: bytes "
+				+ QByteArray::number(requestedOffset)
+				+ '-'
+				+ QByteArray::number(requestedOffset + requestedLimit - 1)
+				+ '/'
+				+ QByteArray::number(total)
+				+ "\r\n");
+		}
+
+		socket->write("\r\n");
+		headersWritten = true;
+	}
+
+	socket->write(bytes);
+	if (requestedLimit == useLength) {
+		return;
+	}
+
+	requestedOffset += useLength;
+	requestedLimit -= useLength;
+
+	_dataRequestHandler({
+		.id = resourceId,
+		.offset = requestedOffset,
+		.limit = requestedLimit,
+		.done = crl::guard(socket, [=](DataResponse resolved) {
+			dataRequest(
+				std::move(resolved),
+				socket,
+				resourceId,
+				requestedOffset,
+				requestedLimit,
+				headersWritten,
+				guard);
+		}),
 	});
-
-	const auto fail = [&] {
-		webkit_uri_scheme_request_finish_error(
-			request,
-			NotFoundError().gobj_());
-	};
-
-	if (fd == -1 || offset < 0 || size <= 0) {
-		fail();
-		return;
-	}
-
-	const auto data = mmap(
-		nullptr,
-		offset + size,
-		PROT_READ,
-		MAP_PRIVATE,
-		fd,
-		0);
-
-	if (data == MAP_FAILED) {
-		fail();
-		return;
-	}
-
-	const auto stream = Gio::MemoryInputStream::new_from_bytes(
-		GLib::Bytes::new_with_free_func(
-			reinterpret_cast<const uchar*>(data) + offset,
-			size,
-			[=] { munmap(data, offset + size); }));
-
-	const auto response = webkit_uri_scheme_response_new(
-		G_INPUT_STREAM(stream.gobj_()),
-		size);
-
-	webkit_uri_scheme_response_set_content_type(response, mime.c_str());
-	webkit_uri_scheme_request_finish_with_response(request, response);
-	g_object_unref(response);
 }
 
 ResolveResult Instance::resolve() {
@@ -744,7 +807,8 @@ void Instance::navigate(std::string url) {
 }
 
 void Instance::navigateToData(std::string id) {
-	navigate(_dataDomain + id);
+	startDataServer();
+	navigate(dataDomain() + id);
 }
 
 void Instance::reload() {
@@ -1102,7 +1166,7 @@ void Instance::registerMasterMethodHandlers() {
 				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
 			_master.complete_navigation_started(invocation, false);
-		} else if (!uri.starts_with(_dataDomain)
+		} else if (!uri.starts_with(dataDomain())
 				&& _navigationStartHandler
 				&& !_navigationStartHandler(uri, false)) {
 			_master.complete_navigation_started(invocation, false);
@@ -1170,52 +1234,6 @@ void Instance::registerMasterMethodHandlers() {
 			.canGoForward = canGoForward,
 		};
 		_master.complete_navigation_state_update(invocation);
-		return true;
-	});
-
-	_master.signal_handle_data_request().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation,
-			uint64 req,
-			const std::string &id,
-			int64 offset,
-			int64 limit) {
-		if (!_dataRequestHandler) {
-			invocation.return_gerror(MethodError());
-			return true;
-		}
-
-		_master.complete_data_request(
-			invocation,
-			int(_dataRequestHandler(DataRequest{
-				.id = id,
-				.offset = offset,
-				.limit = limit,
-				.done = crl::guard(this, [=](DataResponse resolved) {
-					if (!_helper) {
-						return;
-					}
-					auto &stream = resolved.stream;
-					const auto fd = stream ? dup(stream->handle()) : -1;
-					const auto size = stream ? stream->size() : 0;
-					const auto relatedOffset = offset - resolved.streamOffset;
-					const auto relatedSize = size - relatedOffset;
-					_helper.call_data_response(
-						req,
-						GLib::Variant::new_handle(0),
-						relatedOffset,
-						offset,
-						limit > 0
-							? std::min(limit, relatedSize)
-							: relatedSize,
-						resolved.totalSize ?: size,
-						stream ? stream->mime() : "",
-						Gio::UnixFDList::new_from_array(&fd, 1),
-						nullptr,
-						nullptr);
-				}),
-			})));
-
 		return true;
 	});
 }
@@ -1336,6 +1354,14 @@ int Instance::exec() {
 		return 1;
 	}
 
+	_master.signal_data_server_started().connect([=](
+			Master,
+			std::uint16_t port,
+			const std::string &password) {
+		_dataPort = port;
+		_dataPassword = password;
+	});
+
 	return app.run({});
 }
 
@@ -1352,11 +1378,9 @@ void Instance::registerHelperMethodHandlers() {
 			int g,
 			int b,
 			int a,
-			const std::string &protocol,
 			const std::string &path) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
-			.dataProtocolOverride = protocol,
 			.userDataPath = path,
 			.debug = debug,
 		})) {
@@ -1429,118 +1453,6 @@ void Instance::registerHelperMethodHandlers() {
 			reinterpret_cast<uint64>(winId()));
 		return true;
 	});
-
-	_helper.signal_handle_data_response().connect([=](
-			Helper,
-			Gio::DBusMethodInvocation invocation,
-			Gio::UnixFDList fds,
-			uint64 req,
-			GLib::Variant fd,
-			int64 offset,
-			int64 requestedOffset,
-			int64 size,
-			int64 total,
-			const std::string &mime) {
-		dataResponse(
-			(WebKitURISchemeRequest*)uintptr_t(req),
-			fds.get(fd.get_handle(), nullptr),
-			offset,
-			requestedOffset,
-			size,
-			total,
-			mime);
-		_helper.complete_data_response(invocation);
-		return true;
-	});
-}
-
-bool Instance::processRedirect(WebKitURISchemeRequest *request) {
-	const auto url = webkit_uri_scheme_request_get_uri(request);
-	const auto prefix = _dataDomain;
-	if (!url || !std::string(url).starts_with(prefix)) {
-		return false;
-	}
-	const auto id = url + prefix.size();
-	const auto dot = strchr(id, '.');
-	const auto slash = strchr(id, '/');
-	if (!dot || !slash || dot > slash) {
-		return false;
-	}
-
-	auto session = soup_session_new();
-	const auto target = std::string("https://") + id;
-	auto msg = soup_message_new("GET", target.c_str());
-	if (!msg) {
-		g_object_unref(session);
-		return false;
-	}
-
-	// Copy specific headers from the original request
-	const auto originalHeaders
-		= webkit_uri_scheme_request_get_http_headers(request);
-	if (originalHeaders) {
-		SoupMessageHeaders *newHeaders = nullptr;
-		g_object_get(msg, "request-headers", &newHeaders, nullptr);
-		const auto copyIfPresent = [&](const char *name) {
-			const auto value = soup_message_headers_get_one(
-				originalHeaders,
-				name);
-			if (value) {
-				soup_message_headers_append(
-					newHeaders,
-					name,
-					value);
-			}
-		};
-		copyIfPresent("Accept");
-		copyIfPresent("User-Agent");
-		copyIfPresent("Range");
-		copyIfPresent("Accept-Language");
-		copyIfPresent("Accept-Encoding");
-	}
-
-	// Always set our own Referer
-	soup_message_headers_append(
-		[&] {
-			SoupMessageHeaders *headers = nullptr;
-			g_object_get(msg, "request-headers", &headers, nullptr);
-			return headers;
-		}(),
-		"Referer",
-		"http://desktop-app-resource/page.html");
-
-	g_object_ref(request);
-	soup_session_send_async(
-		session,
-		msg,
-		G_PRIORITY_DEFAULT,
-		nullptr,
-		[](::GObject *source, ::GAsyncResult *result, gpointer data) {
-			auto request = (WebKitURISchemeRequest*)data;
-			auto session = (SoupSession*)source;
-			auto input = soup_session_send_finish(session, result, nullptr);
-			if (!input) {
-				webkit_uri_scheme_request_finish_error(
-					request,
-					g_error_new(
-						G_IO_ERROR,
-						G_IO_ERROR_FAILED,
-						"Network request failed"));
-			} else {
-				auto response = webkit_uri_scheme_response_new(input, -1);
-				webkit_uri_scheme_request_finish_with_response(
-					request,
-					response);
-				g_object_unref(response);
-				g_object_unref(input);
-			}
-			g_object_unref(request);
-			g_object_unref(session);
-		},
-		request);
-
-	g_object_unref(msg);
-	return true;
 }
 
 } // namespace
@@ -1563,7 +1475,8 @@ Available Availability() {
 		};
 	}
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-	const auto resolved = Instance().resolve();
+	Instance instance;
+	const auto resolved = instance.resolve();
 	if (resolved == ResolveResult::NoLibrary) {
 		return Available{
 			.error = Available::Error::NoWebKitGTK,
@@ -1572,9 +1485,11 @@ Available Availability() {
 			"from your package manager.",
 		};
 	}
-	const auto success = (resolved == ResolveResult::Success);
+	const auto success = (resolved == ResolveResult::Success)
+		&& instance.startDataServer();
 	return Available{
 		.customSchemeRequests = success,
+		.customRangeRequests = success,
 		.customReferer = success,
 	};
 }
