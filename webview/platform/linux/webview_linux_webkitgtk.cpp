@@ -1169,6 +1169,7 @@ void Instance::registerMasterMethodHandlers() {
 			.canGoBack = canGoBack,
 			.canGoForward = canGoForward,
 		};
+		_master.complete_navigation_state_update(invocation);
 		return true;
 	});
 
