@@ -30,7 +30,7 @@
 #include <webview/webview.hpp>
 #include <crl/crl.h>
 #include <rpl/rpl.h>
-#include <regex>
+#include <format>
 #include <sys/mman.h>
 
 namespace Webview::WebKitGTK {
@@ -885,9 +885,8 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	const auto background = std::regex_replace(
-		".webviewWindow {background: %1;}",
-		std::regex("%1"),
+	const auto background = std::format(
+		".webviewWindow {{background: {};}}",
 		_wayland ? "transparent" : opaqueBg.name().toStdString());
 
 	if (gtk_css_provider_load_from_string) {
@@ -920,10 +919,11 @@ void Instance::startProcess() {
 
 	_serviceProcess = *serviceProcess;
 
-	const auto socketPath = std::regex_replace(
-		SocketPath,
-		std::regex("%1"),
-		std::string(_serviceProcess.get_identifier()));
+	const auto socketPath = std::vformat(
+		std::string_view(SocketPath),
+		std::make_format_args(
+			static_cast<const std::string>(
+				_serviceProcess.get_identifier())));
 
 	if (socketPath.empty()) {
 		LOG(("WebView Error: IPC socket path is not set."));
@@ -1234,10 +1234,10 @@ int Instance::exec() {
 
 	auto loop = GLib::MainLoop::new_();
 
-	const auto socketPath = std::regex_replace(
-		SocketPath,
-		std::regex("%1"),
-		std::to_string(getpid()));
+	const auto socketPath = std::vformat(
+		std::string_view(SocketPath),
+		std::make_format_args(
+			static_cast<const std::string>(std::to_string(getpid()))));
 
 	if (socketPath.empty()) {
 		g_critical("IPC socket path is not set.");
