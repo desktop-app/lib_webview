@@ -42,8 +42,10 @@ using namespace Library;
 namespace GObject = gi::repository::GObject;
 
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview";
-constexpr auto kMasterObjectPath = "/org/desktop_app/GtkIntegration/Webview/Master";
-constexpr auto kHelperObjectPath = "/org/desktop_app/GtkIntegration/Webview/Helper";
+constexpr auto kMasterObjectPath
+	= "/org/desktop_app/GtkIntegration/Webview/Master";
+constexpr auto kHelperObjectPath
+	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataUrlScheme = "desktop-app-resource";
 constexpr auto kFullDomain = "desktop-app-resource://domain/";
 
@@ -255,12 +257,20 @@ bool Instance::create(Config config) {
 		const auto a = config.opaqueBg.alpha();
 		const auto protocol = config.dataProtocolOverride;
 		const auto path = config.userDataPath;
-		_helper.call_create(debug, r, g, b, a, protocol, path, crl::guard(&guard, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			success = _helper.call_create_finish(res, nullptr);
-			GLib::MainContext::default_().wakeup();
-		}));
+		_helper.call_create(
+			debug,
+			r,
+			g,
+			b,
+			a,
+			protocol,
+			path,
+			crl::guard(&guard, [&](
+					GObject::Object source_object,
+					Gio::AsyncResult res) {
+				success = _helper.call_create_finish(res, nullptr);
+				GLib::MainContext::default_().wakeup();
+			}));
 
 		while (!success && _connected) {
 			GLib::MainContext::default_().iteration(true);
@@ -952,7 +962,8 @@ void Instance::startProcess() {
 	_dbusServer.start();
 	const ::base::has_weak_ptr guard;
 	auto started = ulong();
-	const auto newConnection = _dbusServer.signal_new_connection().connect([&](
+	const auto newConnection = _dbusServer.signal_new_connection().connect(
+		[&](
 			Gio::DBusServer,
 			Gio::DBusConnection connection) {
 		_master = MasterSkeleton::new_();
@@ -1086,7 +1097,8 @@ void Instance::registerMasterMethodHandlers() {
 			const std::string &uri,
 			bool newWindow) {
 		if (newWindow) {
-			if (_navigationStartHandler && _navigationStartHandler(uri, true)) {
+			if (_navigationStartHandler
+					&& _navigationStartHandler(uri, true)) {
 				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
 			_master.complete_navigation_started(invocation, false);
@@ -1464,7 +1476,8 @@ bool Instance::processRedirect(WebKitURISchemeRequest *request) {
 	}
 
 	// Copy specific headers from the original request
-	const auto originalHeaders = webkit_uri_scheme_request_get_http_headers(request);
+	const auto originalHeaders
+		= webkit_uri_scheme_request_get_http_headers(request);
 	if (originalHeaders) {
 		SoupMessageHeaders *newHeaders = nullptr;
 		g_object_get(msg, "request-headers", &newHeaders, nullptr);
