@@ -1102,14 +1102,13 @@ void Instance::registerMasterMethodHandlers() {
 				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
 			_master.complete_navigation_started(invocation, false);
-		} else if (!std::string(uri).starts_with(_dataDomain)
+		} else if (!uri.starts_with(_dataDomain)
 				&& _navigationStartHandler
 				&& !_navigationStartHandler(uri, false)) {
 			_master.complete_navigation_started(invocation, false);
 		} else {
 			_master.complete_navigation_started(invocation, true);
 		}
-
 		return true;
 	});
 
