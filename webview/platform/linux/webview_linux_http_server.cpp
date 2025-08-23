@@ -22,7 +22,7 @@ struct HttpServer::Private {
 		QTcpSocket *socket,
 		const QByteArray &id,
 		const ::base::flat_map<QByteArray, QByteArray> &headers,
-		const std::shared_ptr<HttpServer::Guard> &guard);
+		const std::shared_ptr<Guard> &guard);
 
 	QNetworkAccessManager manager;
 	QByteArray password;
@@ -30,7 +30,7 @@ struct HttpServer::Private {
 		QTcpSocket *socket,
 		const QByteArray &id,
 		const ::base::flat_map<QByteArray, QByteArray> &headers,
-		const std::shared_ptr<HttpServer::Guard> &guard)> handler;
+		const std::shared_ptr<Guard> &guard)> handler;
 };
 
 void HttpServer::Private::handleRequest(QTcpSocket *socket) {
@@ -94,7 +94,7 @@ bool HttpServer::Private::processRedirect(
 		QTcpSocket *socket,
 		const QByteArray &id,
 		const ::base::flat_map<QByteArray, QByteArray> &headers,
-		const std::shared_ptr<HttpServer::Guard> &guard) {
+		const std::shared_ptr<Guard> &guard) {
 	const auto dot = id.indexOf('.');
 	const auto slash = id.indexOf('/');
 	if (dot < 0 || slash < 0 || dot > slash) {
