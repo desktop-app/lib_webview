@@ -709,12 +709,12 @@ void Instance::dataRequest(
 #endif // Qt < 6.8.0
 
 	const auto total = resolved.totalSize ? resolved.totalSize : length;
+	const auto partial = (requestedOffset > 0) || (requestedLimit > 0);
 	if (requestedLimit <= 0) {
 		requestedLimit = (total - requestedOffset);
 	}
 	
 	if (!headersWritten) {
-		const auto partial = (requestedOffset > 0) || (requestedLimit > 0);
 		socket->write("HTTP/1.1 ");
 		socket->write(partial ? "206 Partial Content\r\n" : "200 OK\r\n");
 
