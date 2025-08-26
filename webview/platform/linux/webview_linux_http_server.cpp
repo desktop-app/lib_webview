@@ -66,14 +66,16 @@ void HttpServer::Private::handleRequest(QTcpSocket *socket) {
 			: QByteArray();
 	};
 
-	auto authed = false;
-	const auto auth = getHeader("Authorization");
-	if (auth.mid(0, 6).toLower() == "basic ") {
-		const auto userPass = QByteArray::fromBase64(auth.mid(6));
-		if (userPass == ':' + password) {
-			authed = true;
+	const auto authed = [&] {
+		const auto auth = getHeader("Authorization");
+		if (auth.startsWith("Basic ")) {
+			const auto userPass = QByteArray::fromBase64(auth.mid(6));
+			if (userPass == ':' + password) {
+				return true;
+			}
 		}
-	}
+		return false;
+	}();
 
 	if (!authed) {
 		socket->write("HTTP/1.1 401 Unauthorized\r\n");
