@@ -35,7 +35,9 @@ struct HttpServer::Private {
 
 void HttpServer::Private::handleRequest(QTcpSocket *socket) {
 	const auto guard = std::make_shared<Guard>(crl::guard(socket, [=] {
-		socket->disconnectFromHost();
+		QMetaObject::invokeMethod(socket, [=] {
+			socket->disconnectFromHost();
+		});
 	}));
 
 	const auto firstLine = socket->readLine().simplified().split(' ');
