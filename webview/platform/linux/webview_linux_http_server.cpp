@@ -128,12 +128,8 @@ bool HttpServer::Private::processRedirect(
 	request.setRawHeader("Referer", "http://desktop-app-resource/page.html");
 
 	const auto reply = manager.get(request);
-	QObject::connect(reply, &QNetworkReply::finished, socket, [
-		=, 
-		replyGuard = std::make_unique<Guard>(crl::guard(reply, [=] {
-			reply->deleteLater();
-		}))
-	] {
+	connect(socket, &QObject::destroyed, reply, &QObject::deleteLater);
+	connect(reply, &QNetworkReply::finished, socket, [=] {
 		(void) guard;
 		const auto input = reply->readAll();
 		socket->write("HTTP/1.1 200 OK\r\n");
@@ -173,15 +169,15 @@ HttpServer::HttpServer(
 	_private->password = password;
 	_private->handler = handler;
 
-	QObject::connect(this, &QTcpServer::newConnection, [=] {
+	connect(this, &QTcpServer::newConnection, [=] {
 		while (const auto socket = nextPendingConnection()) {
-			QObject::connect(
+			connect(
 				socket,
 				&QAbstractSocket::disconnected,
 				socket,
 				&QObject::deleteLater);
 
-			QObject::connect(socket, &QIODevice::readyRead, socket, [=] {
+			connect(socket, &QIODevice::readyRead, this, [=] {
 				_private->handleRequest(socket);
 			}, Qt::SingleShotConnection);
 		}
