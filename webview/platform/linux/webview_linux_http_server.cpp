@@ -128,7 +128,7 @@ bool HttpServer::Private::processRedirect(
 	const auto reply = manager.get(request);
 	QObject::connect(reply, &QNetworkReply::finished, socket, [
 		=, 
-		replyGuard = std::make_unique<Guard>(crl::guard(reply, [=] {
+		replyGuard = gsl::finally(crl::guard(reply, [=] {
 			reply->deleteLater();
 		}))
 	] {
