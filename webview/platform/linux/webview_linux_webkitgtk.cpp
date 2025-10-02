@@ -140,7 +140,6 @@ private:
 	std::optional<HttpServer> _dataServer;
 
 	GtkWidget *_window = nullptr;
-	GtkWidget *_x11SizeFix = nullptr;
 	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
 
@@ -301,10 +300,6 @@ bool Instance::create(Config config) {
 	}
 	setOpaqueBg(config.opaqueBg);
 
-	if (!_wayland) {
-		_x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
-	}
-
 	const auto base = config.userDataPath;
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
@@ -451,9 +446,10 @@ bool Instance::create(Config config) {
 	}
 	if (gtk_window_set_child) {
 		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
-	} else if (_x11SizeFix) {
-		gtk_container_add(GTK_CONTAINER(_x11SizeFix), GTK_WIDGET(_webview));
-		gtk_container_add(GTK_CONTAINER(_window), _x11SizeFix);
+	} else if (!_wayland) {
+		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
+		gtk_container_add(GTK_CONTAINER(x11SizeFix), GTK_WIDGET(_webview));
+		gtk_container_add(GTK_CONTAINER(_window), x11SizeFix);
 	} else {
 		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
