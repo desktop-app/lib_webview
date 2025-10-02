@@ -23,6 +23,7 @@
 #include <QtGui/QDesktopServices>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QWindow>
+#include <QtGui/QtEvents>
 #include <QtWidgets/QWidget>
 
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
@@ -70,6 +71,8 @@ public:
 	bool create(Config config);
 	ResolveResult resolve();
 	bool startDataServer();
+
+	void resize(int w, int h);
 
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
@@ -134,7 +137,7 @@ private:
 	Gio::DBusObjectManagerServer _dbusObjectManager;
 	Gio::Subprocess _serviceProcess;
 
-	bool _wayland = false;
+	Platform _platform = Platform::Any;
 	::base::unique_qptr<QWidget> _widget;
 	QPointer<Compositor> _compositor;
 	std::optional<HttpServer> _dataServer;
@@ -159,7 +162,13 @@ private:
 Instance::Instance(bool remoting)
 : _remoting(remoting) {
 	if (_remoting) {
-		_wayland = !Platform::IsX11();
+		_platform = ::Platform::IsX11()
+			? Platform::X11
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+			: Platform::Wayland;
+#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+			: Platform::Any;
+#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		startProcess();
 	}
 }
@@ -181,13 +190,6 @@ Instance::~Instance() {
 }
 
 bool Instance::create(Config config) {
-	_debug = config.debug;
-	_messageHandler = std::move(config.messageHandler);
-	_navigationStartHandler = std::move(config.navigationStartHandler);
-	_navigationDoneHandler = std::move(config.navigationDoneHandler);
-	_dialogHandler = std::move(config.dialogHandler);
-	_dataRequestHandler = std::move(config.dataRequestHandler);
-
 	if (_remoting) {
 		const auto resolveResult = resolve();
 		if (resolveResult != ResolveResult::Success) {
@@ -208,8 +210,10 @@ bool Instance::create(Config config) {
 			if (!widget) {
 				if (Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
 						!= Ui::GL::Backend::OpenGL) {
-					LOG(("WebView Error: OpenGL is disabled."));
-					return false;
+					_platform = Platform::Any;
+					stopProcess();
+					startProcess();
+					return create(std::move(config));
 				}
 				_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
 				widget = static_cast<QQuickWidget*>(_widget.get());
@@ -225,11 +229,22 @@ bool Instance::create(Config config) {
 		}
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (_compositor) {
-			LOG(("WebView Error: No Wayland support."));
-			return false;
+			_platform = Platform::Any;
+			stopProcess();
+			startProcess();
+			return create(std::move(config));
 		}
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+	}
 
+	_debug = config.debug;
+	_messageHandler = std::move(config.messageHandler);
+	_navigationStartHandler = std::move(config.navigationStartHandler);
+	_navigationDoneHandler = std::move(config.navigationDoneHandler);
+	_dialogHandler = std::move(config.dialogHandler);
+	_dataRequestHandler = std::move(config.dataRequestHandler);
+
+	if (_remoting) {
 		if (!_helper) {
 			return false;
 		}
@@ -253,7 +268,24 @@ bool Instance::create(Config config) {
 			GLib::MainContext::default_().iteration(true);
 		}
 
-		if (success.value_or(false) && !_compositor) {
+		if (!success.value_or(false)) {
+			return false;
+		}
+
+		switch (_platform) {
+		case Platform::Any:
+			_widget = ::base::make_unique_q<QWidget>(config.parent);
+			::base::install_event_filter(_widget, [=](
+					not_null<QEvent*> e) {
+				if (e->type() == QEvent::Resize) {
+					const auto size = static_cast<QResizeEvent*>(e.get())->size();
+					resize(size.width(), size.height());
+				}
+				return ::base::EventFilterResult::Continue;
+			});
+			_widget->show();
+			break;
+		case Platform::X11:
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
 			::base::install_event_filter(window, [=](
 					not_null<QEvent*> e) {
@@ -272,13 +304,15 @@ bool Instance::create(Config config) {
 					config.parent,
 					Qt::FramelessWindowHint));
 			_widget->show();
+			break;
 		}
-		return success.value_or(false);
+
+		return true;
 	}
 
-	_window = _wayland
-		? gtk_window_new(GTK_WINDOW_TOPLEVEL)
-		: gtk_plug_new(0);
+	_window = _platform == Platform::X11
+		? gtk_plug_new(0)
+		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (gtk_widget_add_css_class) {
 		gtk_widget_add_css_class(_window, "webviewWindow");
 	} else {
@@ -336,6 +370,14 @@ bool Instance::create(Config config) {
 			Instance *instance,
 			void *message) {
 			instance->scriptMessageReceived(message);
+		}),
+		this);
+	g_signal_connect_swapped(
+		_window,
+		"destroy",
+		G_CALLBACK(+[](Instance *instance) {
+			instance->_window = nullptr;
+			Gio::Application::get_default().quit();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -446,7 +488,7 @@ bool Instance::create(Config config) {
 	}
 	if (gtk_window_set_child) {
 		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
-	} else if (!_wayland) {
+	} else if (_platform == Platform::X11) {
 		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
 		gtk_container_add(GTK_CONTAINER(x11SizeFix), GTK_WIDGET(_webview));
 		gtk_container_add(GTK_CONTAINER(_window), x11SizeFix);
@@ -778,10 +820,19 @@ ResolveResult Instance::resolve() {
 			GLib::MainContext::default_().iteration(true);
 		}
 
+		if (_platform != Platform::Any
+				&& result
+				&& *result != ResolveResult::Success) {
+			_platform = Platform::Any;
+			stopProcess();
+			startProcess();
+			return resolve();
+		}
+
 		return result.value_or(ResolveResult::IPCFailure);
 	}
 
-	return Resolve(_wayland);
+	return Resolve(_platform);
 }
 
 void Instance::navigate(std::string url) {
@@ -902,7 +953,7 @@ void *Instance::winId() {
 		return ret.value_or(nullptr);
 	}
 
-	if (_wayland) {
+	if (_platform != Platform::X11) {
 		return nullptr;
 	}
 
@@ -942,7 +993,9 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 
 	const auto background = std::format(
 		".webviewWindow {{background: {};}}",
-		_wayland ? "transparent" : opaqueBg.name().toStdString());
+		_platform == Platform::Wayland
+			? "transparent"
+			: opaqueBg.name().toStdString());
 
 	if (gtk_css_provider_load_from_string) {
 		gtk_css_provider_load_from_string(
@@ -955,6 +1008,22 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 			-1,
 			nullptr);
 	}
+}
+
+void Instance::resize(int w, int h) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_resize(w, h, nullptr);
+		return;
+	}
+
+	gtk_widget_set_size_request(_window, w, h);
+	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
+		gtk_widget_set_size_request(_window, -1, -1);
+	}));
 }
 
 void Instance::startProcess() {
@@ -985,7 +1054,7 @@ void Instance::startProcess() {
 		return;
 	}
 
-	if (_wayland && !_compositor) {
+	if (_platform == Platform::Wayland && !_compositor) {
 		_compositor = new Compositor(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
@@ -1114,22 +1183,26 @@ void Instance::registerMasterMethodHandlers() {
 	_master.signal_handle_get_start_data().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
-		_master.complete_get_start_data(invocation, [] {
-			if (auto app = Gio::Application::get_default()) {
-				if (const auto appId = app.get_application_id()) {
-					return std::string(appId);
+		_master.complete_get_start_data(
+			invocation,
+			int(_platform),
+			_compositor ? _compositor->socketName().toStdString() : "",
+			[] {
+				if (auto app = Gio::Application::get_default()) {
+					if (const auto appId = app.get_application_id()) {
+						return std::string(appId);
+					}
 				}
-			}
 
-			const auto qtAppId = QGuiApplication::desktopFileName()
-				.toStdString();
+				const auto qtAppId = QGuiApplication::desktopFileName()
+					.toStdString();
 
-			if (Gio::Application::id_is_valid(qtAppId)) {
-				return qtAppId;
-			}
+				if (Gio::Application::id_is_valid(qtAppId)) {
+					return qtAppId;
+				}
 
-			return std::string();
-		}(), _compositor ? _compositor->socketName().toStdString() : "");
+				return std::string();
+			}());
 		return true;
 	});
 
@@ -1319,14 +1392,14 @@ int Instance::exec() {
 					loop.quit();
 					return;
 				}
-				if (const auto appId = std::get<1>(*settings)
-						; !appId.empty()) {
-					app.set_application_id(appId);
-				}
+				_platform = Platform(std::get<1>(*settings));
 				if (const auto waylandDisplay = std::get<2>(*settings)
 						; !waylandDisplay.empty()) {
 					GLib::setenv("WAYLAND_DISPLAY", waylandDisplay, true);
-					_wayland = true;
+				}
+				if (const auto appId = std::get<3>(*settings)
+						; !appId.empty()) {
+					app.set_application_id(appId);
 				}
 				loop.quit();
 			});
@@ -1406,6 +1479,16 @@ void Instance::registerHelperMethodHandlers() {
 		return true;
 	});
 
+	_helper.signal_handle_resize().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			int w,
+			int h) {
+		resize(w, h);
+		_helper.complete_resize(invocation);
+		return true;
+	});
+
 	_helper.signal_handle_init().connect([=](
 			Helper,
 			Gio::DBusMethodInvocation invocation,
@@ -1449,23 +1532,6 @@ void Instance::registerHelperMethodHandlers() {
 } // namespace
 
 Available Availability() {
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-	if (!Platform::IsX11()
-			&& Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
-				!= Ui::GL::Backend::OpenGL) {
-		return Available{
-			.error = Available::Error::NoOpenGL,
-			.details = "Please enable OpenGL in application settings.",
-		};
-	}
-#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-	if (!Platform::IsX11()) {
-		return Available{
-			.error = Available::Error::NonX11,
-			.details = "Unsupported display server. Please switch to X11.",
-		};
-	}
-#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 	Instance instance;
 	const auto resolved = instance.resolve();
 	if (resolved == ResolveResult::NoLibrary) {

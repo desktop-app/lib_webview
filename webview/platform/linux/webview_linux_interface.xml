@@ -1,8 +1,9 @@
 <node>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
 		<method name='GetStartData'>
-			<arg type='s' name='appId' direction='out'/>
+			<arg type='i' name='platform' direction='out'/>
 			<arg type='s' name='waylandDisplay' direction='out'/>
+			<arg type='s' name='appId' direction='out'/>
 		</method>
 		<method name='MessageReceived'>
 			<arg type='ay' name='message' direction='in'/>
@@ -48,6 +49,10 @@
 		</method>
 		<method name='Navigate'>
 			<arg type='s' name='url' direction='in'/>
+		</method>
+		<method name='Resize'>
+			<arg type='i' name='w' direction='in'/>
+			<arg type='i' name='h' direction='in'/>
 		</method>
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>

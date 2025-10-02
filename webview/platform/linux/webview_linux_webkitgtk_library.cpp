@@ -10,8 +10,8 @@
 
 namespace Webview::WebKitGTK::Library {
 
-ResolveResult Resolve(bool wayland) {
-	const auto lib = (wayland
+ResolveResult Resolve(const Platform &platform) {
+	const auto lib = (platform != Platform::X11
 			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 			: nullptr)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
@@ -26,6 +26,7 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_size_request)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
@@ -38,7 +39,7 @@ ResolveResult Resolve(bool wayland) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
-		&& (wayland
+		&& (platform != Platform::X11
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
@@ -89,7 +90,14 @@ ResolveResult Resolve(bool wayland) {
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
-		gdk_set_allowed_backends(wayland ? "wayland" : "x11");
+		switch (platform) {
+		case Platform::Wayland:
+			gdk_set_allowed_backends("wayland");
+			break;
+		case Platform::X11:
+			gdk_set_allowed_backends("x11");
+			break;
+		}
 	}
 	return gtk_init_check(0, 0)
 		? ResolveResult::Success
