@@ -132,6 +132,10 @@ inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *vadjustment);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
+inline void (*gtk_widget_set_size_request)(
+	GtkWidget *window,
+	gint width,
+	gint height);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
@@ -273,6 +277,12 @@ enum class ResolveResult {
 	IPCFailure,
 };
 
-[[nodiscard]] ResolveResult Resolve(bool wayland);
+enum class Platform {
+	Any,
+	Wayland,
+	X11,
+};
+
+[[nodiscard]] ResolveResult Resolve(const Platform &platform);
 
 } // namespace Webview::WebKitGTK::Library
