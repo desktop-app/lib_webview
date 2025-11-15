@@ -68,6 +68,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.userDataPath = config.storageId.path.toStdString(),
 		.userDataToken = config.storageId.token.toStdString(),
 		.debug = OptionWebviewDebugEnabled.value(),
+		.safe = config.safe,
 	});
 	return (_webview != nullptr);
 }

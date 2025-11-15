@@ -36,6 +36,7 @@ struct WindowConfig {
 	QColor opaqueBg;
 	StorageId storageId;
 	QString dataProtocolOverride;
+	bool safe = false;
 };
 
 class Window final {

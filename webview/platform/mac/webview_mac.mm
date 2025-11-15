@@ -458,6 +458,9 @@ Instance::Instance(Config config) {
 	if (config.debug) {
 		[configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
 	}
+	if (config.safe) {
+		[configuration.preferences setValue:@NO forKey:@"fraudulentWebsiteWarningEnabled"];
+	}
 	const auto updateStates = [=] {
 		updateHistoryStates();
 	};

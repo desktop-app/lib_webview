@@ -125,6 +125,7 @@ struct Config {
 	std::string userDataPath;
 	std::string userDataToken;
 	bool debug = false;
+	bool safe = false;
 };
 
 struct Available {
