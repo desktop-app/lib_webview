@@ -30,6 +30,9 @@
 #include <QtQuickWidgets/QQuickWidget>
 #endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
+#if __has_include(<giounix/giounix.hpp>)
+#include <giounix/giounix.hpp>
+#endif // __has_include(<giounix/giounix.hpp>)
 #include <webview/webview.hpp>
 #include <crl/crl.h>
 #include <rpl/rpl.h>
@@ -1029,11 +1032,27 @@ void Instance::resize(int w, int h) {
 void Instance::startProcess() {
 	auto loop = GLib::MainLoop::new_();
 
-	auto serviceProcess = Gio::Subprocess::new_({
+	auto serviceLauncher = Gio::SubprocessLauncher::new_(
+		Gio::SubprocessFlags::NONE_);
+
+	int pipefd[2]{};
+	GError *error = nullptr;
+	if (!g_unix_open_pipe(pipefd, O_CLOEXEC, &error)) {
+		LOG(("WebView Error: %1").arg(error->message));
+		g_clear_error(&error);
+		return;
+	}
+
+	serviceLauncher.take_fd(pipefd[0], 3);
+	auto pipeGuard = std::make_optional(gsl::finally([&] {
+		GLib::close(pipefd[1]);
+	}));
+
+	auto serviceProcess = serviceLauncher.spawnv({
 		::base::Integration::Instance().executablePath().toStdString(),
 		std::string("-webviewhelper"),
 		SocketPath,
-	}, Gio::SubprocessFlags::NONE_);
+	});
 
 	if (!serviceProcess) {
 		LOG(("WebView Error: %1").arg(
@@ -1140,6 +1159,7 @@ void Instance::startProcess() {
 		loop.quit();
 	});
 
+	pipeGuard.reset();
 	loop.run();
 	if (timeoutHappened) {
 		LOG(("WebView Error: Timed out waiting for WebView helper process."));
@@ -1316,42 +1336,20 @@ int Instance::exec() {
 
 	auto loop = GLib::MainLoop::new_();
 
-	const auto socketPath = std::vformat(
-		std::string_view(SocketPath),
-		std::make_format_args(
-			static_cast<const std::string>(std::to_string(getpid()))));
-
-	if (socketPath.empty()) {
-		g_critical("IPC socket path is not set.");
-		return 1;
-	}
-
-	{
-		auto socketFile = Gio::File::new_for_path(socketPath);
-
-		auto socketMonitor = socketFile.monitor(Gio::FileMonitorFlags::NONE_);
-		if (!socketMonitor) {
-			g_critical("%s", socketMonitor.error().message_().c_str());
-			return 1;
-		}
-
-		socketMonitor->signal_changed().connect([&](
-				Gio::FileMonitor,
-				Gio::File file,
-				Gio::File otherFile,
-				Gio::FileMonitorEvent eventType) {
-			if (eventType == Gio::FileMonitorEvent::CREATED_) {
-				loop.quit();
-			}
-		});
-
-		if (!socketFile.query_exists()) {
-			loop.run();
-		}
-	}
+	std::uint8_t dummy{};
+#if __has_include(<giounix/giounix.hpp>)
+	GioUnix::InputStream::new_(3, true).read_all(&dummy, 1);
+#else // __has_include(<giounix/giounix.hpp>)
+	Gio::UnixInputStream::new_(3, true).read_all(&dummy, 1);
+#endif // !__has_include(<giounix/giounix.hpp>)
 
 	auto connection = Gio::DBusConnection::new_for_address_sync(
-		SocketPathToDBusAddress(socketPath),
+		SocketPathToDBusAddress(
+			std::vformat(
+				std::string_view(SocketPath),
+				std::make_format_args(
+					static_cast<const std::string>(
+						std::to_string(getpid()))))),
 		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_);
 
 	if (!connection) {
