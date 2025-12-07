@@ -281,7 +281,9 @@ bool Instance::create(Config config) {
 			::base::install_event_filter(_widget, [=](
 					not_null<QEvent*> e) {
 				if (e->type() == QEvent::Resize) {
-					const auto size = static_cast<QResizeEvent*>(e.get())->size();
+					const auto size = static_cast<QResizeEvent*>(
+						e.get()
+					)->size();
 					resize(size.width(), size.height());
 				}
 				return ::base::EventFilterResult::Continue;
@@ -749,7 +751,7 @@ void Instance::dataRequest(
 	if (requestedLimit <= 0) {
 		requestedLimit = (total - requestedOffset);
 	}
-	
+
 	if (!headersWritten) {
 		socket->write("HTTP/1.1 ");
 		socket->write(partial ? "206 Partial Content\r\n" : "200 OK\r\n");
