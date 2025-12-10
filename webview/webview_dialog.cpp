@@ -152,7 +152,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 
 		buttons->resizeToWidth(st::boxWideWidth - 2 * buttonPadding.left());
 		buttons->widthValue(
-		) | rpl::start_with_next([=](int width) {
+		) | rpl::on_next([=](int width) {
 			const auto count = list->size();
 			const auto skip = st::webviewDialogPadding.right();
 			auto buttonsWidth = 0;
@@ -180,7 +180,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		container->resizeToWidth(st::boxWideWidth);
 
 		container->heightValue(
-		) | rpl::start_with_next([=](int height) {
+		) | rpl::on_next([=](int height) {
 			raw->setInnerSize({ st::boxWideWidth, titleHeight + height });
 		}, container->lifetime());
 
@@ -192,16 +192,16 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 				raw->hideGetDuration();
 			};
 			input->submits(
-			) | rpl::start_with_next(submitted, input->lifetime());
+			) | rpl::on_next(submitted, input->lifetime());
 		}
 		container->events(
-		) | rpl::start_with_next([=](not_null<QEvent*> event) {
+		) | rpl::on_next([=](not_null<QEvent*> event) {
 			if (input && event->type() == QEvent::FocusIn) {
 				input->setFocus();
 			}
 		}, container->lifetime());
 
-		raw->closeRequests() | rpl::start_with_next([=] {
+		raw->closeRequests() | rpl::on_next([=] {
 			raw->hideGetDuration();
 		}, raw->lifetime());
 
@@ -212,7 +212,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 			}
 		};
 		QObject::connect(raw, &QObject::destroyed, finish);
-		raw->closeEvents() | rpl::start_with_next(finish, raw->lifetime());
+		raw->closeEvents() | rpl::on_next(finish, raw->lifetime());
 
 		raw->showInner(std::move(layout));
 	});

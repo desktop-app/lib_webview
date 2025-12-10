@@ -87,7 +87,7 @@ public:
 			)
 		) | rpl::map([=] {
 			return std::make_tuple(geometry(), scaleFactor());
-		}) | rpl::start_with_next([=](QRect geometry, int scaleFactor) {
+		}) | rpl::on_next([=](QRect geometry, int scaleFactor) {
 			_xdg.setLogicalPosition(geometry.topLeft() / scaleFactor);
 			_xdg.setLogicalSize(geometry.size() / scaleFactor);
 		}, _lifetime);
@@ -126,7 +126,7 @@ Compositor::Chrome::Chrome(
 	base::qt_signal_producer(
 		xdgSurface,
 		&QObject::destroyed
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		delete this;
 	}, _lifetime);
 
@@ -135,7 +135,7 @@ Compositor::Chrome::Chrome(
 			view(),
 			&QWaylandView::surfaceChanged
 		)
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		setOutput(output);
 	}, _lifetime);
 
@@ -174,7 +174,7 @@ Compositor::Chrome::Chrome(
 	}) | rpl::distinct_until_changed(
 	) | rpl::filter([=](const QSize &size) {
 		return !size.isEmpty();
-	}) | rpl::start_with_next([=](const QSize &size) {
+	}) | rpl::on_next([=](const QSize &size) {
 		if (const auto toplevel = xdgSurface->toplevel()) {
 			toplevel->sendFullscreen(size);
 		}
@@ -198,7 +198,7 @@ Compositor::Chrome::Chrome(
 	}) | rpl::distinct_until_changed(
 	) | rpl::filter([=](const QRect &geometry) {
 		return geometry.isValid();
-	}) | rpl::start_with_next([=](const QRect &geometry) {
+	}) | rpl::on_next([=](const QRect &geometry) {
 		setX(-geometry.x());
 		setY(-geometry.y());
 
@@ -222,7 +222,7 @@ Compositor::Chrome::Chrome(
 			)
 		) | rpl::map([=] {
 			return toplevel->title();
-		}) | rpl::start_with_next([=](const QString &title) {
+		}) | rpl::on_next([=](const QString &title) {
 			window->setTitle(title);
 		}, _lifetime);
 
@@ -233,7 +233,7 @@ Compositor::Chrome::Chrome(
 			)
 		) | rpl::map([=] {
 			return toplevel->fullscreen();
-		}) | rpl::start_with_next([=](bool fullscreen) {
+		}) | rpl::on_next([=](bool fullscreen) {
 			if (!fullscreen) {
 				toplevel->sendFullscreen(window->size());
 			}
@@ -249,7 +249,7 @@ Compositor::Compositor(const QByteArray &socketName)
 		if (!_private->output || _private->output->chrome()) {
 			const auto output = new Output(this, xdgSurface);
 
-			output->chrome()->surfaceCompleted() | rpl::start_with_next([=] {
+			output->chrome()->surfaceCompleted() | rpl::on_next([=] {
 				output->window()->show();
 			}, _private->lifetime);
 		} else {
@@ -272,7 +272,7 @@ Compositor::Compositor(const QByteArray &socketName)
 		window->setProperty("output", QVariant::fromValue(output));
 		const auto chrome = new Chrome(output, window, xdgSurface, true);
 
-		chrome->surfaceCompleted() | rpl::start_with_next([=] {
+		chrome->surfaceCompleted() | rpl::on_next([=] {
 			if (widget && parent == widget->quickWindow()) {
 				window->setTransientParent(widget->window()->windowHandle());
 				window->setPosition(

@@ -182,7 +182,7 @@ auto Window::navigationHistoryState() const
 
 		std::move(
 			data
-		) | rpl::start_with_next([=](NavigationHistoryState state) {
+		) | rpl::on_next([=](NavigationHistoryState state) {
 			base::Integration::Instance().enterFromEventLoop([&] {
 				consumer.put_next_copy(state);
 			});

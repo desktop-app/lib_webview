@@ -242,7 +242,7 @@ void Instance::processReadySteps() {
 		});
 	}
 	if (guard) {
-		_widget->sizeValue() | rpl::start_with_next([=](QSize size) {
+		_widget->sizeValue() | rpl::on_next([=](QSize size) {
 			_embed->setGeometry(QRect(QPoint(), size));
 
 			if (!ready()) {
