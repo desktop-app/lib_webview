@@ -1037,7 +1037,7 @@ void Instance::startProcess() {
 	auto serviceLauncher = Gio::SubprocessLauncher::new_(
 		Gio::SubprocessFlags::NONE_);
 
-	int pipefd[2]{};
+	int pipefd[2] = { -1, -1 };
 	GError *error = nullptr;
 	if (!g_unix_open_pipe(pipefd, O_CLOEXEC, &error)
 			&& (error || !g_unix_open_pipe(pipefd, FD_CLOEXEC, &error))) {
