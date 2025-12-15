@@ -1039,7 +1039,8 @@ void Instance::startProcess() {
 
 	int pipefd[2]{};
 	GError *error = nullptr;
-	if (!g_unix_open_pipe(pipefd, FD_CLOEXEC, &error)) {
+	if (!g_unix_open_pipe(pipefd, O_CLOEXEC, &error)
+			&& (error || !g_unix_open_pipe(pipefd, FD_CLOEXEC, &error))) {
 		LOG(("WebView Error: %1").arg(error->message));
 		g_clear_error(&error);
 		return;
