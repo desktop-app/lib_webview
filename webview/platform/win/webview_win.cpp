@@ -29,24 +29,27 @@ base::unique_qptr<QWindow> MakeFramelessWindow() {
 }
 
 Available Availability() {
-	if (SystemTooOld()) {
+	static const auto result = [] {
+		if (SystemTooOld()) {
+			return Available{
+				.error = Available::Error::OldWindows,
+				.details = "Please update your system to Windows 8.1 or later.",
+			};
+		} else if (EdgeChromium::Supported()) {
+			return Available{
+				.customSchemeRequests = true,
+				.customRangeRequests = true,
+				.customReferer = true,
+			};
+		} else if (EdgeHtml::Supported()) {
+			return Available{};
+		}
 		return Available{
-			.error = Available::Error::OldWindows,
-			.details = "Please update your system to Windows 8.1 or later.",
+			.error = Available::Error::NoWebview2,
+			.details = "Please install Microsoft Edge Webview2 Runtime.",
 		};
-	} else if (EdgeChromium::Supported()) {
-		return Available{
-			.customSchemeRequests = true,
-			.customRangeRequests = true,
-			.customReferer = true,
-		};
-	} else if (EdgeHtml::Supported()) {
-		return Available{};
-	}
-	return Available{
-		.error = Available::Error::NoWebview2,
-		.details = "Please install Microsoft Edge Webview2 Runtime.",
-	};
+	}();
+	return result;
 }
 
 bool SupportsEmbedAfterCreate() {
