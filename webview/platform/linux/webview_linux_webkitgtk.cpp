@@ -1533,23 +1533,26 @@ void Instance::registerHelperMethodHandlers() {
 } // namespace
 
 Available Availability() {
-	Instance instance;
-	const auto resolved = instance.resolve();
-	if (resolved == ResolveResult::NoLibrary) {
+	static const auto result = [] {
+		Instance instance;
+		const auto resolved = instance.resolve();
+		if (resolved == ResolveResult::NoLibrary) {
+			return Available{
+				.error = Available::Error::NoWebKitGTK,
+				.details = "Please install WebKitGTK "
+				"(webkit2gtk-4.1/webkit2gtk-4.0) "
+				"from your package manager.",
+			};
+		}
+		const auto success = (resolved == ResolveResult::Success)
+			&& instance.startDataServer();
 		return Available{
-			.error = Available::Error::NoWebKitGTK,
-			.details = "Please install WebKitGTK "
-			"(webkit2gtk-4.1/webkit2gtk-4.0) "
-			"from your package manager.",
+			.customSchemeRequests = success,
+			.customRangeRequests = success,
+			.customReferer = success,
 		};
-	}
-	const auto success = (resolved == ResolveResult::Success)
-		&& instance.startDataServer();
-	return Available{
-		.customSchemeRequests = success,
-		.customRangeRequests = success,
-		.customReferer = success,
-	};
+	}();
+	return result;
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
