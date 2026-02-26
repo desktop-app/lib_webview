@@ -506,11 +506,13 @@ bool Instance::create(Config config) {
 		gtk_widget_show_all(_window);
 	}
 	init(R"(
-window.external = {
-	invoke: function(s) {
-		window.webkit.messageHandlers.external.postMessage(s);
-	}
-};)");
+if (window === window.top) {
+	window.external = {
+		invoke: function(s) {
+			window.webkit.messageHandlers.external.postMessage(s);
+		}
+	};
+})");
 
 	return webkit_web_view_get_is_web_process_responsive(_webview);
 }

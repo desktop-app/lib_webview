@@ -105,7 +105,7 @@ Instance::Instance(Config config)
 	_widget->show();
 
 	setOpaqueBg(_config.opaqueBg);
-	init("window.external.invoke = s => window.external.notify(s)");
+	init("if(window===window.top){window.external.invoke=s=>window.external.notify(s)}");
 
 	init_apartment(apartment_type::single_threaded);
 	const auto weak = base::make_weak(this);

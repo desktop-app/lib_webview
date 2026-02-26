@@ -99,6 +99,9 @@ using TaskPointer = id<WKURLSchemeTask>;
 
 - (void) userContentController:(WKUserContentController *)userContentController
 	   didReceiveScriptMessage:(WKScriptMessage *)message {
+	if (!message.frameInfo.isMainFrame) {
+		return;
+	}
 	id body = [message body];
 	if ([body isKindOfClass:[NSString class]]) {
 		NSString *string = (NSString*)body;

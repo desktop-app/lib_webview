@@ -319,6 +319,16 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2WebMessageReceivedEventArgs *args) {
+	auto sourceUrl = base::CoTaskMemString();
+	args->get_Source(sourceUrl.put());
+	auto mainUrl = base::CoTaskMemString();
+	sender->get_Source(mainUrl.put());
+	if (!sourceUrl
+		|| !mainUrl
+		|| std::wstring_view(sourceUrl.data()) != mainUrl.data()) {
+		return S_OK;
+	}
+
 	auto message = base::CoTaskMemString();
 	const auto result = args->TryGetWebMessageAsString(message.put());
 
@@ -700,7 +710,7 @@ Instance::Instance(Config &&config)
 	_widget->show();
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-	init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}");
+	init("if(window===window.top){window.external={invoke:s=>window.chrome.webview.postMessage(s)}}");
 	start(std::move(config));
 }
 
