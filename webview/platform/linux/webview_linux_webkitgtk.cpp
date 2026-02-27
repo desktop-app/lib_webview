@@ -53,6 +53,15 @@ constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataHost = "127.0.0.1";
 
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	QQuickWindow::setGraphicsApi;
+#else // Qt >= 6.0.0
+	QQuickWindow::setSceneGraphBackend;
+#endif // Qt < 6.0.0
+#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+
 std::string SocketPath;
 
 inline auto MethodError() {
@@ -141,6 +150,7 @@ private:
 	Gio::Subprocess _serviceProcess;
 
 	Platform _platform = Platform::Any;
+	Ui::GL::Backend _glBackend;
 	::base::unique_qptr<QWidget> _widget;
 	QPointer<Compositor> _compositor;
 	std::optional<HttpServer> _dataServer;
@@ -172,6 +182,7 @@ Instance::Instance(bool remoting)
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 			: Platform::Any;
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+		_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
 		startProcess();
 	}
 }
@@ -211,13 +222,17 @@ bool Instance::create(Config config) {
 		if (_compositor) {
 			auto widget = qobject_cast<QQuickWidget*>(_widget);
 			if (!widget) {
-				if (Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities())
-						!= Ui::GL::Backend::OpenGL) {
-					_platform = Platform::Any;
-					stopProcess();
-					startProcess();
-					return create(std::move(config));
-				}
+				[[maybe_unused]] static const auto Inited = [&] {
+					switch (_glBackend) {
+					case Ui::GL::Backend::Raster:
+						SetGraphicsApi(QSGRendererInterface::Software);
+						break;
+					case Ui::GL::Backend::OpenGL:
+						SetGraphicsApi(QSGRendererInterface::OpenGL);
+						break;
+					}
+					return true;
+				}();
 				_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
 				widget = static_cast<QQuickWidget*>(_widget.get());
 				_compositor->setWidget(widget);
@@ -1038,6 +1053,16 @@ void Instance::startProcess() {
 
 	auto serviceLauncher = Gio::SubprocessLauncher::new_(
 		Gio::SubprocessFlags::NONE_);
+
+	if (_platform == Platform::Wayland
+			&& _glBackend == Ui::GL::Backend::Raster) {
+		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
+		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
+		serviceLauncher.setenv("GDK_DISABLE", "gl", true);
+		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
+		serviceLauncher.setenv("GDK_GL", "disable", true);
+		serviceLauncher.setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", true);
+	}
 
 	int pipefd[2] = { -1, -1 };
 	GError *error = nullptr;
