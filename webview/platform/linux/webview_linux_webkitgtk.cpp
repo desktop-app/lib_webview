@@ -94,6 +94,7 @@ public:
 	void eval(std::string js) override;
 
 	void focus() override;
+	void setInteractionHandler(Fn<void()> handler) override;
 
 	QWidget *widget() override;
 
@@ -166,6 +167,7 @@ private:
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
+	Fn<void()> _interactionHandler;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	bool _loadFailed = false;
@@ -494,6 +496,30 @@ bool Instance::create(Config config) {
 			Instance *instance,
 			WebKitAuthenticationRequest *request) -> gboolean {
 			return instance->authenticate(request);
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
+		"button-press-event",
+		G_CALLBACK(+[](
+			Instance *instance,
+			GdkEventButton*) -> gboolean {
+			if (instance->_master) {
+				instance->_master.call_user_interaction(nullptr);
+			}
+			return FALSE;
+		}),
+		this);
+	g_signal_connect_swapped(
+		_webview,
+		"key-press-event",
+		G_CALLBACK(+[](
+			Instance *instance,
+			GdkEventKey*) -> gboolean {
+			if (instance->_master) {
+				instance->_master.call_user_interaction(nullptr);
+			}
+			return FALSE;
 		}),
 		this);
 	webkit_user_content_manager_register_script_message_handler(
@@ -946,6 +972,10 @@ void Instance::focus() {
 	}
 }
 
+void Instance::setInteractionHandler(Fn<void()> handler) {
+	_interactionHandler = std::move(handler);
+}
+
 QWidget *Instance::widget() {
 	return _widget.get();
 }
@@ -1348,6 +1378,16 @@ void Instance::registerMasterMethodHandlers() {
 			.canGoForward = canGoForward,
 		};
 		_master.complete_navigation_state_update(invocation);
+		return true;
+	});
+
+	_master.signal_handle_user_interaction().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation) {
+		if (_interactionHandler) {
+			_interactionHandler();
+		}
+		_master.complete_user_interaction(invocation);
 		return true;
 	});
 }

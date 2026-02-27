@@ -23,6 +23,8 @@
 #include "base/platform/win/base_windows_winrt.h"
 #include "base/platform/win/wrl/wrl_implements_h.h"
 
+#include <wrl/event.h>
+
 #include <QtCore/QUrl>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QWindow>
@@ -652,6 +654,7 @@ public:
 	void eval(std::string js) override;
 
 	void focus() override;
+	void setInteractionHandler(Fn<void()> handler) override;
 
 	QWidget *widget() override;
 
@@ -696,6 +699,8 @@ private:
 	base::unique_qptr<QWidget> _widget;
 	bool _pendingFocus = false;
 	bool _readyFlag = false;
+	Fn<void()> _interactionHandler;
+	WNDPROC _originalWndProc = nullptr;
 
 };
 
@@ -715,6 +720,14 @@ Instance::Instance(Config &&config)
 }
 
 Instance::~Instance() {
+	if (_originalWndProc && _handle) {
+		SetWindowLongPtrW(
+			_handle,
+			GWLP_WNDPROC,
+			reinterpret_cast<LONG_PTR>(_originalWndProc));
+		RemovePropW(_handle, L"WebviewOrigProc");
+		RemovePropW(_handle, L"WebviewInstance");
+	}
 	if (_handler) {
 		if (_handler->valid()) {
 			_handler->controller()->Close();
@@ -785,6 +798,66 @@ void Instance::processReadySteps() {
 			return base::EventFilterResult::Continue;
 		});
 		resizeToWindow();
+	}
+	if (guard && _interactionHandler) {
+		const auto weak = base::make_weak(this);
+		_originalWndProc = reinterpret_cast<WNDPROC>(
+			SetWindowLongPtrW(
+				_handle,
+				GWLP_WNDPROC,
+				reinterpret_cast<LONG_PTR>(+[](
+						HWND hwnd,
+						UINT msg,
+						WPARAM wParam,
+						LPARAM lParam) -> LRESULT {
+					if (msg == WM_PARENTNOTIFY) {
+						const auto event = LOWORD(wParam);
+						if (event == WM_LBUTTONDOWN
+							|| event == WM_RBUTTONDOWN
+							|| event == WM_MBUTTONDOWN) {
+							const auto instance = reinterpret_cast<Instance*>(
+								GetPropW(hwnd, L"WebviewInstance"));
+							if (instance && instance->_interactionHandler) {
+								instance->_interactionHandler();
+							}
+						}
+					}
+					const auto original = reinterpret_cast<WNDPROC>(
+						GetPropW(hwnd, L"WebviewOrigProc"));
+					return original
+						? CallWindowProcW(original, hwnd, msg, wParam, lParam)
+						: DefWindowProcW(hwnd, msg, wParam, lParam);
+				})));
+		SetPropW(
+			_handle,
+			L"WebviewOrigProc",
+			reinterpret_cast<HANDLE>(_originalWndProc));
+		SetPropW(
+			_handle,
+			L"WebviewInstance",
+			reinterpret_cast<HANDLE>(this));
+
+		auto token = ::EventRegistrationToken();
+		_handler->controller()->add_AcceleratorKeyPressed(
+			Microsoft::WRL::Callback<
+				ICoreWebView2AcceleratorKeyPressedEventHandler>(
+				[weak](
+						ICoreWebView2Controller*,
+						ICoreWebView2AcceleratorKeyPressedEventArgs *args
+						) -> HRESULT {
+					const auto that = weak.get();
+					if (!that || !that->_interactionHandler) {
+						return S_OK;
+					}
+					auto kind = COREWEBVIEW2_KEY_EVENT_KIND{};
+					args->get_KeyEventKind(&kind);
+					if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+						|| kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
+						that->_interactionHandler();
+					}
+					return S_OK;
+				}).Get(),
+			&token);
 	}
 	if (guard) {
 		for (const auto &step : base::take(_waitingForReady)) {
@@ -903,6 +976,10 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 	if (_handler) {
 		_handler->setOpaqueBg(opaqueBg);
 	}
+}
+
+void Instance::setInteractionHandler(Fn<void()> handler) {
+	_interactionHandler = std::move(handler);
 }
 
 } // namespace

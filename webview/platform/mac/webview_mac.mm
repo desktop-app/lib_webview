@@ -343,6 +343,7 @@ public:
 	void eval(std::string js) override;
 
 	void focus() override;
+	void setInteractionHandler(Fn<void()> handler) override;
 
 	QWidget *widget() override;
 
@@ -420,6 +421,8 @@ private:
 	std::vector<CacheKey> _partsLRU;
 	int64 _cacheTotal = 0;
 	int _taskAutoincrement = 0;
+	id _eventMonitor = nil;
+	Fn<void()> _interactionHandler;
 
 };
 
@@ -510,6 +513,10 @@ window.external = {
 }
 
 Instance::~Instance() {
+	if (_eventMonitor) {
+		[NSEvent removeMonitor:_eventMonitor];
+		_eventMonitor = nil;
+	}
 	base::take(_window);
 	base::take(_widget);
 	[_manager removeScriptMessageHandlerForName:@"external"];
@@ -853,6 +860,32 @@ void Instance::eval(std::string js) {
 }
 
 void Instance::focus() {
+}
+
+void Instance::setInteractionHandler(Fn<void()> handler) {
+	if (_eventMonitor) {
+		[NSEvent removeMonitor:_eventMonitor];
+		_eventMonitor = nil;
+	}
+	_interactionHandler = std::move(handler);
+	if (!_interactionHandler) {
+		return;
+	}
+	const auto weak = base::make_weak(this);
+	const auto mask = NSEventMaskLeftMouseDown
+		| NSEventMaskRightMouseDown
+		| NSEventMaskOtherMouseDown
+		| NSEventMaskKeyDown;
+	_eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:mask handler:^NSEvent*(NSEvent *event) {
+		const auto that = weak.get();
+		if (that && that->_interactionHandler) {
+			NSView *webview = that->_webview;
+			if (webview && event.window && event.window == [webview window]) {
+				that->_interactionHandler();
+			}
+		}
+		return event;
+	}];
 }
 
 QWidget *Instance::widget() {

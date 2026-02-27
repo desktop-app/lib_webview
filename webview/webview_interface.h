@@ -61,6 +61,9 @@ public:
 
 	virtual void focus() = 0;
 
+	virtual void setInteractionHandler(Fn<void()> handler) {
+	}
+
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 
 	[[nodiscard]] virtual QWidget *widget() = 0;

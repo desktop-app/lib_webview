@@ -68,6 +68,7 @@ public:
 	void eval(const QByteArray &js);
 
 	void focus();
+	void setInteractionHandler(Fn<void()> handler);
 
 	void refreshNavigationHistoryState();
 	[[nodiscard]] auto navigationHistoryState() const
@@ -93,6 +94,7 @@ private:
 	Fn<void(bool)> _navigationDoneHandler;
 	Fn<DialogResult(DialogArgs)> _dialogHandler;
 	Fn<DataResult(DataRequest)> _dataRequestHandler;
+	Fn<void()> _interactionHandler;
 	rpl::lifetime _lifetime;
 
 };

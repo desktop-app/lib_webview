@@ -166,6 +166,19 @@ void Window::focus() {
 	_webview->focus();
 }
 
+void Window::setInteractionHandler(Fn<void()> handler) {
+	_interactionHandler = std::move(handler);
+	if (_webview) {
+		_webview->setInteractionHandler([=] {
+			if (_interactionHandler) {
+				base::Integration::Instance().enterFromEventLoop([&] {
+					_interactionHandler();
+				});
+			}
+		});
+	}
+}
+
 void Window::refreshNavigationHistoryState() {
 	Expects(_webview != nullptr);
 
