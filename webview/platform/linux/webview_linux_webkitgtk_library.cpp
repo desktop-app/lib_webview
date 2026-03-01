@@ -89,6 +89,9 @@ ResolveResult Resolve(const Platform &platform) {
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		switch (platform) {
 		case Platform::Wayland:

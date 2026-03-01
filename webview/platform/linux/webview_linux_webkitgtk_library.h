@@ -48,6 +48,11 @@ typedef struct _GtkAdjustment GtkAdjustment;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
+typedef struct _GdkEventButton GdkEventButton;
+typedef struct _GdkEventKey GdkEventKey;
+typedef struct _GtkEventController GtkEventController;
+typedef struct _GtkGesture GtkGesture;
+typedef unsigned int GdkModifierType;
 
 typedef struct _JSCValue JSCValue;
 
@@ -166,6 +171,11 @@ inline void (*gtk_css_provider_load_from_data)(
 	const gchar *data,
 	gssize length,
 	GError **error);
+inline GtkGesture *(*gtk_gesture_click_new)(void);
+inline GtkEventController *(*gtk_event_controller_key_new)(void);
+inline void (*gtk_widget_add_controller)(
+	GtkWidget *widget,
+	GtkEventController *controller);
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here

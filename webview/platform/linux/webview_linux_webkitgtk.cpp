@@ -498,30 +498,68 @@ bool Instance::create(Config config) {
 			return instance->authenticate(request);
 		}),
 		this);
-	g_signal_connect_swapped(
-		_webview,
-		"button-press-event",
-		G_CALLBACK(+[](
-			Instance *instance,
-			GdkEventButton*) -> gboolean {
-			if (instance->_master) {
-				instance->_master.call_user_interaction(nullptr);
-			}
-			return FALSE;
-		}),
-		this);
-	g_signal_connect_swapped(
-		_webview,
-		"key-press-event",
-		G_CALLBACK(+[](
-			Instance *instance,
-			GdkEventKey*) -> gboolean {
-			if (instance->_master) {
-				instance->_master.call_user_interaction(nullptr);
-			}
-			return FALSE;
-		}),
-		this);
+	if (gtk_widget_add_controller) {
+		const auto click = gtk_gesture_click_new();
+		g_signal_connect_swapped(
+			click,
+			"pressed",
+			G_CALLBACK(+[](
+				Instance *instance,
+				int,
+				double,
+				double) {
+				if (instance->_master) {
+					instance->_master.call_user_interaction(nullptr);
+				}
+			}),
+			this);
+		gtk_widget_add_controller(
+			GTK_WIDGET(_webview),
+			(GtkEventController*)click);
+		const auto key = gtk_event_controller_key_new();
+		g_signal_connect_swapped(
+			key,
+			"key-pressed",
+			G_CALLBACK(+[](
+				Instance *instance,
+				guint,
+				guint,
+				GdkModifierType) -> gboolean {
+				if (instance->_master) {
+					instance->_master.call_user_interaction(nullptr);
+				}
+				return FALSE;
+			}),
+			this);
+		gtk_widget_add_controller(
+			GTK_WIDGET(_webview),
+			key);
+	} else {
+		g_signal_connect_swapped(
+			_webview,
+			"button-press-event",
+			G_CALLBACK(+[](
+				Instance *instance,
+				GdkEventButton*) -> gboolean {
+				if (instance->_master) {
+					instance->_master.call_user_interaction(nullptr);
+				}
+				return FALSE;
+			}),
+			this);
+		g_signal_connect_swapped(
+			_webview,
+			"key-press-event",
+			G_CALLBACK(+[](
+				Instance *instance,
+				GdkEventKey*) -> gboolean {
+				if (instance->_master) {
+					instance->_master.call_user_interaction(nullptr);
+				}
+				return FALSE;
+			}),
+			this);
+	}
 	webkit_user_content_manager_register_script_message_handler(
 		manager,
 		"external",
