@@ -139,7 +139,6 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 				(descriptor.type != Type::Destructive
 					? st::webviewDialogButton
 					: st::webviewDialogDestructiveButton));
-			button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 			button->setClickedCallback([=, &result, id = descriptor.id]{
 				result.id = id;
 				if (input) {
