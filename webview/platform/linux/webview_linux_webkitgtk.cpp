@@ -77,14 +77,16 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
-	Instance(bool remoting = true);
+	Instance(
+		bool remoting = true,
+		WindowMode mode = WindowMode::Embedded);
 	~Instance();
 
 	bool create(Config config);
 	ResolveResult resolve();
 	bool startDataServer();
 
-	void resize(int w, int h);
+	void resize(int w, int h) override;
 
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
@@ -143,6 +145,7 @@ private:
 	void *winId();
 
 	bool _remoting = false;
+	WindowMode _mode = WindowMode::Embedded;
 	bool _connected = false;
 	Master _master;
 	Helper _helper;
@@ -174,16 +177,21 @@ private:
 
 };
 
-Instance::Instance(bool remoting)
-: _remoting(remoting) {
+Instance::Instance(bool remoting, WindowMode mode)
+: _remoting(remoting)
+, _mode(mode) {
 	if (_remoting) {
-		_platform = ::Platform::IsX11()
-			? Platform::X11
+		if (_mode == WindowMode::External) {
+			_platform = Platform::Any;
+		} else {
+			_platform = ::Platform::IsX11()
+				? Platform::X11
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-			: Platform::Wayland;
+				: Platform::Wayland;
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-			: Platform::Any;
+				: Platform::Any;
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+		}
 		_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
 		startProcess();
 	}
@@ -305,7 +313,9 @@ bool Instance::create(Config config) {
 				}
 				return ::base::EventFilterResult::Continue;
 			});
-			_widget->show();
+			if (_mode != WindowMode::External) {
+				_widget->show();
+			}
 			break;
 		case Platform::X11:
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
@@ -406,8 +416,10 @@ bool Instance::create(Config config) {
 		_webview,
 		"web-process-terminated",
 		G_CALLBACK(+[](
-			Instance *instance,
-			WebKitWebProcessTerminationReason reason) {
+				Instance *instance,
+				WebKitWebProcessTerminationReason reason) {
+			LOG(("WebView Error: Web process terminated: %1.").arg(
+				int(reason)));
 			Gio::Application::get_default().quit();
 		}),
 		this);
@@ -415,9 +427,13 @@ bool Instance::create(Config config) {
 		_webview,
 		"notify::is-web-process-responsive",
 		G_CALLBACK(+[](
-			Instance *instance,
-			GParamSpec *pspec) {
-			Gio::Application::get_default().quit();
+				Instance *instance,
+				GParamSpec *pspec) {
+			if (!webkit_web_view_get_is_web_process_responsive(
+					instance->_webview)) {
+				LOG(("WebView Error: Web process became unresponsive."));
+				Gio::Application::get_default().quit();
+			}
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1285,6 +1301,9 @@ void Instance::stopProcess() {
 void Instance::updateHistoryStates() {
 	const auto url = webkit_web_view_get_uri(_webview);
 	const auto title = webkit_web_view_get_title(_webview);
+	if (_platform == Platform::Any && _window) {
+		gtk_window_set_title(GTK_WINDOW(_window), title ? title : "");
+	}
 	_master.call_navigation_state_update(
 		url ? url : "",
 		title ? title : "",
@@ -1658,7 +1677,7 @@ Available Availability() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	auto result = std::make_unique<Instance>();
+	auto result = std::make_unique<Instance>(true, config.mode);
 	if (!result->create(std::move(config))) {
 		return nullptr;
 	}

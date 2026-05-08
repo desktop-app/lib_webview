@@ -132,6 +132,9 @@ inline void (*gtk_window_set_child)(
 	GtkWindow *window,
 	GtkWidget *child);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
+inline void (*gtk_window_set_title)(
+	GtkWindow *window,
+	const gchar *title);
 inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *hadjustment,
 	GtkAdjustment *vadjustment);

@@ -65,6 +65,8 @@ public:
 	}
 
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
+	virtual void resize(int width, int height) {
+	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
 
@@ -129,6 +131,7 @@ struct Config {
 	std::string userDataToken;
 	bool debug = false;
 	bool safe = false;
+	WindowMode mode = WindowMode::Embedded;
 };
 
 struct Available {

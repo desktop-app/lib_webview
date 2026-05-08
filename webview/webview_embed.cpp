@@ -69,6 +69,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.userDataToken = config.storageId.token.toStdString(),
 		.debug = OptionWebviewDebugEnabled.value(),
 		.safe = config.safe,
+		.mode = config.mode,
 	});
 	return (_webview != nullptr);
 }
@@ -164,6 +165,12 @@ void Window::focus() {
 	Expects(_webview != nullptr);
 
 	_webview->focus();
+}
+
+void Window::resize(QSize size) {
+	Expects(_webview != nullptr);
+
+	_webview->resize(size.width(), size.height());
 }
 
 void Window::setInteractionHandler(Fn<void()> handler) {

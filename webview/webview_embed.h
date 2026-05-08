@@ -13,6 +13,7 @@
 #include <rpl/lifetime.h>
 #include <rpl/producer.h>
 #include <QColor>
+#include <QSize>
 
 class QString;
 class QWidget;
@@ -37,6 +38,7 @@ struct WindowConfig {
 	StorageId storageId;
 	QString dataProtocolOverride;
 	bool safe = false;
+	WindowMode mode = WindowMode::Embedded;
 };
 
 class Window final {
@@ -68,6 +70,7 @@ public:
 	void eval(const QByteArray &js);
 
 	void focus();
+	void resize(QSize size);
 	void setInteractionHandler(Fn<void()> handler);
 
 	void refreshNavigationHistoryState();
