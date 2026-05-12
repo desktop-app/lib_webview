@@ -18,6 +18,9 @@
 #include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
 
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonObject>
 #include <QtCore/QUrl>
 #include <QtNetwork/QTcpSocket>
 #include <QtGui/QDesktopServices>
@@ -75,6 +78,152 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + socketPath;
 }
 
+enum class ShellControlAction {
+	None,
+	BeginMove,
+	BeginResize,
+};
+
+struct ShellControlMessage {
+	ShellControlAction action = ShellControlAction::None;
+	QJsonObject arguments;
+};
+
+[[nodiscard]] std::optional<double> JsonNumber(
+		const QJsonObject &arguments,
+		const char *key) {
+	const auto value = arguments.value(QString::fromLatin1(key));
+	return value.isDouble()
+		? std::make_optional(value.toDouble())
+		: std::nullopt;
+}
+
+[[nodiscard]] std::string JavascriptMessageText(void *message) {
+	const auto value = jsc_value_to_string(
+		!webkit_javascript_result_get_js_value
+			? reinterpret_cast<JSCValue*>(message)
+			: webkit_javascript_result_get_js_value(
+				reinterpret_cast<WebKitJavascriptResult*>(message)));
+	const auto guard = gsl::finally([&] {
+		g_free(value);
+	});
+	return std::string(value);
+}
+
+[[nodiscard]] std::optional<ShellControlMessage> ParseShellControlMessage(
+		const std::string &message) {
+	const auto document = QJsonDocument::fromJson(
+		QByteArray::fromStdString(message));
+	if (!document.isArray()) {
+		return std::nullopt;
+	}
+	const auto list = document.array();
+	const auto command = list.at(0).toString();
+	auto action = ShellControlAction::None;
+	if (command == "tdesktop_shell_begin_move") {
+		action = ShellControlAction::BeginMove;
+	} else if (command == "tdesktop_shell_begin_resize") {
+		action = ShellControlAction::BeginResize;
+	} else {
+		return std::nullopt;
+	}
+	auto arguments = QJsonObject();
+	if (list.size() > 1) {
+		const auto data = list.at(1);
+		if (data.isObject()) {
+			arguments = data.toObject();
+		} else if (data.isString()) {
+			const auto argumentsDocument = QJsonDocument::fromJson(
+				data.toString().toUtf8());
+			if (argumentsDocument.isObject()) {
+				arguments = argumentsDocument.object();
+			}
+		}
+	}
+	return ShellControlMessage{
+		.action = action,
+		.arguments = std::move(arguments),
+	};
+}
+
+[[nodiscard]] int ShellControlButton(const QJsonObject &arguments) {
+	if (const auto button = JsonNumber(arguments, "gdkButton")) {
+		return static_cast<int>(*button);
+	} else if (const auto button = JsonNumber(arguments, "button")) {
+		const auto value = static_cast<int>(*button);
+		return (value >= 0 && value <= 2) ? (value + 1) : value;
+	}
+	return 1;
+}
+
+[[nodiscard]] guint32 ShellControlTimestamp(const QJsonObject &arguments) {
+	if (const auto timestamp = JsonNumber(arguments, "timestamp")) {
+		return static_cast<guint32>(*timestamp);
+	} else if (const auto timestamp = JsonNumber(arguments, "timeStamp")) {
+		return static_cast<guint32>(*timestamp);
+	} else if (const auto timestamp = JsonNumber(arguments, "time")) {
+		return static_cast<guint32>(*timestamp);
+	}
+	return 0;
+}
+
+[[nodiscard]] std::pair<double, double> ShellControlSurfacePosition(
+		const QJsonObject &arguments) {
+	const auto x = JsonNumber(arguments, "x").value_or(
+		JsonNumber(arguments, "clientX").value_or(0.));
+	const auto y = JsonNumber(arguments, "y").value_or(
+		JsonNumber(arguments, "clientY").value_or(0.));
+	return { x, y };
+}
+
+[[nodiscard]] std::optional<std::pair<int, int>> ShellControlRootPosition(
+		const QJsonObject &arguments) {
+	const auto x = JsonNumber(arguments, "rootX").value_or(
+		JsonNumber(arguments, "screenX").value_or(-1.));
+	const auto y = JsonNumber(arguments, "rootY").value_or(
+		JsonNumber(arguments, "screenY").value_or(-1.));
+	return (x >= 0.) && (y >= 0.)
+		? std::make_optional(std::pair<int, int>{
+			static_cast<int>(x),
+			static_cast<int>(y),
+		})
+		: std::nullopt;
+}
+
+[[nodiscard]] std::optional<int> ShellControlResizeEdge(
+		const QJsonObject &arguments) {
+	const auto value = arguments.value("edge");
+	if (value.isDouble()) {
+		const auto edge = static_cast<int>(value.toDouble(-1));
+		return (edge >= 0) && (edge <= 7)
+			? std::make_optional(edge)
+			: std::nullopt;
+	}
+	const auto edge = value.toString();
+	if (edge == "north_west" || edge == "north-west"
+		|| edge == "top_left" || edge == "top-left") {
+		return 0;
+	} else if (edge == "north" || edge == "top") {
+		return 1;
+	} else if (edge == "north_east" || edge == "north-east"
+		|| edge == "top_right" || edge == "top-right") {
+		return 2;
+	} else if (edge == "west" || edge == "left") {
+		return 3;
+	} else if (edge == "east" || edge == "right") {
+		return 4;
+	} else if (edge == "south_west" || edge == "south-west"
+		|| edge == "bottom_left" || edge == "bottom-left") {
+		return 5;
+	} else if (edge == "south" || edge == "bottom") {
+		return 6;
+	} else if (edge == "south_east" || edge == "south-east"
+		|| edge == "bottom_right" || edge == "bottom-right") {
+		return 7;
+	}
+	return std::nullopt;
+}
+
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(
@@ -110,6 +259,9 @@ public:
 
 private:
 	void scriptMessageReceived(void *message);
+	bool handleShellControlMessage(const std::string &message);
+	void beginShellMove(const QJsonObject &arguments);
+	void beginShellResize(const QJsonObject &arguments);
 
 	bool loadFailed(
 		WebKitLoadEvent loadEvent,
@@ -285,7 +437,8 @@ bool Instance::create(Config config) {
 		const auto b = config.opaqueBg.blue();
 		const auto a = config.opaqueBg.alpha();
 		const auto path = config.userDataPath;
-		_helper.call_create(debug, r, g, b, a, path, crl::guard(&guard, [&](
+		const auto mode = int(config.mode);
+		_helper.call_create(debug, r, g, b, a, path, mode, crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			success = _helper.call_create_finish(res, nullptr);
@@ -345,6 +498,9 @@ bool Instance::create(Config config) {
 	_window = _platform == Platform::X11
 		? gtk_plug_new(0)
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	if (_mode == WindowMode::External) {
+		gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
+	}
 	if (gtk_widget_add_css_class) {
 		gtk_widget_add_css_class(_window, "webviewWindow");
 	} else {
@@ -613,20 +769,95 @@ if (window === window.top) {
 }
 
 void Instance::scriptMessageReceived(void *message) {
+	const auto text = JavascriptMessageText(message);
+	if (handleShellControlMessage(text)) {
+		return;
+	}
 	if (!_master) {
 		return;
 	}
-	_master.call_message_received([&] {
-		const auto s = jsc_value_to_string(
-			!webkit_javascript_result_get_js_value
-				? reinterpret_cast<JSCValue*>(message)
-				: webkit_javascript_result_get_js_value(
-					reinterpret_cast<WebKitJavascriptResult*>(message)));
-		const auto guard = gsl::finally([&] {
-			g_free(s);
-		});
-		return std::string(s);
-	}(), nullptr);
+	_master.call_message_received(text, nullptr);
+}
+
+bool Instance::handleShellControlMessage(const std::string &message) {
+	if ((_mode != WindowMode::External) || !_window) {
+		return false;
+	}
+	const auto parsed = ParseShellControlMessage(message);
+	if (!parsed) {
+		return false;
+	}
+	switch (parsed->action) {
+	case ShellControlAction::BeginMove:
+		beginShellMove(parsed->arguments);
+		return true;
+	case ShellControlAction::BeginResize:
+		beginShellResize(parsed->arguments);
+		return true;
+	case ShellControlAction::None:
+		return false;
+	}
+	return false;
+}
+
+void Instance::beginShellMove(const QJsonObject &arguments) {
+	if (gdk_toplevel_begin_move && gtk_native_get_surface) {
+		if (const auto surface = gtk_native_get_surface(
+				reinterpret_cast<GtkNative*>(_window))) {
+			const auto [x, y] = ShellControlSurfacePosition(arguments);
+			gdk_toplevel_begin_move(
+				reinterpret_cast<GdkToplevel*>(surface),
+				nullptr,
+				ShellControlButton(arguments),
+				x,
+				y,
+				ShellControlTimestamp(arguments));
+			return;
+		}
+	}
+	if (gtk_window_begin_move_drag) {
+		if (const auto position = ShellControlRootPosition(arguments)) {
+			gtk_window_begin_move_drag(
+				GTK_WINDOW(_window),
+				ShellControlButton(arguments),
+				position->first,
+				position->second,
+				ShellControlTimestamp(arguments));
+		}
+	}
+}
+
+void Instance::beginShellResize(const QJsonObject &arguments) {
+	const auto edge = ShellControlResizeEdge(arguments);
+	if (!edge) {
+		return;
+	}
+	if (gdk_toplevel_begin_resize && gtk_native_get_surface) {
+		if (const auto surface = gtk_native_get_surface(
+				reinterpret_cast<GtkNative*>(_window))) {
+			const auto [x, y] = ShellControlSurfacePosition(arguments);
+			gdk_toplevel_begin_resize(
+				reinterpret_cast<GdkToplevel*>(surface),
+				static_cast<GdkSurfaceEdge>(*edge),
+				nullptr,
+				ShellControlButton(arguments),
+				x,
+				y,
+				ShellControlTimestamp(arguments));
+			return;
+		}
+	}
+	if (gtk_window_begin_resize_drag) {
+		if (const auto position = ShellControlRootPosition(arguments)) {
+			gtk_window_begin_resize_drag(
+				GTK_WINDOW(_window),
+				static_cast<GdkWindowEdge>(*edge),
+				ShellControlButton(arguments),
+				position->first,
+				position->second,
+				ShellControlTimestamp(arguments));
+		}
+	}
 }
 
 bool Instance::loadFailed(
@@ -1099,7 +1330,7 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 
 	const auto background = std::format(
 		".webviewWindow {{background: {};}}",
-		_platform == Platform::Wayland
+		(_mode == WindowMode::External) || (_platform == Platform::Wayland)
 			? "transparent"
 			: opaqueBg.name().toStdString());
 
@@ -1567,11 +1798,17 @@ void Instance::registerHelperMethodHandlers() {
 			int g,
 			int b,
 			int a,
-			const std::string &path) {
+			const std::string &path,
+			int mode) {
+		const auto windowMode = (mode == int(WindowMode::External))
+			? WindowMode::External
+			: WindowMode::Embedded;
+		_mode = windowMode;
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
+			.mode = windowMode,
 		})) {
 			_helper.complete_create(invocation);
 		} else {

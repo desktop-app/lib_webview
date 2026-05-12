@@ -24,6 +24,7 @@ ResolveResult Resolve(const Platform &platform) {
 			&& LOAD_LIBRARY_SYMBOL(lib, gtk_container_add)))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_title)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
@@ -93,6 +94,11 @@ ResolveResult Resolve(const Platform &platform) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_move_drag);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_resize_drag);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		switch (platform) {
 		case Platform::Wayland:

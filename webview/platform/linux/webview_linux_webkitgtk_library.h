@@ -38,9 +38,12 @@ struct _GdkRGBA {
 };
 
 typedef struct _GdkDisplay GdkDisplay;
+typedef struct _GdkDevice GdkDevice;
 typedef struct _GdkScreen GdkScreen;
 typedef struct _GdkRGBA GdkRGBA;
+typedef struct _GdkSurface GdkSurface;
 typedef struct _GtkContainer GtkContainer;
+typedef struct _GtkNative GtkNative;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkPlug GtkPlug;
@@ -50,6 +53,7 @@ typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
 typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventKey GdkEventKey;
+typedef struct _GdkToplevel GdkToplevel;
 typedef struct _GtkEventController GtkEventController;
 typedef struct _GtkGesture GtkGesture;
 typedef unsigned int GdkModifierType;
@@ -76,6 +80,28 @@ typedef enum {
 	GTK_WINDOW_TOPLEVEL,
 	GTK_WINDOW_POPUP,
 } GtkWindowType;
+
+typedef enum {
+	GDK_WINDOW_EDGE_NORTH_WEST,
+	GDK_WINDOW_EDGE_NORTH,
+	GDK_WINDOW_EDGE_NORTH_EAST,
+	GDK_WINDOW_EDGE_WEST,
+	GDK_WINDOW_EDGE_EAST,
+	GDK_WINDOW_EDGE_SOUTH_WEST,
+	GDK_WINDOW_EDGE_SOUTH,
+	GDK_WINDOW_EDGE_SOUTH_EAST,
+} GdkWindowEdge;
+
+typedef enum {
+	GDK_SURFACE_EDGE_NORTH_WEST,
+	GDK_SURFACE_EDGE_NORTH,
+	GDK_SURFACE_EDGE_NORTH_EAST,
+	GDK_SURFACE_EDGE_WEST,
+	GDK_SURFACE_EDGE_EAST,
+	GDK_SURFACE_EDGE_SOUTH_WEST,
+	GDK_SURFACE_EDGE_SOUTH,
+	GDK_SURFACE_EDGE_SOUTH_EAST,
+} GdkSurfaceEdge;
 
 typedef enum {
 	WEBKIT_WEB_PROCESS_CRASHED,
@@ -135,6 +161,9 @@ inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
 inline void (*gtk_window_set_title)(
 	GtkWindow *window,
 	const gchar *title);
+inline void (*gtk_window_set_decorated)(
+	GtkWindow *window,
+	gboolean setting);
 inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *hadjustment,
 	GtkAdjustment *vadjustment);
@@ -179,6 +208,35 @@ inline GtkEventController *(*gtk_event_controller_key_new)(void);
 inline void (*gtk_widget_add_controller)(
 	GtkWidget *widget,
 	GtkEventController *controller);
+inline void (*gtk_window_begin_move_drag)(
+	GtkWindow *window,
+	gint button,
+	gint root_x,
+	gint root_y,
+	guint32 timestamp);
+inline void (*gtk_window_begin_resize_drag)(
+	GtkWindow *window,
+	GdkWindowEdge edge,
+	gint button,
+	gint root_x,
+	gint root_y,
+	guint32 timestamp);
+inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
+inline void (*gdk_toplevel_begin_move)(
+	GdkToplevel *toplevel,
+	GdkDevice *device,
+	int button,
+	double x,
+	double y,
+	guint32 timestamp);
+inline void (*gdk_toplevel_begin_resize)(
+	GdkToplevel *toplevel,
+	GdkSurfaceEdge edge,
+	GdkDevice *device,
+	int button,
+	double x,
+	double y,
+	guint32 timestamp);
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here
