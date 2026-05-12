@@ -96,6 +96,8 @@ ResolveResult Resolve(const Platform &platform) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_move_drag);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_resize_drag);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);

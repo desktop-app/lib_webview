@@ -246,6 +246,7 @@ public:
 
 	void focus() override;
 	void setInteractionHandler(Fn<void()> handler) override;
+	void setFullscreen(bool fullscreen) override;
 
 	QWidget *widget() override;
 
@@ -1363,6 +1364,26 @@ void Instance::resize(int w, int h) {
 	}));
 }
 
+void Instance::setFullscreen(bool fullscreen) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_set_fullscreen(fullscreen, nullptr);
+		return;
+	}
+	if (!_window) {
+		return;
+	} else if (!gtk_window_fullscreen || !gtk_window_unfullscreen) {
+		return;
+	} else if (fullscreen) {
+		gtk_window_fullscreen(GTK_WINDOW(_window));
+	} else {
+		gtk_window_unfullscreen(GTK_WINDOW(_window));
+	}
+}
+
 void Instance::startProcess() {
 	auto loop = GLib::MainLoop::new_();
 
@@ -1848,6 +1869,15 @@ void Instance::registerHelperMethodHandlers() {
 			int h) {
 		resize(w, h);
 		_helper.complete_resize(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_set_fullscreen().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			bool fullscreen) {
+		setFullscreen(fullscreen);
+		_helper.complete_set_fullscreen(invocation);
 		return true;
 	});
 

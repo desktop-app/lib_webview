@@ -71,6 +71,7 @@ public:
 
 	void focus();
 	void resize(QSize size);
+	void setFullscreen(bool fullscreen);
 	void setInteractionHandler(Fn<void()> handler);
 
 	void refreshNavigationHistoryState();

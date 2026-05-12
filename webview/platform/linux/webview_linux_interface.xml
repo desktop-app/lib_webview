@@ -56,6 +56,9 @@
 			<arg type='i' name='w' direction='in'/>
 			<arg type='i' name='h' direction='in'/>
 		</method>
+		<method name='SetFullscreen'>
+			<arg type='b' name='fullscreen' direction='in'/>
+		</method>
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>

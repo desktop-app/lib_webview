@@ -67,6 +67,8 @@ public:
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 	virtual void resize(int width, int height) {
 	}
+	virtual void setFullscreen(bool fullscreen) {
+	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
 

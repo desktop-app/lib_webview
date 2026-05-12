@@ -173,6 +173,12 @@ void Window::resize(QSize size) {
 	_webview->resize(size.width(), size.height());
 }
 
+void Window::setFullscreen(bool fullscreen) {
+	Expects(_webview != nullptr);
+
+	_webview->setFullscreen(fullscreen);
+}
+
 void Window::setInteractionHandler(Fn<void()> handler) {
 	_interactionHandler = std::move(handler);
 	if (_webview) {
