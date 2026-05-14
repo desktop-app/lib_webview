@@ -231,29 +231,81 @@ struct ShellControlMessage {
 	return std::nullopt;
 }
 
+[[nodiscard]] bool IsGdkX11Display(GdkDisplay *display) {
+	return display
+		&& gdk_x11_display_get_type
+		&& GDK_IS_X11_DISPLAY(display);
+}
+
+[[nodiscard]] bool IsGdkX11Screen(GdkScreen *screen) {
+	return screen
+		&& gdk_x11_screen_get_type
+		&& GDK_IS_X11_SCREEN(screen);
+}
+
+[[nodiscard]] bool IsGdkX11Surface(GdkSurface *surface) {
+	return surface
+		&& gdk_x11_surface_get_type
+		&& GDK_IS_X11_SURFACE(surface);
+}
+
+[[nodiscard]] bool IsGdkX11Window(GdkWindow *window) {
+	return window
+		&& gdk_x11_window_get_type
+		&& GDK_IS_X11_WINDOW(window);
+}
+
+[[nodiscard]] bool IsGdkWaylandWindow(GdkWindow *window) {
+	return window
+		&& gdk_wayland_window_get_type
+		&& GDK_IS_WAYLAND_WINDOW(window);
+}
+
+[[nodiscard]] GdkSurface *GtkNativeSurface(GtkWidget *window) {
+	return window
+		&& gtk_native_get_surface
+		&& gtk_native_get_type
+		&& GTK_IS_NATIVE(window)
+		? gtk_native_get_surface(GTK_NATIVE(window))
+		: nullptr;
+}
+
+[[nodiscard]] GdkToplevel *GdkToplevelFromSurface(GdkSurface *surface) {
+	return surface
+		&& gdk_toplevel_get_type
+		&& GDK_IS_TOPLEVEL(surface)
+		? GDK_TOPLEVEL(surface)
+		: nullptr;
+}
+
+[[nodiscard]] GdkToplevel *GdkWaylandToplevelFromSurface(
+		GdkSurface *surface) {
+	return surface
+		&& gdk_wayland_toplevel_get_type
+		&& GDK_IS_WAYLAND_TOPLEVEL(surface)
+		? GDK_WAYLAND_TOPLEVEL(surface)
+		: nullptr;
+}
+
 [[nodiscard]] unsigned long X11WindowId(GtkWidget *window) {
 	if (!window) {
 		return 0;
 	}
-	const auto isX11Object = [](auto object, const char *type) {
-		return object && !std::strcmp(G_OBJECT_TYPE_NAME(object), type);
-	};
 	const auto isX11Window = [&] {
 		if (gtk_widget_get_display) {
 			if (const auto display = gtk_widget_get_display(window)) {
-				return isX11Object(display, "GdkX11Display");
+				return IsGdkX11Display(display);
 			}
 		}
 		return gtk_widget_get_screen
-			&& isX11Object(gtk_widget_get_screen(window), "GdkX11Screen");
+			&& IsGdkX11Screen(gtk_widget_get_screen(window));
 	}();
 	if (!isX11Window) {
 		return 0;
 	}
 	if (gtk_native_get_surface && gdk_x11_surface_get_xid) {
-		if (const auto surface = gtk_native_get_surface(
-				reinterpret_cast<GtkNative*>(window))) {
-			if (isX11Object(surface, "GdkX11Surface")) {
+		if (const auto surface = GtkNativeSurface(window)) {
+			if (IsGdkX11Surface(surface)) {
 				if (const auto xid = gdk_x11_surface_get_xid(surface)) {
 					return xid;
 				}
@@ -262,7 +314,7 @@ struct ShellControlMessage {
 	}
 	if (gtk_widget_get_window && gdk_x11_window_get_xid) {
 		if (const auto gdkWindow = gtk_widget_get_window(window)) {
-			if (isX11Object(gdkWindow, "GdkX11Window")) {
+			if (IsGdkX11Window(gdkWindow)) {
 				return gdk_x11_window_get_xid(gdkWindow);
 			}
 		}
@@ -407,6 +459,7 @@ public:
 
 	QWidget *widget() override;
 	void *winId() override;
+	PopupAnchor popupAnchor() override;
 
 	void refreshNavigationHistoryState() override;
 	auto navigationHistoryState()
@@ -453,6 +506,17 @@ private:
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
+	void ensureWaylandPopupAnchorExport();
+	void clearWaylandPopupAnchorExport();
+	void setWaylandPopupAnchorFromToplevel(
+		std::uint64_t generation,
+		GdkToplevel *toplevel,
+		QString handle);
+	void setWaylandPopupAnchorFromWindow(
+		std::uint64_t generation,
+		GdkWindow *window,
+		QString handle);
+	[[nodiscard]] PopupAnchor popupAnchorSnapshot();
 
 	bool _remoting = false;
 	WindowMode _mode = WindowMode::Embedded;
@@ -472,6 +536,9 @@ private:
 	GtkWidget *_window = nullptr;
 	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
+	QString _waylandPopupAnchorHandle;
+	std::uint64_t _waylandPopupAnchorGeneration = 0;
+	bool _waylandPopupAnchorExportPending = false;
 	QMargins _windowMargins;
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
@@ -518,6 +585,7 @@ Instance::~Instance() {
 		g_object_unref(_backgroundProvider);
 	}
 	if (_window) {
+		clearWaylandPopupAnchorExport();
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(_window));
 		} else {
@@ -752,6 +820,7 @@ bool Instance::create(Config config) {
 		_window,
 		"destroy",
 		G_CALLBACK(+[](Instance *instance) {
+			instance->clearWaylandPopupAnchorExport();
 			instance->_window = nullptr;
 			Gio::Application::get_default().quit();
 		}),
@@ -761,6 +830,7 @@ bool Instance::create(Config config) {
 		"realize",
 		G_CALLBACK(+[](Instance *instance) {
 			instance->updateWindowFrameExtents();
+			instance->ensureWaylandPopupAnchorExport();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -865,7 +935,10 @@ bool Instance::create(Config config) {
 			return instance->authenticate(request);
 		}),
 		this);
-	if (gtk_widget_add_controller) {
+	if (gtk_widget_add_controller
+		&& gtk_gesture_click_new
+		&& gtk_event_controller_key_new
+		&& gtk_event_controller_get_type) {
 		const auto click = gtk_gesture_click_new();
 		g_signal_connect_swapped(
 			click,
@@ -882,7 +955,7 @@ bool Instance::create(Config config) {
 			this);
 		gtk_widget_add_controller(
 			GTK_WIDGET(_webview),
-			(GtkEventController*)click);
+			GTK_EVENT_CONTROLLER(click));
 		const auto key = gtk_event_controller_key_new();
 		g_signal_connect_swapped(
 			key,
@@ -964,6 +1037,7 @@ bool Instance::create(Config config) {
 		gtk_widget_show_all(_window);
 	}
 	updateWindowFrameExtents();
+	ensureWaylandPopupAnchorExport();
 	init(R"(
 if (window === window.top) {
 	window.external = {
@@ -1010,11 +1084,11 @@ bool Instance::handleShellControlMessage(const std::string &message) {
 
 void Instance::beginShellMove(const QJsonObject &arguments) {
 	if (gdk_toplevel_begin_move && gtk_native_get_surface) {
-		if (const auto surface = gtk_native_get_surface(
-				reinterpret_cast<GtkNative*>(_window))) {
+		if (const auto toplevel = GdkToplevelFromSurface(
+				GtkNativeSurface(_window))) {
 			const auto [x, y] = ShellControlSurfacePosition(arguments);
 			gdk_toplevel_begin_move(
-				reinterpret_cast<GdkToplevel*>(surface),
+				toplevel,
 				nullptr,
 				ShellControlButton(arguments),
 				x,
@@ -1041,11 +1115,11 @@ void Instance::beginShellResize(const QJsonObject &arguments) {
 		return;
 	}
 	if (gdk_toplevel_begin_resize && gtk_native_get_surface) {
-		if (const auto surface = gtk_native_get_surface(
-				reinterpret_cast<GtkNative*>(_window))) {
+		if (const auto toplevel = GdkToplevelFromSurface(
+				GtkNativeSurface(_window))) {
 			const auto [x, y] = ShellControlSurfacePosition(arguments);
 			gdk_toplevel_begin_resize(
-				reinterpret_cast<GdkToplevel*>(surface),
+				toplevel,
 				static_cast<GdkSurfaceEdge>(*edge),
 				nullptr,
 				ShellControlButton(arguments),
@@ -1484,6 +1558,163 @@ QWidget *Instance::widget() {
 	return _widget.get();
 }
 
+void Instance::ensureWaylandPopupAnchorExport() {
+	struct WaylandPopupAnchorRequest {
+		::base::weak_ptr<Instance> instance;
+		std::uint64_t generation = 0;
+	};
+	const auto destroyRequest = +[](gpointer userData) {
+		delete static_cast<WaylandPopupAnchorRequest*>(userData);
+	};
+	if (!_window
+		|| _waylandPopupAnchorExportPending
+		|| !_waylandPopupAnchorHandle.isEmpty()) {
+		return;
+	}
+	if (gtk_native_get_surface && gdk_wayland_toplevel_export_handle) {
+		if (const auto toplevel = GdkWaylandToplevelFromSurface(
+				GtkNativeSurface(_window))) {
+			const auto generation = ++_waylandPopupAnchorGeneration;
+			auto request = std::make_unique<WaylandPopupAnchorRequest>(
+				WaylandPopupAnchorRequest{
+					.instance = this,
+					.generation = generation,
+				});
+			_waylandPopupAnchorExportPending = true;
+			const auto exported = gdk_wayland_toplevel_export_handle(
+				toplevel,
+				+[](
+						GdkToplevel *toplevel,
+						const char *handle,
+						gpointer userData) {
+					const auto request = static_cast<WaylandPopupAnchorRequest*>(
+						userData);
+					if (const auto instance = request->instance.get()) {
+						instance->setWaylandPopupAnchorFromToplevel(
+							request->generation,
+							toplevel,
+							handle ? QString::fromUtf8(handle) : QString());
+					}
+				},
+				request.get(),
+				destroyRequest);
+			if (exported) {
+				request.release();
+			} else {
+				_waylandPopupAnchorExportPending = false;
+			}
+			return;
+		}
+	}
+	if (gtk_widget_get_window && gdk_wayland_window_export_handle) {
+		if (const auto gdkWindow = gtk_widget_get_window(_window);
+			IsGdkWaylandWindow(gdkWindow)) {
+			const auto generation = ++_waylandPopupAnchorGeneration;
+			auto request = std::make_unique<WaylandPopupAnchorRequest>(
+				WaylandPopupAnchorRequest{
+					.instance = this,
+					.generation = generation,
+				});
+			_waylandPopupAnchorExportPending = true;
+			const auto exported = gdk_wayland_window_export_handle(
+				gdkWindow,
+				+[](
+						GdkWindow *window,
+						const char *handle,
+						gpointer userData) {
+					const auto request = static_cast<WaylandPopupAnchorRequest*>(
+						userData);
+					if (const auto instance = request->instance.get()) {
+						instance->setWaylandPopupAnchorFromWindow(
+							request->generation,
+							window,
+							handle ? QString::fromUtf8(handle) : QString());
+					}
+				},
+				request.get(),
+				destroyRequest);
+			if (exported) {
+				request.release();
+			} else {
+				_waylandPopupAnchorExportPending = false;
+			}
+		}
+	}
+}
+
+void Instance::clearWaylandPopupAnchorExport() {
+	const auto hadExport = _waylandPopupAnchorExportPending
+		|| !_waylandPopupAnchorHandle.isEmpty();
+	const auto handle = _waylandPopupAnchorHandle;
+	_waylandPopupAnchorExportPending = false;
+	_waylandPopupAnchorHandle = QString();
+	if (!hadExport) {
+		return;
+	}
+	++_waylandPopupAnchorGeneration;
+	if (!_window) {
+		return;
+	}
+	if (gtk_native_get_surface) {
+		if (const auto toplevel = GdkWaylandToplevelFromSurface(
+				GtkNativeSurface(_window))) {
+			if (!handle.isEmpty()) {
+				if (gdk_wayland_toplevel_drop_exported_handle) {
+					const auto data = handle.toUtf8();
+					gdk_wayland_toplevel_drop_exported_handle(
+						toplevel,
+						data.constData());
+				} else if (gdk_wayland_toplevel_unexport_handle) {
+					gdk_wayland_toplevel_unexport_handle(toplevel);
+				}
+			}
+			return;
+		}
+	}
+	if (gtk_widget_get_window && gdk_wayland_window_unexport_handle) {
+		if (const auto gdkWindow = gtk_widget_get_window(_window);
+			IsGdkWaylandWindow(gdkWindow)
+			&& !handle.isEmpty()) {
+			gdk_wayland_window_unexport_handle(gdkWindow);
+		}
+	}
+}
+
+void Instance::setWaylandPopupAnchorFromToplevel(
+		std::uint64_t generation,
+		GdkToplevel *toplevel,
+		QString handle) {
+	if (generation != _waylandPopupAnchorGeneration) {
+		if (!handle.isEmpty()) {
+			if (gdk_wayland_toplevel_drop_exported_handle) {
+				const auto data = handle.toUtf8();
+				gdk_wayland_toplevel_drop_exported_handle(
+					toplevel,
+					data.constData());
+			} else if (gdk_wayland_toplevel_unexport_handle) {
+				gdk_wayland_toplevel_unexport_handle(toplevel);
+			}
+		}
+		return;
+	}
+	_waylandPopupAnchorExportPending = false;
+	_waylandPopupAnchorHandle = std::move(handle);
+}
+
+void Instance::setWaylandPopupAnchorFromWindow(
+		std::uint64_t generation,
+		GdkWindow *window,
+		QString handle) {
+	if (generation != _waylandPopupAnchorGeneration) {
+		if (!handle.isEmpty() && gdk_wayland_window_unexport_handle) {
+			gdk_wayland_window_unexport_handle(window);
+		}
+		return;
+	}
+	_waylandPopupAnchorExportPending = false;
+	_waylandPopupAnchorHandle = std::move(handle);
+}
+
 void *Instance::winId() {
 	if (_remoting) {
 		if (!_helper) {
@@ -1517,6 +1748,128 @@ void *Instance::winId() {
 	return (_platform == Platform::X11)
 		? reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)))
 		: nullptr;
+}
+
+PopupAnchor Instance::popupAnchorSnapshot() {
+	auto result = PopupAnchor();
+	if (!_window) {
+		return result;
+	}
+	if (gtk_native_get_surface && gdk_surface_get_width && gdk_surface_get_height) {
+		if (const auto surface = GtkNativeSurface(_window)) {
+			const auto width = gdk_surface_get_width(surface);
+			const auto height = gdk_surface_get_height(surface);
+			if (width > 0 && height > 0) {
+				result.outerSize = QSize(width, height);
+			}
+		}
+	} else if (gtk_window_get_size) {
+		auto width = gint(0);
+		auto height = gint(0);
+		gtk_window_get_size(GTK_WINDOW(_window), &width, &height);
+		if (width > 0 && height > 0) {
+			result.outerSize = QSize(width, height);
+		}
+	}
+	if (const auto nativeId = X11WindowId(_window)) {
+		clearWaylandPopupAnchorExport();
+		result.transientParent = {
+			.type = Ui::Platform::ForeignParent::Type::X11,
+			.x11 = nativeId,
+		};
+		return result;
+	}
+	if (gtk_native_get_surface) {
+		if (GdkWaylandToplevelFromSurface(GtkNativeSurface(_window))) {
+			ensureWaylandPopupAnchorExport();
+			if (!_waylandPopupAnchorHandle.isEmpty()) {
+				result.transientParent = {
+					.type = Ui::Platform::ForeignParent::Type::Wayland,
+					.wayland = _waylandPopupAnchorHandle,
+				};
+			}
+			return result;
+		}
+	}
+	if (gtk_widget_get_window) {
+		if (const auto gdkWindow = gtk_widget_get_window(_window);
+			IsGdkWaylandWindow(gdkWindow)) {
+			ensureWaylandPopupAnchorExport();
+			if (!_waylandPopupAnchorHandle.isEmpty()) {
+				result.transientParent = {
+					.type = Ui::Platform::ForeignParent::Type::Wayland,
+					.wayland = _waylandPopupAnchorHandle,
+				};
+			}
+			return result;
+		}
+	}
+	clearWaylandPopupAnchorExport();
+	return result;
+}
+
+PopupAnchor Instance::popupAnchor() {
+	if (_remoting) {
+		if (!_helper) {
+			return {};
+		}
+
+		const ::base::has_weak_ptr guard;
+		std::optional<PopupAnchor> ret;
+		_helper.call_get_window_anchor(crl::guard(&guard, [&](
+				GObject::Object source_object,
+				Gio::AsyncResult res) {
+			auto result = PopupAnchor();
+			if (const auto reply = _helper.call_get_window_anchor_finish(res)) {
+				const auto type = Ui::Platform::ForeignParent::Type(
+					std::get<1>(*reply));
+				switch (type) {
+				case Ui::Platform::ForeignParent::Type::None:
+					break;
+				case Ui::Platform::ForeignParent::Type::X11:
+					result.transientParent = {
+						.type = type,
+						.x11 = std::get<2>(*reply),
+					};
+					break;
+				case Ui::Platform::ForeignParent::Type::Wayland:
+					result.transientParent = {
+						.type = type,
+						.wayland = QString::fromStdString(std::get<3>(*reply)),
+					};
+					break;
+				}
+				if (std::get<4>(*reply)) {
+					const auto geometry = QRect(
+						std::get<5>(*reply),
+						std::get<6>(*reply),
+						std::get<7>(*reply),
+						std::get<8>(*reply));
+					if (geometry.isValid()) {
+						result.geometry = geometry;
+					}
+				}
+				if (std::get<9>(*reply)) {
+					const auto outerSize = QSize(
+						std::get<10>(*reply),
+						std::get<11>(*reply));
+					if (!outerSize.isEmpty()) {
+						result.outerSize = outerSize;
+					}
+				}
+			}
+			ret = std::move(result);
+			GLib::MainContext::default_().wakeup();
+		}));
+
+		while (!ret && _connected) {
+			GLib::MainContext::default_().iteration(true);
+		}
+
+		return ret.value_or(PopupAnchor());
+	}
+
+	return popupAnchorSnapshot();
 }
 
 void Instance::refreshNavigationHistoryState() {
@@ -2170,6 +2523,28 @@ void Instance::registerHelperMethodHandlers() {
 		_helper.complete_get_win_id(
 			invocation,
 			reinterpret_cast<uint64>(winId()));
+		return true;
+	});
+
+	_helper.signal_handle_get_window_anchor().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation) {
+		const auto anchor = popupAnchorSnapshot();
+		const auto geometry = anchor.geometry.value_or(QRect());
+		const auto outerSize = anchor.outerSize.value_or(QSize());
+		_helper.complete_get_window_anchor(
+			invocation,
+			int(anchor.transientParent.type),
+			uint64(anchor.transientParent.x11),
+			anchor.transientParent.wayland.toStdString(),
+			anchor.geometry.has_value(),
+			geometry.x(),
+			geometry.y(),
+			geometry.width(),
+			geometry.height(),
+			anchor.outerSize.has_value(),
+			outerSize.width(),
+			outerSize.height());
 		return true;
 	});
 }

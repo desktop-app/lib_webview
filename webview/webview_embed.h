@@ -28,6 +28,7 @@ extern const char kOptionWebviewLegacyEdge[];
 struct DialogArgs;
 struct DialogResult;
 class Interface;
+struct PopupAnchor;
 class ZoomController;
 struct Config;
 struct DataRequest;
@@ -53,6 +54,7 @@ public:
 	// May be nullptr or destroyed any time (in case webview crashed).
 	[[nodiscard]] QWidget *widget() const;
 	[[nodiscard]] void *winId() const;
+	[[nodiscard]] PopupAnchor popupAnchor() const;
 
 	void updateTheme(
 		QColor opaqueBg,

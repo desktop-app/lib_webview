@@ -19,12 +19,42 @@
 #define GTK_TYPE_WINDOW (gtk_window_get_type ())
 #define GTK_WINDOW(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_WINDOW, GtkWindow))
 
+#define GTK_TYPE_NATIVE (gtk_native_get_type ())
+#define GTK_NATIVE(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_NATIVE, GtkNative))
+#define GTK_IS_NATIVE(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GTK_TYPE_NATIVE))
+
+#define GTK_TYPE_EVENT_CONTROLLER (gtk_event_controller_get_type ())
+#define GTK_EVENT_CONTROLLER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_EVENT_CONTROLLER, GtkEventController))
+
 #define GTK_TYPE_PLUG (gtk_plug_get_type ())
 #define GTK_PLUG(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_PLUG, GtkPlug))
 
 #define GTK_TYPE_STYLE_PROVIDER (gtk_style_provider_get_type ())
 #define GTK_STYLE_PROVIDER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_STYLE_PROVIDER, GtkStyleProvider))
 #define GTK_STYLE_PROVIDER_PRIORITY_APPLICATION 600
+
+#define GDK_TYPE_TOPLEVEL (gdk_toplevel_get_type ())
+#define GDK_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_CAST ((object), GDK_TYPE_TOPLEVEL, GdkToplevel))
+#define GDK_IS_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_TOPLEVEL))
+
+#define GDK_TYPE_X11_DISPLAY (gdk_x11_display_get_type ())
+#define GDK_IS_X11_DISPLAY(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_DISPLAY))
+
+#define GDK_TYPE_X11_SCREEN (gdk_x11_screen_get_type ())
+#define GDK_IS_X11_SCREEN(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_SCREEN))
+
+#define GDK_TYPE_X11_SURFACE (gdk_x11_surface_get_type ())
+#define GDK_IS_X11_SURFACE(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_SURFACE))
+
+#define GDK_TYPE_X11_WINDOW (gdk_x11_window_get_type ())
+#define GDK_IS_X11_WINDOW(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_WINDOW))
+
+#define GDK_TYPE_WAYLAND_TOPLEVEL (gdk_wayland_toplevel_get_type ())
+#define GDK_WAYLAND_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_CAST ((object), GDK_TYPE_WAYLAND_TOPLEVEL, GdkWaylandToplevel))
+#define GDK_IS_WAYLAND_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_WAYLAND_TOPLEVEL))
+
+#define GDK_TYPE_WAYLAND_WINDOW (gdk_wayland_window_get_type ())
+#define GDK_IS_WAYLAND_WINDOW(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_WAYLAND_WINDOW))
 
 #define WEBKIT_TYPE_NAVIGATION_POLICY_DECISION (webkit_navigation_policy_decision_get_type())
 #define WEBKIT_NAVIGATION_POLICY_DECISION(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_NAVIGATION_POLICY_DECISION, WebKitNavigationPolicyDecision))
@@ -58,9 +88,18 @@ typedef struct _GtkCssProvider GtkCssProvider;
 typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventKey GdkEventKey;
 typedef struct _GdkToplevel GdkToplevel;
+typedef GdkToplevel GdkWaylandToplevel;
 typedef struct _GtkEventController GtkEventController;
 typedef struct _GtkGesture GtkGesture;
 typedef unsigned int GdkModifierType;
+typedef void (*GdkWaylandToplevelExported)(
+	GdkToplevel *toplevel,
+	const char *handle,
+	gpointer user_data);
+typedef void (*GdkWaylandWindowExported)(
+	GdkWindow *window,
+	const char *handle,
+	gpointer user_data);
 
 typedef struct _JSCValue JSCValue;
 
@@ -233,6 +272,7 @@ inline void (*gtk_css_provider_load_from_data)(
 	GError **error);
 inline GtkGesture *(*gtk_gesture_click_new)(void);
 inline GtkEventController *(*gtk_event_controller_key_new)(void);
+inline GType (*gtk_event_controller_get_type)(void);
 inline void (*gtk_widget_add_controller)(
 	GtkWidget *widget,
 	GtkEventController *controller);
@@ -250,6 +290,14 @@ inline void (*gtk_window_begin_resize_drag)(
 	gint root_y,
 	guint32 timestamp);
 inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
+inline GType (*gtk_native_get_type)(void);
+inline GType (*gdk_toplevel_get_type)(void);
+inline GType (*gdk_x11_display_get_type)(void);
+inline GType (*gdk_x11_screen_get_type)(void);
+inline GType (*gdk_x11_surface_get_type)(void);
+inline GType (*gdk_x11_window_get_type)(void);
+inline GType (*gdk_wayland_toplevel_get_type)(void);
+inline GType (*gdk_wayland_window_get_type)(void);
 inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *surface);
 inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
 inline void (*gdk_toplevel_begin_move)(
@@ -267,6 +315,28 @@ inline void (*gdk_toplevel_begin_resize)(
 	double x,
 	double y,
 	guint32 timestamp);
+inline gboolean (*gdk_wayland_toplevel_export_handle)(
+	GdkToplevel *toplevel,
+	GdkWaylandToplevelExported callback,
+	gpointer user_data,
+	GDestroyNotify destroy_func);
+inline void (*gdk_wayland_toplevel_drop_exported_handle)(
+	GdkToplevel *toplevel,
+	const char *handle);
+inline void (*gdk_wayland_toplevel_unexport_handle)(
+	GdkToplevel *toplevel);
+inline gboolean (*gdk_wayland_window_export_handle)(
+	GdkWindow *window,
+	GdkWaylandWindowExported callback,
+	gpointer user_data,
+	GDestroyNotify destroy_func);
+inline void (*gdk_wayland_window_unexport_handle)(GdkWindow *window);
+inline gint (*gdk_surface_get_width)(GdkSurface *surface);
+inline gint (*gdk_surface_get_height)(GdkSurface *surface);
+inline void (*gtk_window_get_size)(
+	GtkWindow *window,
+	gint *width,
+	gint *height);
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here

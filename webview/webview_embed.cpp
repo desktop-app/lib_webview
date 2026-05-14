@@ -83,6 +83,10 @@ void *Window::winId() const {
 	return _webview ? _webview->winId() : nullptr;
 }
 
+PopupAnchor Window::popupAnchor() const {
+	return _webview ? _webview->popupAnchor() : PopupAnchor();
+}
+
 void Window::updateTheme(
 		QColor opaqueBg,
 		QColor scrollBg,

@@ -79,6 +79,19 @@
 		<method name='GetWinId'>
 			<arg type='t' name='result' direction='out'/>
 		</method>
+		<method name='GetWindowAnchor'>
+			<arg type='i' name='parentPlatform' direction='out'/>
+			<arg type='t' name='x11Id' direction='out'/>
+			<arg type='s' name='waylandHandle' direction='out'/>
+			<arg type='b' name='hasGeometry' direction='out'/>
+			<arg type='i' name='x' direction='out'/>
+			<arg type='i' name='y' direction='out'/>
+			<arg type='i' name='width' direction='out'/>
+			<arg type='i' name='height' direction='out'/>
+			<arg type='b' name='hasOuterSize' direction='out'/>
+			<arg type='i' name='outerWidth' direction='out'/>
+			<arg type='i' name='outerHeight' direction='out'/>
+		</method>
 		<signal name='Started'/>
 	</interface>
 </node>

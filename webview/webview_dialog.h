@@ -6,6 +6,8 @@
 //
 #pragma once
 
+#include "ui/platform/ui_platform_utility.h"
+
 #include <QtCore/QString>
 #include <QtCore/QRect>
 
@@ -32,7 +34,7 @@ struct PopupArgs {
 
 	QWidget *parent = nullptr;
 	std::optional<QRect> anchorGeometry;
-	void *transientParent = nullptr;
+	Ui::Platform::ForeignParent transientParent;
 	QString title;
 	QString text;
 	std::optional<QString> value;

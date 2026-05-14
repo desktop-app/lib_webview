@@ -102,17 +102,37 @@ ResolveResult Resolve(const Platform &platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_move_drag);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_resize_drag);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_display_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_screen_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
+	if (gtk_native_get_surface) {
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_drop_exported_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_unexport_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_width);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_height);
+	} else if (gtk_widget_get_window) {
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_size);
+	}
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		switch (platform) {
 		case Platform::Wayland:

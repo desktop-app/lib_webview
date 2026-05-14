@@ -6,6 +6,7 @@
 //
 #pragma once
 
+#include "ui/platform/ui_platform_utility.h"
 #include "webview/webview_common.h"
 
 #include <memory>
@@ -18,6 +19,7 @@
 
 #include <QtCore/QMargins>
 #include <QtCore/QRect>
+#include <QtCore/QSize>
 #include <QtGui/QColor>
 
 // Inspired by https://github.com/webview/webview.
@@ -37,6 +39,12 @@ struct NavigationHistoryState {
 	friend inline constexpr bool operator==(
 		NavigationHistoryState,
 		NavigationHistoryState) = default;
+};
+
+struct PopupAnchor {
+	std::optional<QRect> geometry;
+	std::optional<QSize> outerSize;
+	Ui::Platform::ForeignParent transientParent;
 };
 
 class ZoomController {
@@ -76,6 +84,9 @@ public:
 	[[nodiscard]] virtual void *winId() {
 		return nullptr;
 	}
+	[[nodiscard]] virtual PopupAnchor popupAnchor() {
+		return {};
+	}
 
 	virtual void refreshNavigationHistoryState() = 0;
 	[[nodiscard]] virtual auto navigationHistoryState()
@@ -86,7 +97,6 @@ public:
 	}
 
 };
-
 enum class DialogType {
 	Alert,
 	Confirm,
@@ -96,7 +106,7 @@ enum class DialogType {
 struct DialogArgs {
 	QWidget *parent = nullptr;
 	std::optional<QRect> anchorGeometry;
-	void *transientParent = nullptr;
+	Ui::Platform::ForeignParent transientParent;
 	DialogType type = DialogType::Alert;
 	std::string value;
 	std::string text;
