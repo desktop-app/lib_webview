@@ -70,12 +70,17 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.debug = OptionWebviewDebugEnabled.value(),
 		.safe = config.safe,
 		.mode = config.mode,
+		.windowMargins = config.windowMargins,
 	});
 	return (_webview != nullptr);
 }
 
 QWidget *Window::widget() const {
 	return _webview ? _webview->widget() : nullptr;
+}
+
+void *Window::winId() const {
+	return _webview ? _webview->winId() : nullptr;
 }
 
 void Window::updateTheme(

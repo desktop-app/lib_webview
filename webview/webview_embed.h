@@ -10,6 +10,7 @@
 #include "base/basic_types.h"
 #include "webview/webview_common.h"
 
+#include <QMargins>
 #include <rpl/lifetime.h>
 #include <rpl/producer.h>
 #include <QColor>
@@ -39,6 +40,7 @@ struct WindowConfig {
 	QString dataProtocolOverride;
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
+	QMargins windowMargins;
 };
 
 class Window final {
@@ -50,6 +52,7 @@ public:
 
 	// May be nullptr or destroyed any time (in case webview crashed).
 	[[nodiscard]] QWidget *widget() const;
+	[[nodiscard]] void *winId() const;
 
 	void updateTheme(
 		QColor opaqueBg,

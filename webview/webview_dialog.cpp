@@ -67,9 +67,13 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	auto running = true;
 	auto widget = base::unique_qptr<Ui::SeparatePanel>();
 	InvokeQueued(&context, [&] {
-		widget = base::make_unique_q<Ui::SeparatePanel>(Ui::SeparatePanelArgs{
+		auto separatePanelArgs = Ui::SeparatePanelArgs{
 			.parent = args.parent,
-		});
+		};
+		separatePanelArgs.anchorGeometry = args.anchorGeometry;
+		separatePanelArgs.transientParent = args.transientParent;
+		widget = base::make_unique_q<Ui::SeparatePanel>(
+			std::move(separatePanelArgs));
 		const auto raw = widget.get();
 
 		raw->setWindowFlag(Qt::WindowStaysOnTopHint, false);
@@ -235,6 +239,8 @@ DialogResult DefaultDialogHandler(DialogArgs &&args) {
 	}
 	const auto result = ShowBlockingPopup({
 		.parent = args.parent,
+		.anchorGeometry = args.anchorGeometry,
+		.transientParent = args.transientParent,
 		.title = QUrl(QString::fromStdString(args.url)).host(),
 		.text = QString::fromStdString(args.text),
 		.value = (args.type == DialogType::Prompt

@@ -6,6 +6,8 @@
 //
 #pragma once
 
+#include "webview/webview_common.h"
+
 #include <gio/gio.h>
 
 #define GTK_TYPE_CONTAINER (gtk_container_get_type ())
@@ -42,6 +44,8 @@ typedef struct _GdkDevice GdkDevice;
 typedef struct _GdkScreen GdkScreen;
 typedef struct _GdkRGBA GdkRGBA;
 typedef struct _GdkSurface GdkSurface;
+typedef struct _GdkVisual GdkVisual;
+typedef struct _GdkWindow GdkWindow;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkNative GtkNative;
 typedef struct _GtkWidget GtkWidget;
@@ -102,6 +106,14 @@ typedef enum {
 	GDK_SURFACE_EDGE_SOUTH,
 	GDK_SURFACE_EDGE_SOUTH_EAST,
 } GdkSurfaceEdge;
+
+typedef enum {
+	GTK_SHADOW_NONE,
+	GTK_SHADOW_IN,
+	GTK_SHADOW_OUT,
+	GTK_SHADOW_ETCHED_IN,
+	GTK_SHADOW_ETCHED_OUT,
+} GtkShadowType;
 
 typedef enum {
 	WEBKIT_WEB_PROCESS_CRASHED,
@@ -169,6 +181,9 @@ inline void (*gtk_window_unfullscreen)(GtkWindow *window);
 inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *hadjustment,
 	GtkAdjustment *vadjustment);
+inline void (*gtk_scrolled_window_set_shadow_type)(
+	GtkWidget *scrolled_window,
+	GtkShadowType type);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_set_size_request)(
@@ -176,10 +191,21 @@ inline void (*gtk_widget_set_size_request)(
 	gint width,
 	gint height);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
+inline void (*gtk_widget_set_app_paintable)(
+	GtkWidget *widget,
+	gboolean app_paintable);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);
+inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
 inline GdkScreen *(*gtk_widget_get_screen)(GtkWidget *widget);
+inline void (*gtk_widget_set_visual)(
+	GtkWidget *widget,
+	GdkVisual *visual);
+inline gint (*gtk_widget_get_scale_factor)(GtkWidget *widget);
+inline gboolean (*gdk_display_is_composited)(GdkDisplay *display);
+inline gboolean (*gdk_screen_is_composited)(GdkScreen *screen);
+inline GdkVisual *(*gdk_screen_get_rgba_visual)(GdkScreen *screen);
 inline GtkStyleContext *(*gtk_widget_get_style_context)(GtkWidget *widget);
 inline void (*gtk_widget_add_css_class)(
 	GtkWidget *widget,
@@ -224,6 +250,8 @@ inline void (*gtk_window_begin_resize_drag)(
 	gint root_y,
 	guint32 timestamp);
 inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
+inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *surface);
+inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
 inline void (*gdk_toplevel_begin_move)(
 	GdkToplevel *toplevel,
 	GdkDevice *device,
@@ -356,6 +384,8 @@ enum class Platform {
 	X11,
 };
 
-[[nodiscard]] ResolveResult Resolve(const Platform &platform);
+[[nodiscard]] ResolveResult Resolve(
+	const Platform &platform,
+	WindowMode mode);
 
 } // namespace Webview::WebKitGTK::Library

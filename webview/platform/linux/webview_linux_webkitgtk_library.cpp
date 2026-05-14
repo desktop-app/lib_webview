@@ -10,8 +10,10 @@
 
 namespace Webview::WebKitGTK::Library {
 
-ResolveResult Resolve(const Platform &platform) {
-	const auto lib = (platform != Platform::X11
+ResolveResult Resolve(const Platform &platform, WindowMode mode) {
+	const auto allowGtk4 = (platform != Platform::X11)
+		|| (mode == WindowMode::External);
+	const auto lib = (allowGtk4
 			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 			: nullptr)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
@@ -86,8 +88,15 @@ ResolveResult Resolve(const Platform &platform) {
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_app_paintable);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visual);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_scale_factor);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_display_is_composited);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_is_composited);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_rgba_visual);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
@@ -99,8 +108,11 @@ ResolveResult Resolve(const Platform &platform) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		switch (platform) {
 		case Platform::Wayland:

@@ -16,6 +16,8 @@
 #include <rpl/never.h>
 #include <rpl/producer.h>
 
+#include <QtCore/QMargins>
+#include <QtCore/QRect>
 #include <QtGui/QColor>
 
 // Inspired by https://github.com/webview/webview.
@@ -71,6 +73,9 @@ public:
 	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
+	[[nodiscard]] virtual void *winId() {
+		return nullptr;
+	}
 
 	virtual void refreshNavigationHistoryState() = 0;
 	[[nodiscard]] virtual auto navigationHistoryState()
@@ -90,6 +95,8 @@ enum class DialogType {
 
 struct DialogArgs {
 	QWidget *parent = nullptr;
+	std::optional<QRect> anchorGeometry;
+	void *transientParent = nullptr;
 	DialogType type = DialogType::Alert;
 	std::string value;
 	std::string text;
@@ -134,6 +141,7 @@ struct Config {
 	bool debug = false;
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
+	QMargins windowMargins;
 };
 
 struct Available {

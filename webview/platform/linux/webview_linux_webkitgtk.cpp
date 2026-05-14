@@ -29,6 +29,12 @@
 #include <QtGui/QtEvents>
 #include <QtWidgets/QWidget>
 
+#include <array>
+#include <cstdint>
+#include <cstring>
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include <xcb/xcb.h>
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 #include <QtQuickWidgets/QQuickWidget>
 #endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
@@ -55,6 +61,7 @@ constexpr auto kMasterObjectPath
 constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataHost = "127.0.0.1";
+constexpr auto kExternalShellFallbackBackground = "#eeeeee";
 
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
@@ -224,6 +231,156 @@ struct ShellControlMessage {
 	return std::nullopt;
 }
 
+[[nodiscard]] unsigned long X11WindowId(GtkWidget *window) {
+	if (!window) {
+		return 0;
+	}
+	const auto isX11Object = [](auto object, const char *type) {
+		return object && !std::strcmp(G_OBJECT_TYPE_NAME(object), type);
+	};
+	const auto isX11Window = [&] {
+		if (gtk_widget_get_display) {
+			if (const auto display = gtk_widget_get_display(window)) {
+				return isX11Object(display, "GdkX11Display");
+			}
+		}
+		return gtk_widget_get_screen
+			&& isX11Object(gtk_widget_get_screen(window), "GdkX11Screen");
+	}();
+	if (!isX11Window) {
+		return 0;
+	}
+	if (gtk_native_get_surface && gdk_x11_surface_get_xid) {
+		if (const auto surface = gtk_native_get_surface(
+				reinterpret_cast<GtkNative*>(window))) {
+			if (isX11Object(surface, "GdkX11Surface")) {
+				if (const auto xid = gdk_x11_surface_get_xid(surface)) {
+					return xid;
+				}
+			}
+		}
+	}
+	if (gtk_widget_get_window && gdk_x11_window_get_xid) {
+		if (const auto gdkWindow = gtk_widget_get_window(window)) {
+			if (isX11Object(gdkWindow, "GdkX11Window")) {
+				return gdk_x11_window_get_xid(gdkWindow);
+			}
+		}
+	}
+	return 0;
+}
+
+[[nodiscard]] bool SetupWindowAlpha(GtkWidget *window) {
+	if (!window) {
+		return false;
+	}
+	if (gtk_widget_set_visual
+		&& gtk_widget_get_screen
+		&& gdk_screen_get_rgba_visual) {
+		const auto screen = gtk_widget_get_screen(window);
+		if (!screen) {
+			return false;
+		}
+		const auto composited = !gdk_screen_is_composited
+			|| gdk_screen_is_composited(screen);
+		const auto visual = composited
+			? gdk_screen_get_rgba_visual(screen)
+			: nullptr;
+		if (!visual) {
+			return false;
+		}
+		gtk_widget_set_visual(window, visual);
+		return true;
+	}
+	if (gdk_display_is_composited && gtk_widget_get_display) {
+		if (const auto display = gtk_widget_get_display(window)) {
+			return gdk_display_is_composited(display);
+		}
+	}
+	return true;
+}
+
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+[[nodiscard]] xcb_atom_t XCBAtom(
+		xcb_connection_t *connection,
+		const char *name) {
+	const auto cookie = xcb_intern_atom(
+		connection,
+		false,
+		std::strlen(name),
+		name);
+	const auto reply = xcb_intern_atom_reply(connection, cookie, nullptr);
+	const auto result = reply ? reply->atom : xcb_atom_t(XCB_ATOM_NONE);
+	free(reply);
+	return result;
+}
+
+void SetX11FrameExtents(GtkWidget *window, const QMargins &margins) {
+	const auto xid = static_cast<xcb_window_t>(X11WindowId(window));
+	if (!xid) {
+		return;
+	}
+	const auto connection = xcb_connect(nullptr, nullptr);
+	const auto guard = gsl::finally([&] {
+		if (connection) {
+			xcb_disconnect(connection);
+		}
+	});
+	if (!connection || xcb_connection_has_error(connection)) {
+		return;
+	}
+	const auto frameExtentsAtom = XCBAtom(connection, "_GTK_FRAME_EXTENTS");
+	if (!frameExtentsAtom) {
+		return;
+	} else if (margins.isNull()) {
+		free(
+			xcb_request_check(
+				connection,
+				xcb_delete_property_checked(
+					connection,
+					xid,
+					frameExtentsAtom)));
+		xcb_flush(connection);
+		return;
+	}
+	const auto rawScale = gtk_widget_get_scale_factor
+		? gtk_widget_get_scale_factor(window)
+		: 1;
+	const auto scale = (rawScale > 0) ? rawScale : 1;
+	const auto scaled = [&](int value) {
+		return std::uint32_t((value > 0 ? value : 0) * scale);
+	};
+	const auto extents = std::array<std::uint32_t, 4>{
+		scaled(margins.left()),
+		scaled(margins.right()),
+		scaled(margins.top()),
+		scaled(margins.bottom()),
+	};
+	free(
+		xcb_request_check(
+			connection,
+			xcb_change_property_checked(
+				connection,
+				XCB_PROP_MODE_REPLACE,
+				xid,
+				frameExtentsAtom,
+				XCB_ATOM_CARDINAL,
+				32,
+				extents.size(),
+				extents.data())));
+	xcb_flush(connection);
+}
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+
+void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	SetX11FrameExtents(window, margins);
+#else // DESKTOP_APP_DISABLE_X11_INTEGRATION
+	(void)window;
+	(void)margins;
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+}
+
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(
@@ -249,6 +406,7 @@ public:
 	void setFullscreen(bool fullscreen) override;
 
 	QWidget *widget() override;
+	void *winId() override;
 
 	void refreshNavigationHistoryState() override;
 	auto navigationHistoryState()
@@ -263,6 +421,7 @@ private:
 	bool handleShellControlMessage(const std::string &message);
 	void beginShellMove(const QJsonObject &arguments);
 	void beginShellResize(const QJsonObject &arguments);
+	void updateWindowFrameExtents();
 
 	bool loadFailed(
 		WebKitLoadEvent loadEvent,
@@ -295,8 +454,6 @@ private:
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
 
-	void *winId();
-
 	bool _remoting = false;
 	WindowMode _mode = WindowMode::Embedded;
 	bool _connected = false;
@@ -315,6 +472,9 @@ private:
 	GtkWidget *_window = nullptr;
 	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
+	QMargins _windowMargins;
+	bool _windowSupportsAlpha = true;
+	bool _fullscreen = false;
 
 	bool _debug = false;
 	std::function<void(std::string)> _messageHandler;
@@ -424,6 +584,7 @@ bool Instance::create(Config config) {
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
+	_windowMargins = config.windowMargins;
 
 	if (_remoting) {
 		if (!_helper) {
@@ -439,12 +600,25 @@ bool Instance::create(Config config) {
 		const auto a = config.opaqueBg.alpha();
 		const auto path = config.userDataPath;
 		const auto mode = int(config.mode);
-		_helper.call_create(debug, r, g, b, a, path, mode, crl::guard(&guard, [&](
-				GObject::Object source_object,
-				Gio::AsyncResult res) {
-			success = _helper.call_create_finish(res, nullptr);
-			GLib::MainContext::default_().wakeup();
-		}));
+		const auto margins = config.windowMargins;
+		_helper.call_create(
+			debug,
+			r,
+			g,
+			b,
+			a,
+			path,
+			mode,
+			margins.left(),
+			margins.right(),
+			margins.top(),
+			margins.bottom(),
+			crl::guard(&guard, [&](
+					GObject::Object source_object,
+					Gio::AsyncResult res) {
+				success = _helper.call_create_finish(res, nullptr);
+				GLib::MainContext::default_().wakeup();
+			}));
 
 		while (!success && _connected) {
 			GLib::MainContext::default_().iteration(true);
@@ -454,8 +628,7 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		switch (_platform) {
-		case Platform::Any:
+		const auto createPlaceholder = [&] {
 			_widget = ::base::make_unique_q<QWidget>(config.parent);
 			::base::install_event_filter(_widget, [=](
 					not_null<QEvent*> e) {
@@ -470,8 +643,17 @@ bool Instance::create(Config config) {
 			if (_mode != WindowMode::External) {
 				_widget->show();
 			}
+		};
+
+		switch (_platform) {
+		case Platform::Any:
+			createPlaceholder();
 			break;
 		case Platform::X11:
+			if (_mode == WindowMode::External) {
+				createPlaceholder();
+				break;
+			}
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
 			::base::install_event_filter(window, [=](
 					not_null<QEvent*> e) {
@@ -496,12 +678,17 @@ bool Instance::create(Config config) {
 		return true;
 	}
 
-	_window = _platform == Platform::X11
+	_window = (_platform == Platform::X11)
+		&& (_mode != WindowMode::External)
 		? gtk_plug_new(0)
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
 		gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
 	}
+	if (gtk_widget_set_app_paintable) {
+		gtk_widget_set_app_paintable(_window, TRUE);
+	}
+	_windowSupportsAlpha = SetupWindowAlpha(_window);
 	if (gtk_widget_add_css_class) {
 		gtk_widget_add_css_class(_window, "webviewWindow");
 	} else {
@@ -567,6 +754,13 @@ bool Instance::create(Config config) {
 		G_CALLBACK(+[](Instance *instance) {
 			instance->_window = nullptr;
 			Gio::Application::get_default().quit();
+		}),
+		this);
+	g_signal_connect_swapped(
+		_window,
+		"realize",
+		G_CALLBACK(+[](Instance *instance) {
+			instance->updateWindowFrameExtents();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -737,7 +931,14 @@ bool Instance::create(Config config) {
 		manager,
 		"external",
 		nullptr);
-	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
+	init(std::string("window.TelegramDesktopWindowAlphaSupported = ")
+		+ (_windowSupportsAlpha ? "true" : "false")
+		+ ";");
+	const auto fallback = (_mode == WindowMode::External)
+		&& !_windowSupportsAlpha;
+	const GdkRGBA rgba = fallback
+		? GdkRGBA{ 238.f / 255.f, 238.f / 255.f, 238.f / 255.f, 1.f }
+		: GdkRGBA{ 0.f, 0.f, 0.f, 0.f };
 	webkit_web_view_set_background_color(_webview, &rgba);
 	if (_debug) {
 		WebKitSettings *settings = webkit_web_view_get_settings(_webview);
@@ -747,6 +948,11 @@ bool Instance::create(Config config) {
 		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
 	} else if (_platform == Platform::X11) {
 		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
+		if (gtk_scrolled_window_set_shadow_type) {
+			gtk_scrolled_window_set_shadow_type(
+				x11SizeFix,
+				GTK_SHADOW_NONE);
+		}
 		gtk_container_add(GTK_CONTAINER(x11SizeFix), GTK_WIDGET(_webview));
 		gtk_container_add(GTK_CONTAINER(_window), x11SizeFix);
 	} else {
@@ -757,6 +963,7 @@ bool Instance::create(Config config) {
 	} else {
 		gtk_widget_show_all(_window);
 	}
+	updateWindowFrameExtents();
 	init(R"(
 if (window === window.top) {
 	window.external = {
@@ -859,6 +1066,17 @@ void Instance::beginShellResize(const QJsonObject &arguments) {
 				ShellControlTimestamp(arguments));
 		}
 	}
+}
+
+void Instance::updateWindowFrameExtents() {
+	if ((_mode != WindowMode::External) || !_window) {
+		return;
+	}
+	SetFrameExtents(
+		_window,
+		(!_fullscreen && _windowSupportsAlpha)
+			? _windowMargins
+			: QMargins());
 }
 
 bool Instance::loadFailed(
@@ -1140,7 +1358,7 @@ ResolveResult Instance::resolve() {
 
 		const ::base::has_weak_ptr guard;
 		std::optional<ResolveResult> result;
-		_helper.call_resolve(crl::guard(&guard, [&](
+		_helper.call_resolve(int(_mode), crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
@@ -1166,7 +1384,7 @@ ResolveResult Instance::resolve() {
 		return result.value_or(ResolveResult::IPCFailure);
 	}
 
-	return Resolve(_platform);
+	return Resolve(_platform, _mode);
 }
 
 void Instance::navigate(std::string url) {
@@ -1291,11 +1509,14 @@ void *Instance::winId() {
 		return ret.value_or(nullptr);
 	}
 
-	if (_platform != Platform::X11) {
-		return nullptr;
+	if (_mode == WindowMode::External) {
+		const auto xid = X11WindowId(_window);
+		return xid ? reinterpret_cast<void*>(xid) : nullptr;
 	}
 
-	return reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)));
+	return (_platform == Platform::X11)
+		? reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)))
+		: nullptr;
 }
 
 void Instance::refreshNavigationHistoryState() {
@@ -1329,10 +1550,26 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	const auto background = std::format(
-		".webviewWindow {{background: {};}}",
-		(_mode == WindowMode::External) || (_platform == Platform::Wayland)
+	const auto background = std::format(R"(
+		.webviewWindow,
+		window.webviewWindow,
+		window.webviewWindow.background {{
+			background: {};
+			box-shadow: none;
+		}}
+		window.webviewWindow.csd,
+		window.webviewWindow.solid-csd,
+		window.webviewWindow.ssd,
+		window.webviewWindow decoration {{
+			box-shadow: none;
+			margin: 0;
+		}}
+	)",
+		(((_mode == WindowMode::External) || (_platform == Platform::Wayland))
+			&& _windowSupportsAlpha)
 			? "transparent"
+			: (_mode == WindowMode::External)
+			? kExternalShellFallbackBackground
 			: opaqueBg.name().toStdString());
 
 	if (gtk_css_provider_load_from_string) {
@@ -1382,6 +1619,8 @@ void Instance::setFullscreen(bool fullscreen) {
 	} else {
 		gtk_window_unfullscreen(GTK_WINDOW(_window));
 	}
+	_fullscreen = fullscreen;
+	updateWindowFrameExtents();
 }
 
 void Instance::startProcess() {
@@ -1553,7 +1792,8 @@ void Instance::stopProcess() {
 void Instance::updateHistoryStates() {
 	const auto url = webkit_web_view_get_uri(_webview);
 	const auto title = webkit_web_view_get_title(_webview);
-	if (_platform == Platform::Any && _window) {
+	if (((_platform == Platform::Any) || (_mode == WindowMode::External))
+		&& _window) {
 		gtk_window_set_title(GTK_WINDOW(_window), title ? title : "");
 	}
 	_master.call_navigation_state_update(
@@ -1820,7 +2060,11 @@ void Instance::registerHelperMethodHandlers() {
 			int b,
 			int a,
 			const std::string &path,
-			int mode) {
+			int mode,
+			int marginLeft,
+			int marginRight,
+			int marginTop,
+			int marginBottom) {
 		const auto windowMode = (mode == int(WindowMode::External))
 			? WindowMode::External
 			: WindowMode::Embedded;
@@ -1830,6 +2074,11 @@ void Instance::registerHelperMethodHandlers() {
 			.userDataPath = path,
 			.debug = debug,
 			.mode = windowMode,
+			.windowMargins = QMargins(
+				marginLeft,
+				marginTop,
+				marginRight,
+				marginBottom),
 		})) {
 			_helper.complete_create(invocation);
 		} else {
@@ -1848,7 +2097,11 @@ void Instance::registerHelperMethodHandlers() {
 
 	_helper.signal_handle_resolve().connect([=](
 			Helper,
-			Gio::DBusMethodInvocation invocation) {
+			Gio::DBusMethodInvocation invocation,
+			int mode) {
+		_mode = (mode == int(WindowMode::External))
+			? WindowMode::External
+			: WindowMode::Embedded;
 		_helper.complete_resolve(invocation, int(resolve()));
 		return true;
 	});

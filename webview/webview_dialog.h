@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QtCore/QString>
+#include <QtCore/QRect>
 
 #include <optional>
 #include <vector>
@@ -30,6 +31,8 @@ struct PopupArgs {
 	};
 
 	QWidget *parent = nullptr;
+	std::optional<QRect> anchorGeometry;
+	void *transientParent = nullptr;
 	QString title;
 	QString text;
 	std::optional<QString> value;
