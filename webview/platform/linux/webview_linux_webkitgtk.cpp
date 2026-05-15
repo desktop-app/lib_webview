@@ -724,6 +724,7 @@ bool Instance::create(Config config) {
 		const auto mode = int(config.mode);
 		const auto shellMessageToken = _shellMessageToken;
 		const auto margins = config.windowMargins;
+		const auto initialSize = config.initialSize;
 		_helper.call_create(
 			debug,
 			r,
@@ -737,6 +738,8 @@ bool Instance::create(Config config) {
 			margins.right(),
 			margins.top(),
 			margins.bottom(),
+			initialSize.width(),
+			initialSize.height(),
 			crl::guard(&guard, [&](
 					GObject::Object source_object,
 					Gio::AsyncResult res) {
@@ -752,18 +755,20 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		const auto createPlaceholder = [&] {
+		const auto createPlaceholder = [&](bool forwardResize) {
 			_widget = ::base::make_unique_q<QWidget>(config.parent);
-			::base::install_event_filter(_widget, [=](
-					not_null<QEvent*> e) {
-				if (e->type() == QEvent::Resize) {
-					const auto size = static_cast<QResizeEvent*>(
-						e.get()
-					)->size();
-					resize(size.width(), size.height());
-				}
-				return ::base::EventFilterResult::Continue;
-			});
+			if (forwardResize) {
+				::base::install_event_filter(_widget, [=](
+						not_null<QEvent*> e) {
+					if (e->type() == QEvent::Resize) {
+						const auto size = static_cast<QResizeEvent*>(
+							e.get()
+						)->size();
+						resize(size.width(), size.height());
+					}
+					return ::base::EventFilterResult::Continue;
+				});
+			}
 			if (_mode != WindowMode::External) {
 				_widget->show();
 			}
@@ -771,11 +776,11 @@ bool Instance::create(Config config) {
 
 		switch (_platform) {
 		case Platform::Any:
-			createPlaceholder();
+			createPlaceholder(_mode != WindowMode::External);
 			break;
 		case Platform::X11:
 			if (_mode == WindowMode::External) {
-				createPlaceholder();
+				createPlaceholder(false);
 				break;
 			}
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
@@ -808,6 +813,12 @@ bool Instance::create(Config config) {
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
 		gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
+		if (config.initialSize.width() > 0 && config.initialSize.height() > 0) {
+			gtk_window_set_default_size(
+				GTK_WINDOW(_window),
+				config.initialSize.width(),
+				config.initialSize.height());
+		}
 	}
 	if (gtk_widget_set_app_paintable) {
 		gtk_widget_set_app_paintable(_window, TRUE);
@@ -2624,7 +2635,9 @@ void Instance::registerHelperMethodHandlers() {
 			int marginLeft,
 			int marginRight,
 			int marginTop,
-			int marginBottom) {
+			int marginBottom,
+			int initialWidth,
+			int initialHeight) {
 		const auto windowMode = (mode == int(WindowMode::External))
 			? WindowMode::External
 			: WindowMode::Embedded;
@@ -2639,6 +2652,7 @@ void Instance::registerHelperMethodHandlers() {
 				marginTop,
 				marginRight,
 				marginBottom),
+			.initialSize = QSize(initialWidth, initialHeight),
 			.shellMessageToken = shellMessageToken,
 		})) {
 			_helper.complete_create(invocation);

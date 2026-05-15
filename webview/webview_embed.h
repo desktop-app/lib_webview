@@ -43,6 +43,7 @@ struct WindowConfig {
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
 	QMargins windowMargins;
+	QSize initialSize;
 	QString shellMessageToken;
 };
 

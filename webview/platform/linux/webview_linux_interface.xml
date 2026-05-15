@@ -49,6 +49,8 @@
 			<arg type='i' name='marginRight' direction='in'/>
 			<arg type='i' name='marginTop' direction='in'/>
 			<arg type='i' name='marginBottom' direction='in'/>
+			<arg type='i' name='initialWidth' direction='in'/>
+			<arg type='i' name='initialHeight' direction='in'/>
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>
