@@ -119,8 +119,10 @@ ResolveResult Resolve(const Platform &platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_window_set_shadow_width);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_shadow_width);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
 	if (gtk_native_get_surface) {
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);

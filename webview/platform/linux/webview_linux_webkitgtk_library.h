@@ -89,6 +89,7 @@ typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventKey GdkEventKey;
 typedef struct _GdkToplevel GdkToplevel;
 typedef GdkToplevel GdkWaylandToplevel;
+typedef struct _GdkToplevelSize GdkToplevelSize;
 typedef struct _GtkEventController GtkEventController;
 typedef struct _GtkGesture GtkGesture;
 typedef unsigned int GdkModifierType;
@@ -300,6 +301,12 @@ inline GType (*gdk_wayland_toplevel_get_type)(void);
 inline GType (*gdk_wayland_window_get_type)(void);
 inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *surface);
 inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
+inline void (*gdk_window_set_shadow_width)(
+	GdkWindow *window,
+	gint left,
+	gint right,
+	gint top,
+	gint bottom);
 inline void (*gdk_toplevel_begin_move)(
 	GdkToplevel *toplevel,
 	GdkDevice *device,
@@ -315,6 +322,12 @@ inline void (*gdk_toplevel_begin_resize)(
 	double x,
 	double y,
 	guint32 timestamp);
+inline void (*gdk_toplevel_size_set_shadow_width)(
+	GdkToplevelSize *size,
+	int left,
+	int right,
+	int top,
+	int bottom);
 inline gboolean (*gdk_wayland_toplevel_export_handle)(
 	GdkToplevel *toplevel,
 	GdkWaylandToplevelExported callback,

@@ -29,13 +29,10 @@
 #include <QtGui/QtEvents>
 #include <QtWidgets/QWidget>
 
-#include <array>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-#include <xcb/xcb.h>
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 #include <QtQuickWidgets/QQuickWidget>
 #endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
@@ -456,85 +453,18 @@ struct ShellControlMessage {
 	return true;
 }
 
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-[[nodiscard]] xcb_atom_t XCBAtom(
-		xcb_connection_t *connection,
-		const char *name) {
-	const auto cookie = xcb_intern_atom(
-		connection,
-		false,
-		std::strlen(name),
-		name);
-	const auto reply = xcb_intern_atom_reply(connection, cookie, nullptr);
-	const auto result = reply ? reply->atom : xcb_atom_t(XCB_ATOM_NONE);
-	free(reply);
-	return result;
-}
-
-void SetX11FrameExtents(GtkWidget *window, const QMargins &margins) {
-	const auto xid = static_cast<xcb_window_t>(X11WindowId(window));
-	if (!xid) {
-		return;
-	}
-	const auto connection = xcb_connect(nullptr, nullptr);
-	const auto guard = gsl::finally([&] {
-		if (connection) {
-			xcb_disconnect(connection);
-		}
-	});
-	if (!connection || xcb_connection_has_error(connection)) {
-		return;
-	}
-	const auto frameExtentsAtom = XCBAtom(connection, "_GTK_FRAME_EXTENTS");
-	if (!frameExtentsAtom) {
-		return;
-	} else if (margins.isNull()) {
-		free(
-			xcb_request_check(
-				connection,
-				xcb_delete_property_checked(
-					connection,
-					xid,
-					frameExtentsAtom)));
-		xcb_flush(connection);
-		return;
-	}
-	const auto rawScale = gtk_widget_get_scale_factor
-		? gtk_widget_get_scale_factor(window)
-		: 1;
-	const auto scale = (rawScale > 0) ? rawScale : 1;
-	const auto scaled = [&](int value) {
-		return std::uint32_t((value > 0 ? value : 0) * scale);
-	};
-	const auto extents = std::array<std::uint32_t, 4>{
-		scaled(margins.left()),
-		scaled(margins.right()),
-		scaled(margins.top()),
-		scaled(margins.bottom()),
-	};
-	free(
-		xcb_request_check(
-			connection,
-			xcb_change_property_checked(
-				connection,
-				XCB_PROP_MODE_REPLACE,
-				xid,
-				frameExtentsAtom,
-				XCB_ATOM_CARDINAL,
-				32,
-				extents.size(),
-				extents.data())));
-	xcb_flush(connection);
-}
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
-
 void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-	SetX11FrameExtents(window, margins);
-#else // DESKTOP_APP_DISABLE_X11_INTEGRATION
-	(void)window;
-	(void)margins;
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+	if (gdk_window_set_shadow_width && gtk_widget_get_window) {
+		if (const auto gdkWindow = gtk_widget_get_window(window)) {
+			gdk_window_set_shadow_width(
+				gdkWindow,
+				std::max(margins.left(), 0),
+				std::max(margins.right(), 0),
+				std::max(margins.top(), 0),
+				std::max(margins.bottom(), 0));
+			return;
+		}
+	}
 }
 
 class Instance final : public Interface, public ::base::has_weak_ptr {
@@ -578,6 +508,8 @@ private:
 	bool handleShellControlMessage(const std::string &message);
 	void beginShellMove(const QJsonObject &arguments);
 	void beginShellResize(const QJsonObject &arguments);
+	[[nodiscard]] QMargins windowFrameExtents() const;
+	void ensureToplevelFrameExtents();
 	void updateWindowFrameExtents();
 
 	bool loadFailed(
@@ -651,6 +583,8 @@ private:
 	QMargins _windowMargins;
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
+	GdkToplevel *_frameExtentsToplevel = nullptr;
+	gulong _frameExtentsComputeSizeHandler = 0;
 
 	bool _debug = false;
 	std::function<void(std::string)> _messageHandler;
@@ -698,6 +632,11 @@ Instance::~Instance() {
 		g_object_unref(_backgroundProvider);
 	}
 	if (_window) {
+		if (_frameExtentsToplevel && _frameExtentsComputeSizeHandler) {
+			g_signal_handler_disconnect(
+				_frameExtentsToplevel,
+				_frameExtentsComputeSizeHandler);
+		}
 		clearWaylandPopupAnchorExport();
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(_window));
@@ -1284,15 +1223,52 @@ void Instance::beginShellResize(const QJsonObject &arguments) {
 	}
 }
 
+QMargins Instance::windowFrameExtents() const {
+	return (!_fullscreen && _windowSupportsAlpha)
+		? _windowMargins
+		: QMargins();
+}
+
+void Instance::ensureToplevelFrameExtents() {
+	if (!gdk_toplevel_size_set_shadow_width
+		|| !gtk_native_get_surface
+		|| !_window) {
+		return;
+	}
+	const auto toplevel = GdkToplevelFromSurface(GtkNativeSurface(_window));
+	if (!toplevel || toplevel == _frameExtentsToplevel) {
+		return;
+	}
+	if (_frameExtentsToplevel && _frameExtentsComputeSizeHandler) {
+		g_signal_handler_disconnect(
+			_frameExtentsToplevel,
+			_frameExtentsComputeSizeHandler);
+	}
+	_frameExtentsToplevel = toplevel;
+	_frameExtentsComputeSizeHandler = g_signal_connect_after(
+		toplevel,
+		"compute-size",
+		G_CALLBACK(+[](
+				GdkToplevel*,
+				GdkToplevelSize *size,
+				Instance *instance) {
+			const auto margins = instance->windowFrameExtents();
+			gdk_toplevel_size_set_shadow_width(
+				size,
+				std::max(margins.left(), 0),
+				std::max(margins.right(), 0),
+				std::max(margins.top(), 0),
+				std::max(margins.bottom(), 0));
+		}),
+		this);
+}
+
 void Instance::updateWindowFrameExtents() {
 	if ((_mode != WindowMode::External) || !_window) {
 		return;
 	}
-	SetFrameExtents(
-		_window,
-		(!_fullscreen && _windowSupportsAlpha)
-			? _windowMargins
-			: QMargins());
+	ensureToplevelFrameExtents();
+	SetFrameExtents(_window, windowFrameExtents());
 }
 
 bool Instance::loadFailed(
@@ -2140,6 +2116,7 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 			-1,
 			nullptr);
 	}
+	updateWindowFrameExtents();
 }
 
 void Instance::resize(int w, int h) {
