@@ -63,6 +63,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.navigationStartHandler = navigationStartHandler(),
 		.navigationDoneHandler = navigationDoneHandler(),
 		.dialogHandler = dialogHandler(),
+		.asyncDialogHandler = asyncDialogHandler(),
 		.dataRequestHandler = dataRequestHandler(),
 		.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
 		.userDataPath = config.storageId.path.toStdString(),
@@ -280,6 +281,10 @@ void Window::setDialogHandler(Fn<DialogResult(DialogArgs)> handler) {
 	_dialogHandler = handler ? handler : DefaultDialogHandler;
 }
 
+void Window::setAsyncDialogHandler(AsyncDialogHandler handler) {
+	_asyncDialogHandler = std::move(handler);
+}
+
 void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 	_dataRequestHandler = std::move(handler);
 }
@@ -324,6 +329,22 @@ Fn<DialogResult(DialogArgs)> Window::dialogHandler() const {
 				result = _dialogHandler(std::move(args));
 			});
 		}
+		return result;
+	};
+}
+
+AsyncDialogHandler Window::asyncDialogHandler() const {
+	return [=](
+			DialogArgs args,
+			std::function<void(DialogResult)> done) {
+		if (!_asyncDialogHandler) {
+			return false;
+		}
+		auto result = false;
+		base::Integration::Instance().enterFromEventLoop([&] {
+			args.parent = widget();
+			result = _asyncDialogHandler(std::move(args), std::move(done));
+		});
 		return result;
 	};
 }

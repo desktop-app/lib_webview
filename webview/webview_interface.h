@@ -117,6 +117,8 @@ struct DialogResult {
 	std::string text;
 	bool accepted = false;
 };
+using AsyncDialogHandler = std::function<
+	bool(DialogArgs, std::function<void(DialogResult)>)>;
 
 struct DataResponse {
 	std::unique_ptr<DataStream> stream;
@@ -144,6 +146,7 @@ struct Config {
 	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> dialogHandler;
+	AsyncDialogHandler asyncDialogHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
 	std::string dataProtocolOverride;
 	std::string userDataPath;

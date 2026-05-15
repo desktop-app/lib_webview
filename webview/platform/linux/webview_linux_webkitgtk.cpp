@@ -32,6 +32,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 #include <xcb/xcb.h>
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
@@ -591,6 +592,8 @@ private:
 		WebKitPolicyDecisionType decisionType);
 	GtkWidget *createAnother(WebKitNavigationAction *action);
 	bool scriptDialog(WebKitScriptDialog *dialog);
+	void evalNow(std::string js);
+	void scheduleQueuedEvals();
 	bool authenticate(WebKitAuthenticationRequest *request);
 
 	std::string dataDomain();
@@ -654,12 +657,15 @@ private:
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
+	AsyncDialogHandler _asyncDialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
+	int _scriptDialogDepth = 0;
+	std::vector<std::string> _queuedScriptDialogEvals;
 	bool _loadFailed = false;
 
 };
@@ -758,6 +764,7 @@ bool Instance::create(Config config) {
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_dialogHandler = std::move(config.dialogHandler);
+	_asyncDialogHandler = std::move(config.asyncDialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	_windowMargins = config.windowMargins;
 	_shellMessageToken = std::move(config.shellMessageToken);
@@ -1366,6 +1373,12 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	std::string result;
 	if (_master) {
 		auto loop = GLib::MainLoop::new_();
+		++_scriptDialogDepth;
+		const auto guard = gsl::finally([&] {
+			if (--_scriptDialogDepth == 0) {
+				scheduleQueuedEvals();
+			}
+		});
 		_master.call_script_dialog(
 			type,
 			text ? text : "",
@@ -1659,6 +1672,14 @@ void Instance::eval(std::string js) {
 		return;
 	}
 
+	if (_scriptDialogDepth > 0) {
+		_queuedScriptDialogEvals.push_back(std::move(js));
+		return;
+	}
+	evalNow(std::move(js));
+}
+
+void Instance::evalNow(std::string js) {
 	if (webkit_web_view_evaluate_javascript) {
 		webkit_web_view_evaluate_javascript(
 			_webview,
@@ -1677,6 +1698,34 @@ void Instance::eval(std::string js) {
 			nullptr,
 			nullptr);
 	}
+}
+
+void Instance::scheduleQueuedEvals() {
+	if (_queuedScriptDialogEvals.empty()) {
+		return;
+	}
+	struct QueuedEvals {
+		::base::weak_ptr<Instance> instance;
+		std::vector<std::string> scripts;
+	};
+	auto queued = std::make_unique<QueuedEvals>();
+	queued->instance = this;
+	queued->scripts = std::move(_queuedScriptDialogEvals);
+	_queuedScriptDialogEvals = {};
+	g_idle_add_full(
+		G_PRIORITY_DEFAULT_IDLE,
+		+[](gpointer userData) -> gboolean {
+			const auto queued = std::unique_ptr<QueuedEvals>(
+				static_cast<QueuedEvals*>(userData));
+			if (const auto instance = queued->instance.get()) {
+				for (auto &script : queued->scripts) {
+					instance->eval(std::move(script));
+				}
+			}
+			return G_SOURCE_REMOVE;
+		},
+		queued.release(),
+		nullptr);
 }
 
 void Instance::focus() {
@@ -2409,11 +2458,30 @@ void Instance::registerMasterMethodHandlers() {
 			? DialogType::Alert
 			: DialogType::Confirm;
 
-		const auto result = _dialogHandler(DialogArgs{
+		auto args = DialogArgs{
 			.type = dialogType,
 			.value = value,
 			.text = text,
-		});
+		};
+
+		if (_asyncDialogHandler) {
+			const auto weak = ::base::make_weak(this);
+			const auto handled = _asyncDialogHandler(args, [=](
+					DialogResult result) mutable {
+				if (!weak || !_master) {
+					return;
+				}
+				_master.complete_script_dialog(
+					invocation,
+					result.accepted,
+					result.text);
+			});
+			if (handled) {
+				return true;
+			}
+		}
+
+		const auto result = _dialogHandler(std::move(args));
 
 		_master.complete_script_dialog(
 			invocation,

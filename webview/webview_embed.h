@@ -9,6 +9,7 @@
 #include "base/unique_qptr.h"
 #include "base/basic_types.h"
 #include "webview/webview_common.h"
+#include "webview/webview_interface.h"
 
 #include <QMargins>
 #include <rpl/lifetime.h>
@@ -71,6 +72,7 @@ public:
 	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
 	void setNavigationDoneHandler(Fn<void(bool)> handler);
 	void setDialogHandler(Fn<DialogResult(DialogArgs)> handler);
+	void setAsyncDialogHandler(AsyncDialogHandler handler);
 	void setDataRequestHandler(Fn<DataResult(DataRequest)> handler);
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
@@ -96,6 +98,7 @@ private:
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
 	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
+	[[nodiscard]] AsyncDialogHandler asyncDialogHandler() const;
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
 
 	std::unique_ptr<Interface> _webview;
@@ -103,6 +106,7 @@ private:
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
 	Fn<DialogResult(DialogArgs)> _dialogHandler;
+	AsyncDialogHandler _asyncDialogHandler;
 	Fn<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
 	rpl::lifetime _lifetime;
