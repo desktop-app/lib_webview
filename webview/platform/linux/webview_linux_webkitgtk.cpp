@@ -2104,9 +2104,11 @@ void Instance::resize(int w, int h) {
 	}
 
 	gtk_widget_set_size_request(_window, w, h);
-	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-		gtk_widget_set_size_request(_window, -1, -1);
-	}));
+	if (_mode != WindowMode::External) {
+		GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
+			gtk_widget_set_size_request(_window, -1, -1);
+		}));
+	}
 }
 
 void Instance::setFullscreen(bool fullscreen) {
