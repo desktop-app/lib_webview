@@ -44,6 +44,7 @@
 			<arg type='i' name='a' direction='in'/>
 			<arg type='s' name='path' direction='in'/>
 			<arg type='i' name='mode' direction='in'/>
+			<arg type='s' name='shellMessageToken' direction='in'/>
 			<arg type='i' name='marginLeft' direction='in'/>
 			<arg type='i' name='marginRight' direction='in'/>
 			<arg type='i' name='marginTop' direction='in'/>

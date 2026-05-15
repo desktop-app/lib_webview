@@ -42,6 +42,7 @@ struct WindowConfig {
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
 	QMargins windowMargins;
+	QString shellMessageToken;
 };
 
 class Window final {

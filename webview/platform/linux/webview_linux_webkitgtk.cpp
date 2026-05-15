@@ -62,6 +62,11 @@ constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataHost = "127.0.0.1";
 constexpr auto kExternalShellFallbackBackground = "#eeeeee";
+constexpr auto kMaxScriptMessageBytes = 1024 * 1024;
+constexpr auto kExternalMessageType = "tdesktop_external_bot_webapp";
+constexpr auto kExternalShellSource = "shell";
+constexpr auto kMaxPopupAnchorDimension = 32768;
+constexpr auto kMaxWaylandPopupAnchorHandleBytes = 4096;
 
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
@@ -91,7 +96,15 @@ enum class ShellControlAction {
 	BeginResize,
 };
 
+enum class ShellControlParseStatus {
+	NotShellControl,
+	Invalid,
+	Valid,
+};
+
 struct ShellControlMessage {
+	ShellControlParseStatus status
+		= ShellControlParseStatus::NotShellControl;
 	ShellControlAction action = ShellControlAction::None;
 	QJsonObject arguments;
 };
@@ -117,39 +130,73 @@ struct ShellControlMessage {
 	return std::string(value);
 }
 
-[[nodiscard]] std::optional<ShellControlMessage> ParseShellControlMessage(
-		const std::string &message) {
+[[nodiscard]] ShellControlAction ShellControlActionFromCommand(
+		const QString &command) {
+	if (command == "shell_begin_move") {
+		return ShellControlAction::BeginMove;
+	} else if (command == "shell_begin_resize") {
+		return ShellControlAction::BeginResize;
+	}
+	return ShellControlAction::None;
+}
+
+[[nodiscard]] bool IsExternalShellOrigin(const QString &origin) {
+	const auto url = QUrl(origin);
+	return url.isValid()
+		&& url.scheme() == "https"
+		&& url.host() == "web.telegram.org"
+		&& url.port(443) == 443
+		&& url.userInfo().isEmpty()
+		&& url.path().isEmpty()
+		&& url.query().isEmpty()
+		&& url.fragment().isEmpty();
+}
+
+[[nodiscard]] ShellControlMessage ParseShellControlMessage(
+		const std::string &message,
+		const std::string &shellMessageToken) {
 	const auto document = QJsonDocument::fromJson(
-		QByteArray::fromStdString(message));
-	if (!document.isArray()) {
-		return std::nullopt;
-	}
-	const auto list = document.array();
-	const auto command = list.at(0).toString();
-	auto action = ShellControlAction::None;
-	if (command == "tdesktop_shell_begin_move") {
-		action = ShellControlAction::BeginMove;
-	} else if (command == "tdesktop_shell_begin_resize") {
-		action = ShellControlAction::BeginResize;
-	} else {
-		return std::nullopt;
-	}
-	auto arguments = QJsonObject();
-	if (list.size() > 1) {
-		const auto data = list.at(1);
-		if (data.isObject()) {
-			arguments = data.toObject();
-		} else if (data.isString()) {
-			const auto argumentsDocument = QJsonDocument::fromJson(
-				data.toString().toUtf8());
-			if (argumentsDocument.isObject()) {
-				arguments = argumentsDocument.object();
+		QByteArray::fromRawData(message.data(), int(message.size())));
+	if (document.isArray()) {
+		const auto list = document.array();
+		const auto action = ShellControlActionFromCommand(
+			list.at(0).toString());
+		return (action != ShellControlAction::None)
+			? ShellControlMessage{
+				.status = ShellControlParseStatus::Invalid,
+				.action = action,
 			}
-		}
+			: ShellControlMessage();
 	}
+	if (!document.isObject()) {
+		return {};
+	}
+
+	const auto object = document.object();
+	const auto action = ShellControlActionFromCommand(
+		object.value("eventType").toString());
+	if (action == ShellControlAction::None) {
+		return {};
+	}
+	const auto eventData = object.value("eventData");
+	if (object.value("type").toString() != kExternalMessageType
+		|| object.value("source").toString() != kExternalShellSource
+		|| object.value("token").toString().toStdString()
+			!= shellMessageToken
+		|| !IsExternalShellOrigin(object.value("origin").toString())
+		|| (!eventData.isUndefined() && !eventData.isObject())) {
+		return ShellControlMessage{
+			.status = ShellControlParseStatus::Invalid,
+			.action = action,
+		};
+	}
+
 	return ShellControlMessage{
+		.status = ShellControlParseStatus::Valid,
 		.action = action,
-		.arguments = std::move(arguments),
+		.arguments = eventData.isObject()
+			? eventData.toObject()
+			: QJsonObject(),
 	};
 }
 
@@ -229,6 +276,62 @@ struct ShellControlMessage {
 		return 7;
 	}
 	return std::nullopt;
+}
+
+[[nodiscard]] bool ValidPopupAnchorSize(int width, int height) {
+	return (width > 0)
+		&& (height > 0)
+		&& (width <= kMaxPopupAnchorDimension)
+		&& (height <= kMaxPopupAnchorDimension);
+}
+
+[[nodiscard]] Ui::Platform::ForeignParent PopupAnchorParent(
+		int parentPlatform,
+		std::uint64_t x11Id,
+		const std::string &waylandHandle) {
+	const auto type = Ui::Platform::ForeignParent::Type(parentPlatform);
+	switch (type) {
+	case Ui::Platform::ForeignParent::Type::None:
+		return {};
+	case Ui::Platform::ForeignParent::Type::X11:
+		return x11Id
+			? Ui::Platform::ForeignParent{
+				.type = type,
+				.x11 = static_cast<uintptr_t>(x11Id),
+			}
+			: Ui::Platform::ForeignParent();
+	case Ui::Platform::ForeignParent::Type::Wayland:
+		return (!waylandHandle.empty()
+			&& waylandHandle.size() <= kMaxWaylandPopupAnchorHandleBytes)
+			? Ui::Platform::ForeignParent{
+				.type = type,
+				.wayland = QString::fromUtf8(
+					waylandHandle.data(),
+					int(waylandHandle.size())),
+			}
+			: Ui::Platform::ForeignParent();
+	}
+	return {};
+}
+
+[[nodiscard]] std::optional<QRect> PopupAnchorGeometry(
+		bool hasGeometry,
+		int x,
+		int y,
+		int width,
+		int height) {
+	return (hasGeometry && ValidPopupAnchorSize(width, height))
+		? std::make_optional(QRect(x, y, width, height))
+		: std::nullopt;
+}
+
+[[nodiscard]] std::optional<QSize> PopupAnchorOuterSize(
+		bool hasOuterSize,
+		int width,
+		int height) {
+	return (hasOuterSize && ValidPopupAnchorSize(width, height))
+		? std::make_optional(QSize(width, height))
+		: std::nullopt;
 }
 
 [[nodiscard]] bool IsGdkX11Display(GdkDisplay *display) {
@@ -553,6 +656,7 @@ private:
 	Fn<void()> _interactionHandler;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
+	std::string _shellMessageToken;
 	bool _loadFailed = false;
 
 };
@@ -653,6 +757,7 @@ bool Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	_windowMargins = config.windowMargins;
+	_shellMessageToken = std::move(config.shellMessageToken);
 
 	if (_remoting) {
 		if (!_helper) {
@@ -668,6 +773,7 @@ bool Instance::create(Config config) {
 		const auto a = config.opaqueBg.alpha();
 		const auto path = config.userDataPath;
 		const auto mode = int(config.mode);
+		const auto shellMessageToken = _shellMessageToken;
 		const auto margins = config.windowMargins;
 		_helper.call_create(
 			debug,
@@ -677,6 +783,7 @@ bool Instance::create(Config config) {
 			a,
 			path,
 			mode,
+			shellMessageToken,
 			margins.left(),
 			margins.right(),
 			margins.top(),
@@ -1040,11 +1147,16 @@ bool Instance::create(Config config) {
 	ensureWaylandPopupAnchorExport();
 	init(R"(
 if (window === window.top) {
-	window.external = {
+	const external = Object.freeze({
 		invoke: function(s) {
 			window.webkit.messageHandlers.external.postMessage(s);
 		}
-	};
+	});
+	Object.defineProperty(window, 'external', {
+		value: external,
+		configurable: false,
+		writable: false
+	});
 })");
 
 	return webkit_web_view_get_is_web_process_responsive(_webview);
@@ -1052,6 +1164,9 @@ if (window === window.top) {
 
 void Instance::scriptMessageReceived(void *message) {
 	const auto text = JavascriptMessageText(message);
+	if (text.size() > kMaxScriptMessageBytes) {
+		return;
+	}
 	if (handleShellControlMessage(text)) {
 		return;
 	}
@@ -1062,19 +1177,23 @@ void Instance::scriptMessageReceived(void *message) {
 }
 
 bool Instance::handleShellControlMessage(const std::string &message) {
-	if ((_mode != WindowMode::External) || !_window) {
+	if (_mode != WindowMode::External) {
 		return false;
 	}
-	const auto parsed = ParseShellControlMessage(message);
-	if (!parsed) {
+	const auto parsed = ParseShellControlMessage(message, _shellMessageToken);
+	if (parsed.status == ShellControlParseStatus::NotShellControl) {
 		return false;
+	} else if (parsed.status == ShellControlParseStatus::Invalid
+		|| !_window
+		|| _shellMessageToken.empty()) {
+		return true;
 	}
-	switch (parsed->action) {
+	switch (parsed.action) {
 	case ShellControlAction::BeginMove:
-		beginShellMove(parsed->arguments);
+		beginShellMove(parsed.arguments);
 		return true;
 	case ShellControlAction::BeginResize:
-		beginShellResize(parsed->arguments);
+		beginShellResize(parsed.arguments);
 		return true;
 	case ShellControlAction::None:
 		return false;
@@ -1821,41 +1940,25 @@ PopupAnchor Instance::popupAnchor() {
 				Gio::AsyncResult res) {
 			auto result = PopupAnchor();
 			if (const auto reply = _helper.call_get_window_anchor_finish(res)) {
-				const auto type = Ui::Platform::ForeignParent::Type(
-					std::get<1>(*reply));
-				switch (type) {
-				case Ui::Platform::ForeignParent::Type::None:
-					break;
-				case Ui::Platform::ForeignParent::Type::X11:
-					result.transientParent = {
-						.type = type,
-						.x11 = std::get<2>(*reply),
-					};
-					break;
-				case Ui::Platform::ForeignParent::Type::Wayland:
-					result.transientParent = {
-						.type = type,
-						.wayland = QString::fromStdString(std::get<3>(*reply)),
-					};
-					break;
+				if (const auto parent = PopupAnchorParent(
+						std::get<1>(*reply),
+						std::get<2>(*reply),
+						std::get<3>(*reply))) {
+					result.transientParent = parent;
 				}
-				if (std::get<4>(*reply)) {
-					const auto geometry = QRect(
+				if (const auto geometry = PopupAnchorGeometry(
+						std::get<4>(*reply),
 						std::get<5>(*reply),
 						std::get<6>(*reply),
 						std::get<7>(*reply),
-						std::get<8>(*reply));
-					if (geometry.isValid()) {
-						result.geometry = geometry;
-					}
+						std::get<8>(*reply))) {
+					result.geometry = *geometry;
 				}
-				if (std::get<9>(*reply)) {
-					const auto outerSize = QSize(
+				if (const auto outerSize = PopupAnchorOuterSize(
+						std::get<9>(*reply),
 						std::get<10>(*reply),
-						std::get<11>(*reply));
-					if (!outerSize.isEmpty()) {
-						result.outerSize = outerSize;
-					}
+						std::get<11>(*reply))) {
+					result.outerSize = *outerSize;
 				}
 			}
 			ret = std::move(result);
@@ -2414,6 +2517,7 @@ void Instance::registerHelperMethodHandlers() {
 			int a,
 			const std::string &path,
 			int mode,
+			const std::string &shellMessageToken,
 			int marginLeft,
 			int marginRight,
 			int marginTop,
@@ -2432,6 +2536,7 @@ void Instance::registerHelperMethodHandlers() {
 				marginTop,
 				marginRight,
 				marginBottom),
+			.shellMessageToken = shellMessageToken,
 		})) {
 			_helper.complete_create(invocation);
 		} else {
