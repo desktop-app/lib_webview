@@ -609,6 +609,7 @@ private:
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
+	void scheduleWaylandPopupAnchorExport();
 	void ensureWaylandPopupAnchorExport();
 	void clearWaylandPopupAnchorExport();
 	void setWaylandPopupAnchorFromToplevel(
@@ -641,6 +642,8 @@ private:
 	GtkCssProvider *_backgroundProvider = nullptr;
 	QString _waylandPopupAnchorHandle;
 	std::uint64_t _waylandPopupAnchorGeneration = 0;
+	bool _waylandPopupAnchorExportScheduled = false;
+	bool _waylandPopupAnchorExportAllowed = false;
 	bool _waylandPopupAnchorExportPending = false;
 	QMargins _windowMargins;
 	bool _windowSupportsAlpha = true;
@@ -937,7 +940,21 @@ bool Instance::create(Config config) {
 		"realize",
 		G_CALLBACK(+[](Instance *instance) {
 			instance->updateWindowFrameExtents();
-			instance->ensureWaylandPopupAnchorExport();
+		}),
+		this);
+	g_signal_connect_swapped(
+		_window,
+		"map",
+		G_CALLBACK(+[](Instance *instance) {
+			instance->scheduleWaylandPopupAnchorExport();
+		}),
+		this);
+	g_signal_connect_swapped(
+		_window,
+		"unmap",
+		G_CALLBACK(+[](Instance *instance) {
+			instance->_waylandPopupAnchorExportAllowed = false;
+			instance->clearWaylandPopupAnchorExport();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1144,7 +1161,6 @@ bool Instance::create(Config config) {
 		gtk_widget_show_all(_window);
 	}
 	updateWindowFrameExtents();
-	ensureWaylandPopupAnchorExport();
 	init(R"(
 if (window === window.top) {
 	const external = Object.freeze({
@@ -1677,6 +1693,40 @@ QWidget *Instance::widget() {
 	return _widget.get();
 }
 
+void Instance::scheduleWaylandPopupAnchorExport() {
+	struct WaylandPopupAnchorSchedule {
+		::base::weak_ptr<Instance> instance;
+	};
+	if (!_window
+		|| _waylandPopupAnchorExportAllowed
+		|| _waylandPopupAnchorExportScheduled
+		|| _waylandPopupAnchorExportPending
+		|| !_waylandPopupAnchorHandle.isEmpty()) {
+		return;
+	}
+	_waylandPopupAnchorExportScheduled = true;
+	const auto schedule = new WaylandPopupAnchorSchedule{
+		.instance = this,
+	};
+	g_idle_add_full(
+		G_PRIORITY_DEFAULT_IDLE,
+		+[](gpointer userData) -> gboolean {
+			const auto schedule = std::unique_ptr<WaylandPopupAnchorSchedule>(
+				static_cast<WaylandPopupAnchorSchedule*>(userData));
+			if (const auto instance = schedule->instance.get()) {
+				if (!instance->_waylandPopupAnchorExportScheduled) {
+					return G_SOURCE_REMOVE;
+				}
+				instance->_waylandPopupAnchorExportScheduled = false;
+				instance->_waylandPopupAnchorExportAllowed = true;
+				instance->ensureWaylandPopupAnchorExport();
+			}
+			return G_SOURCE_REMOVE;
+		},
+		schedule,
+		nullptr);
+}
+
 void Instance::ensureWaylandPopupAnchorExport() {
 	struct WaylandPopupAnchorRequest {
 		::base::weak_ptr<Instance> instance;
@@ -1686,6 +1736,7 @@ void Instance::ensureWaylandPopupAnchorExport() {
 		delete static_cast<WaylandPopupAnchorRequest*>(userData);
 	};
 	if (!_window
+		|| !_waylandPopupAnchorExportAllowed
 		|| _waylandPopupAnchorExportPending
 		|| !_waylandPopupAnchorHandle.isEmpty()) {
 		return;
@@ -1764,6 +1815,7 @@ void Instance::ensureWaylandPopupAnchorExport() {
 void Instance::clearWaylandPopupAnchorExport() {
 	const auto hadExport = _waylandPopupAnchorExportPending
 		|| !_waylandPopupAnchorHandle.isEmpty();
+	_waylandPopupAnchorExportScheduled = false;
 	const auto handle = _waylandPopupAnchorHandle;
 	_waylandPopupAnchorExportPending = false;
 	_waylandPopupAnchorHandle = QString();
