@@ -216,6 +216,10 @@ inline void (*gtk_window_set_title)(
 inline void (*gtk_window_set_decorated)(
 	GtkWindow *window,
 	gboolean setting);
+inline void (*gtk_window_set_default_size)(
+	GtkWindow *window,
+	gint width,
+	gint height);
 inline void (*gtk_window_fullscreen)(GtkWindow *window);
 inline void (*gtk_window_unfullscreen)(GtkWindow *window);
 inline GtkWidget *(*gtk_scrolled_window_new)(

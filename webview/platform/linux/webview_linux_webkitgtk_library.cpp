@@ -27,6 +27,7 @@ ResolveResult Resolve(const Platform &platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_title)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_default_size)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))

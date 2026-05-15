@@ -2129,12 +2129,16 @@ void Instance::resize(int w, int h) {
 		return;
 	}
 
-	gtk_widget_set_size_request(_window, w, h);
-	if (_mode != WindowMode::External) {
-		GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-			gtk_widget_set_size_request(_window, -1, -1);
-		}));
+	if (_mode == WindowMode::External) {
+		gtk_window_set_default_size(GTK_WINDOW(_window), w, h);
+		return;
 	}
+	gtk_widget_set_size_request(_window, w, h);
+	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
+		if (_window) {
+			gtk_widget_set_size_request(_window, -1, -1);
+		}
+	}));
 }
 
 void Instance::setFullscreen(bool fullscreen) {
