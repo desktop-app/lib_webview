@@ -46,6 +46,7 @@ struct PopupResult {
 	std::optional<QString> value;
 };
 [[nodiscard]] PopupResult ShowBlockingPopup(PopupArgs &&args);
+bool CloseBlockingPopup();
 
 struct DialogArgs;
 struct DialogResult;

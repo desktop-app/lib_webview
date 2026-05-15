@@ -23,6 +23,7 @@
 #include <QtCore/QUrl>
 #include <QtCore/QString>
 #include <QtCore/QEventLoop>
+#include <QtCore/QPointer>
 
 namespace Webview {
 namespace {
@@ -33,8 +34,21 @@ constexpr auto kPopupsQuicklyDelay = 8 * crl::time(1000);
 bool InBlockingPopup/* = false*/;
 int PopupsShownQuickly/* = 0*/;
 crl::time PopupLastShown/* = 0*/;
+QPointer<Ui::SeparatePanel> CurrentBlockingPopup;
+bool CloseBlockingPopupRequested/* = false*/;
 
 } // namespace
+
+bool CloseBlockingPopup() {
+	if (CurrentBlockingPopup) {
+		CurrentBlockingPopup->hideGetDuration();
+		return true;
+	} else if (InBlockingPopup) {
+		CloseBlockingPopupRequested = true;
+		return true;
+	}
+	return false;
+}
 
 PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	if (InBlockingPopup) {
@@ -43,6 +57,8 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	InBlockingPopup = true;
 	const auto guard = gsl::finally([] {
 		InBlockingPopup = false;
+		CurrentBlockingPopup = nullptr;
+		CloseBlockingPopupRequested = false;
 	});
 
 	if (!args.ignoreFloodCheck) {
@@ -88,6 +104,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		}
 		raw->setTitleHeight(titleHeight);
 		auto layout = base::make_unique_q<Ui::VerticalLayout>(raw);
+		CurrentBlockingPopup = raw;
 		const auto skip = st::boxDividerHeight;
 		const auto container = layout.get();
 		const auto addedRightPadding = args.title.isEmpty()
@@ -218,6 +235,9 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		raw->closeEvents() | rpl::on_next(finish, raw->lifetime());
 
 		raw->showInner(std::move(layout));
+		if (CloseBlockingPopupRequested) {
+			raw->hideGetDuration();
+		}
 	});
 	loop.exec(QEventLoop::DialogExec);
 	widget = nullptr;
