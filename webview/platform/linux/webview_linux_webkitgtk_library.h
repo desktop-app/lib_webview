@@ -85,6 +85,7 @@ typedef struct _GtkAdjustment GtkAdjustment;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
+typedef struct _GdkEvent GdkEvent;
 typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventKey GdkEventKey;
 typedef struct _GdkToplevel GdkToplevel;

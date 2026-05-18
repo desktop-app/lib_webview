@@ -508,6 +508,7 @@ private:
 	bool handleShellControlMessage(const std::string &message);
 	void beginShellMove(const QJsonObject &arguments);
 	void beginShellResize(const QJsonObject &arguments);
+	[[nodiscard]] bool notifyExternalWindowClosed();
 	[[nodiscard]] QMargins windowFrameExtents() const;
 	void ensureToplevelFrameExtents();
 	void updateWindowFrameExtents();
@@ -590,6 +591,7 @@ private:
 	std::function<void(std::string)> _messageHandler;
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
+	std::function<void()> _externalWindowCloseHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	AsyncDialogHandler _asyncDialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
@@ -601,6 +603,8 @@ private:
 	int _scriptDialogDepth = 0;
 	std::vector<std::string> _queuedScriptDialogEvals;
 	bool _loadFailed = false;
+	bool _externalWindowCloseAllowed = false;
+	bool _externalWindowClosePending = false;
 
 };
 
@@ -702,6 +706,7 @@ bool Instance::create(Config config) {
 	_messageHandler = std::move(config.messageHandler);
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
+	_externalWindowCloseHandler = std::move(config.externalWindowCloseHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_asyncDialogHandler = std::move(config.asyncDialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
@@ -812,12 +817,32 @@ bool Instance::create(Config config) {
 		? gtk_plug_new(0)
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
-		gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
+		if (!config.shellMessageToken.empty()) {
+			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
+		}
 		if (config.initialSize.width() > 0 && config.initialSize.height() > 0) {
 			gtk_window_set_default_size(
 				GTK_WINDOW(_window),
 				config.initialSize.width(),
 				config.initialSize.height());
+		}
+		const auto windowType = G_OBJECT_TYPE(_window);
+		if (g_signal_lookup("close-request", windowType)) {
+			g_signal_connect_swapped(
+				_window,
+				"close-request",
+				G_CALLBACK(+[](Instance *instance) -> gboolean {
+					return instance->notifyExternalWindowClosed();
+				}),
+				this);
+		} else if (g_signal_lookup("delete-event", windowType)) {
+			g_signal_connect_swapped(
+				_window,
+				"delete-event",
+				G_CALLBACK(+[](Instance *instance, GdkEvent*) -> gboolean {
+					return instance->notifyExternalWindowClosed();
+				}),
+				this);
 		}
 	}
 	if (gtk_widget_set_app_paintable) {
@@ -2015,6 +2040,41 @@ PopupAnchor Instance::popupAnchorSnapshot() {
 	return result;
 }
 
+bool Instance::notifyExternalWindowClosed() {
+	if (_mode != WindowMode::External) {
+		return false;
+	} else if (_externalWindowCloseAllowed) {
+		return false;
+	} else if (_externalWindowClosePending) {
+		return true;
+	} else if (!_master) {
+		return false;
+	}
+	_externalWindowClosePending = true;
+	const auto weak = ::base::make_weak(this);
+	_master.call_external_window_closed([=](
+			GObject::Object,
+			Gio::AsyncResult res) {
+		if (const auto instance = weak.get()) {
+			instance->_externalWindowClosePending = false;
+			if (instance->_master) {
+				instance->_master.call_external_window_closed_finish(res);
+			}
+			const auto window = instance->_window;
+			if (!window) {
+				return;
+			}
+			instance->_externalWindowCloseAllowed = true;
+			if (gtk_window_destroy) {
+				gtk_window_destroy(GTK_WINDOW(window));
+			} else {
+				gtk_widget_destroy(window);
+			}
+		}
+	});
+	return true;
+}
+
 PopupAnchor Instance::popupAnchor() {
 	if (_remoting) {
 		if (!_helper) {
@@ -2430,6 +2490,16 @@ void Instance::registerMasterMethodHandlers() {
 		} else {
 			invocation.return_gerror(MethodError());
 		}
+		return true;
+	});
+
+	_master.signal_handle_external_window_closed().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation) {
+		if (_externalWindowCloseHandler) {
+			_externalWindowCloseHandler();
+		}
+		_master.complete_external_window_closed(invocation);
 		return true;
 	});
 

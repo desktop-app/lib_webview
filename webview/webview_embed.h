@@ -72,6 +72,7 @@ public:
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
 	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
 	void setNavigationDoneHandler(Fn<void(bool)> handler);
+	void setExternalWindowCloseHandler(Fn<void()> handler);
 	void setDialogHandler(Fn<DialogResult(DialogArgs)> handler);
 	void setAsyncDialogHandler(AsyncDialogHandler handler);
 	void setDataRequestHandler(Fn<DataResult(DataRequest)> handler);
@@ -98,6 +99,7 @@ private:
 	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
+	[[nodiscard]] Fn<void()> externalWindowCloseHandler() const;
 	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
 	[[nodiscard]] AsyncDialogHandler asyncDialogHandler() const;
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
@@ -106,6 +108,7 @@ private:
 	Fn<void(std::string)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
+	Fn<void()> _externalWindowCloseHandler;
 	Fn<DialogResult(DialogArgs)> _dialogHandler;
 	AsyncDialogHandler _asyncDialogHandler;
 	Fn<DataResult(DataRequest)> _dataRequestHandler;

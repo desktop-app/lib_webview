@@ -16,6 +16,7 @@
 		<method name='NavigationDone'>
 			<arg type='b' name='success' direction='in'/>
 		</method>
+		<method name='ExternalWindowClosed'/>
 		<method name='ScriptDialog'>
 			<arg type='i' name='type' direction='in'/>
 			<arg type='s' name='text' direction='in'/>

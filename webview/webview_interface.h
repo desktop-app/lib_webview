@@ -145,6 +145,7 @@ struct Config {
 	std::function<void(std::string)> messageHandler;
 	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
+	std::function<void()> externalWindowCloseHandler;
 	std::function<DialogResult(DialogArgs)> dialogHandler;
 	AsyncDialogHandler asyncDialogHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
