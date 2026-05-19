@@ -349,6 +349,7 @@ inline gboolean (*gdk_wayland_window_export_handle)(
 	gpointer user_data,
 	GDestroyNotify destroy_func);
 inline void (*gdk_wayland_window_unexport_handle)(GdkWindow *window);
+inline void (*gdk_wayland_window_announce_csd)(GdkWindow *window);
 inline gint (*gdk_surface_get_width)(GdkSurface *surface);
 inline gint (*gdk_surface_get_height)(GdkSurface *surface);
 inline void (*gtk_window_get_size)(

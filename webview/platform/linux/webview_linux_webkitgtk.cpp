@@ -511,6 +511,7 @@ private:
 	[[nodiscard]] bool notifyExternalWindowClosed();
 	[[nodiscard]] bool customWindowFrame() const;
 	[[nodiscard]] bool transparentWindowBackground() const;
+	void announceCustomWindowFrame();
 	[[nodiscard]] QMargins windowFrameExtents() const;
 	void ensureToplevelFrameExtents();
 	void updateWindowFrameExtents();
@@ -931,6 +932,7 @@ bool Instance::create(Config config) {
 		_window,
 		"realize",
 		G_CALLBACK(+[](Instance *instance) {
+			instance->announceCustomWindowFrame();
 			instance->updateWindowFrameExtents();
 		}),
 		this);
@@ -1284,6 +1286,18 @@ bool Instance::transparentWindowBackground() const {
 		&& (customWindowFrame()
 			|| (_mode != WindowMode::External
 				&& _platform == Platform::Wayland));
+}
+
+void Instance::announceCustomWindowFrame() {
+	if (!customWindowFrame()
+		|| !gtk_widget_get_window
+		|| !gdk_wayland_window_announce_csd) {
+		return;
+	}
+	if (const auto gdkWindow = gtk_widget_get_window(_window);
+		IsGdkWaylandWindow(gdkWindow)) {
+		gdk_wayland_window_announce_csd(gdkWindow);
+	}
 }
 
 QMargins Instance::windowFrameExtents() const {

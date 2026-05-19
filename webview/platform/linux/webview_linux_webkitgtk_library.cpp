@@ -134,6 +134,7 @@ ResolveResult Resolve(const Platform &platform, WindowMode mode) {
 	} else if (gtk_widget_get_window) {
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_announce_csd);
 		LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_size);
 	}
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
