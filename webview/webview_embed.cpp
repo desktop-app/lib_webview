@@ -72,6 +72,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.debug = OptionWebviewDebugEnabled.value(),
 		.safe = config.safe,
 		.mode = config.mode,
+		.windowStyle = config.windowStyle,
 		.windowMargins = config.windowMargins,
 		.initialSize = config.initialSize,
 		.shellMessageToken = config.shellMessageToken.toStdString(),

@@ -509,6 +509,8 @@ private:
 	void beginShellMove(const QJsonObject &arguments);
 	void beginShellResize(const QJsonObject &arguments);
 	[[nodiscard]] bool notifyExternalWindowClosed();
+	[[nodiscard]] bool customWindowFrame() const;
+	[[nodiscard]] bool transparentWindowBackground() const;
 	[[nodiscard]] QMargins windowFrameExtents() const;
 	void ensureToplevelFrameExtents();
 	void updateWindowFrameExtents();
@@ -560,6 +562,7 @@ private:
 
 	bool _remoting = false;
 	WindowMode _mode = WindowMode::Embedded;
+	WindowStyle _windowStyle = WindowStyle::Default;
 	bool _connected = false;
 	Master _master;
 	Helper _helper;
@@ -710,6 +713,7 @@ bool Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 	_asyncDialogHandler = std::move(config.asyncDialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
+	_windowStyle = config.windowStyle;
 	_windowMargins = config.windowMargins;
 	_shellMessageToken = std::move(config.shellMessageToken);
 
@@ -727,6 +731,7 @@ bool Instance::create(Config config) {
 		const auto a = config.opaqueBg.alpha();
 		const auto path = config.userDataPath;
 		const auto mode = int(config.mode);
+		const auto windowStyle = int(config.windowStyle);
 		const auto shellMessageToken = _shellMessageToken;
 		const auto margins = config.windowMargins;
 		const auto initialSize = config.initialSize;
@@ -738,6 +743,7 @@ bool Instance::create(Config config) {
 			a,
 			path,
 			mode,
+			windowStyle,
 			shellMessageToken,
 			margins.left(),
 			margins.right(),
@@ -817,7 +823,7 @@ bool Instance::create(Config config) {
 		? gtk_plug_new(0)
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
-		if (!config.shellMessageToken.empty()) {
+		if (customWindowFrame()) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
 		}
 		if (config.initialSize.width() > 0 && config.initialSize.height() > 0) {
@@ -845,16 +851,20 @@ bool Instance::create(Config config) {
 				this);
 		}
 	}
-	if (gtk_widget_set_app_paintable) {
+	const auto customPainting = (_mode != WindowMode::External)
+		|| customWindowFrame();
+	if (customPainting && gtk_widget_set_app_paintable) {
 		gtk_widget_set_app_paintable(_window, TRUE);
 	}
-	_windowSupportsAlpha = SetupWindowAlpha(_window);
-	if (gtk_widget_add_css_class) {
-		gtk_widget_add_css_class(_window, "webviewWindow");
-	} else {
-		gtk_style_context_add_class(
-			gtk_widget_get_style_context(_window),
-			"webviewWindow");
+	_windowSupportsAlpha = customPainting ? SetupWindowAlpha(_window) : false;
+	if (customPainting) {
+		if (gtk_widget_add_css_class) {
+			gtk_widget_add_css_class(_window, "webviewWindow");
+		} else {
+			gtk_style_context_add_class(
+				gtk_widget_get_style_context(_window),
+				"webviewWindow");
+		}
 	}
 	_backgroundProvider = gtk_css_provider_new();
 	if (gtk_style_context_add_provider_for_display) {
@@ -1113,11 +1123,16 @@ bool Instance::create(Config config) {
 	init(std::string("window.TelegramDesktopWindowAlphaSupported = ")
 		+ (_windowSupportsAlpha ? "true" : "false")
 		+ ";");
-	const auto fallback = (_mode == WindowMode::External)
-		&& !_windowSupportsAlpha;
+	const auto fallback = customWindowFrame() && !_windowSupportsAlpha;
 	const GdkRGBA rgba = fallback
 		? GdkRGBA{ 238.f / 255.f, 238.f / 255.f, 238.f / 255.f, 1.f }
-		: GdkRGBA{ 0.f, 0.f, 0.f, 0.f };
+		: transparentWindowBackground()
+		? GdkRGBA{ 0.f, 0.f, 0.f, 0.f }
+		: GdkRGBA{
+			float(config.opaqueBg.redF()),
+			float(config.opaqueBg.greenF()),
+			float(config.opaqueBg.blueF()),
+			float(config.opaqueBg.alphaF()) };
 	webkit_web_view_set_background_color(_webview, &rgba);
 	if (_debug) {
 		WebKitSettings *settings = webkit_web_view_get_settings(_webview);
@@ -1259,8 +1274,20 @@ void Instance::beginShellResize(const QJsonObject &arguments) {
 	}
 }
 
+bool Instance::customWindowFrame() const {
+	return (_mode == WindowMode::External)
+		&& (_windowStyle == WindowStyle::Frameless);
+}
+
+bool Instance::transparentWindowBackground() const {
+	return _windowSupportsAlpha
+		&& (customWindowFrame()
+			|| (_mode != WindowMode::External
+				&& _platform == Platform::Wayland));
+}
+
 QMargins Instance::windowFrameExtents() const {
-	return (!_fullscreen && _windowSupportsAlpha)
+	return (!_fullscreen && customWindowFrame() && _windowSupportsAlpha)
 		? _windowMargins
 		: QMargins();
 }
@@ -1300,7 +1327,7 @@ void Instance::ensureToplevelFrameExtents() {
 }
 
 void Instance::updateWindowFrameExtents() {
-	if ((_mode != WindowMode::External) || !_window) {
+	if (!customWindowFrame() || !_window) {
 		return;
 	}
 	ensureToplevelFrameExtents();
@@ -2154,27 +2181,31 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	const auto background = std::format(R"(
+	auto background = std::format(R"(
 		.webviewWindow,
 		window.webviewWindow,
 		window.webviewWindow.background {{
 			background: {};
 			box-shadow: none;
 		}}
+	)",
+		transparentWindowBackground()
+			? "transparent"
+			: customWindowFrame()
+			? kExternalShellFallbackBackground
+			: opaqueBg.name().toStdString());
+
+	if (customWindowFrame()) {
+		background += R"(
 		window.webviewWindow.csd,
 		window.webviewWindow.solid-csd,
 		window.webviewWindow.ssd,
-		window.webviewWindow decoration {{
+		window.webviewWindow decoration {
 			box-shadow: none;
 			margin: 0;
-		}}
-	)",
-		(((_mode == WindowMode::External) || (_platform == Platform::Wayland))
-			&& _windowSupportsAlpha)
-			? "transparent"
-			: (_mode == WindowMode::External)
-			? kExternalShellFallbackBackground
-			: opaqueBg.name().toStdString());
+		}
+	)";
+	}
 
 	if (gtk_css_provider_load_from_string) {
 		gtk_css_provider_load_from_string(
@@ -2701,6 +2732,7 @@ void Instance::registerHelperMethodHandlers() {
 			int a,
 			const std::string &path,
 			int mode,
+			int windowStyle,
 			const std::string &shellMessageToken,
 			int marginLeft,
 			int marginRight,
@@ -2711,12 +2743,16 @@ void Instance::registerHelperMethodHandlers() {
 		const auto windowMode = (mode == int(WindowMode::External))
 			? WindowMode::External
 			: WindowMode::Embedded;
+		const auto frameStyle = (windowStyle == int(WindowStyle::Frameless))
+			? WindowStyle::Frameless
+			: WindowStyle::Default;
 		_mode = windowMode;
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
 			.mode = windowMode,
+			.windowStyle = frameStyle,
 			.windowMargins = QMargins(
 				marginLeft,
 				marginTop,

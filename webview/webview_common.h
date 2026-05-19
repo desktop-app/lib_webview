@@ -19,6 +19,11 @@ enum class WindowMode {
 	External,
 };
 
+enum class WindowStyle {
+	Default,
+	Frameless,
+};
+
 struct StorageId {
 	QString path;
 	QByteArray token;

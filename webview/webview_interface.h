@@ -155,6 +155,7 @@ struct Config {
 	bool debug = false;
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
+	WindowStyle windowStyle = WindowStyle::Default;
 	QMargins windowMargins;
 	QSize initialSize;
 	std::string shellMessageToken;

@@ -42,6 +42,7 @@ struct WindowConfig {
 	QString dataProtocolOverride;
 	bool safe = false;
 	WindowMode mode = WindowMode::Embedded;
+	WindowStyle windowStyle = WindowStyle::Default;
 	QMargins windowMargins;
 	QSize initialSize;
 	QString shellMessageToken;
