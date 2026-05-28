@@ -34,6 +34,7 @@ class ZoomController;
 struct Config;
 struct DataRequest;
 enum class DataResult;
+struct Message;
 struct NavigationHistoryState;
 
 struct WindowConfig {
@@ -69,6 +70,7 @@ public:
 	void navigate(const QString &url);
 	void navigateToData(const QString &id);
 	void reload();
+	void setMessageHandler(Fn<void(Message)> handler);
 	void setMessageHandler(Fn<void(std::string)> handler);
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
 	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
@@ -97,7 +99,7 @@ public:
 
 private:
 	bool createWebView(QWidget *parent, const WindowConfig &config);
-	[[nodiscard]] Fn<void(std::string)> messageHandler() const;
+	[[nodiscard]] Fn<void(Message)> messageHandler() const;
 	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
 	[[nodiscard]] Fn<void()> externalWindowCloseHandler() const;
@@ -106,7 +108,7 @@ private:
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
 
 	std::unique_ptr<Interface> _webview;
-	Fn<void(std::string)> _messageHandler;
+	Fn<void(Message)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
 	Fn<void()> _externalWindowCloseHandler;

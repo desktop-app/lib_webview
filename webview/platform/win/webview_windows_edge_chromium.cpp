@@ -197,7 +197,7 @@ private:
 	winrt::com_ptr<ICoreWebView2Environment> _environment;
 	winrt::com_ptr<ICoreWebView2Controller> _controller;
 	winrt::com_ptr<ICoreWebView2> _webview;
-	std::function<void(std::string)> _messageHandler;
+	std::function<void(Webview::Message)> _messageHandler;
 	std::function<bool(std::string, bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
@@ -335,7 +335,12 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->TryGetWebMessageAsString(message.put());
 
 	if (result == S_OK && message) {
-		_messageHandler(FromWide(message));
+		const auto messageText = FromWide(message);
+		const auto sourceText = FromWide(sourceUrl);
+		_messageHandler(Webview::Message{
+			.text = messageText,
+			.sourceUrl = sourceText,
+		});
 		sender->PostWebMessageAsString(message.data());
 	}
 	return S_OK;

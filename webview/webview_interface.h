@@ -139,10 +139,15 @@ enum class DataResult {
 	Failed,
 };
 
+struct Message {
+	std::string text;
+	std::string sourceUrl;
+};
+
 struct Config {
 	QWidget *parent = nullptr;
 	QColor opaqueBg;
-	std::function<void(std::string)> messageHandler;
+	std::function<void(Message)> messageHandler;
 	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
 	std::function<void()> externalWindowCloseHandler;

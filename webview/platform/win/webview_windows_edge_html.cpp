@@ -176,7 +176,10 @@ void Instance::ready(WebViewControl webview) {
 			const auto &sender,
 			const WebViewControlScriptNotifyEventArgs &args) {
 		if (handler) {
-			handler(winrt::to_string(args.Value()));
+			handler(Webview::Message{
+				.text = winrt::to_string(args.Value()),
+				.sourceUrl = winrt::to_string(args.Uri().AbsoluteUri()),
+			});
 		}
 	});
 	_webview.NavigationStarting([=, handler = _config.navigationStartHandler](

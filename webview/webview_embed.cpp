@@ -236,19 +236,29 @@ ZoomController *Window::zoomController() const {
 	return _webview ? _webview->zoomController() : nullptr;
 }
 
-void Window::setMessageHandler(Fn<void(std::string)> handler) {
+void Window::setMessageHandler(Fn<void(Message)> handler) {
 	_messageHandler = std::move(handler);
+}
+
+void Window::setMessageHandler(Fn<void(std::string)> handler) {
+	if (!handler) {
+		setMessageHandler(Fn<void(Message)>());
+		return;
+	}
+	setMessageHandler([=](Message message) {
+		handler(std::move(message.text));
+	});
 }
 
 void Window::setMessageHandler(Fn<void(const QJsonDocument&)> handler) {
 	if (!handler) {
-		setMessageHandler(Fn<void(std::string)>());
+		setMessageHandler(Fn<void(Message)>());
 		return;
 	}
-	setMessageHandler([=](std::string text) {
+	setMessageHandler([=](Message message) {
 		auto error = QJsonParseError();
 		auto document = QJsonDocument::fromJson(
-			QByteArray::fromRawData(text.data(), text.size()),
+			QByteArray::fromRawData(message.text.data(), message.text.size()),
 			&error);
 		if (error.error == QJsonParseError::NoError) {
 			handler(std::move(document));
@@ -256,8 +266,8 @@ void Window::setMessageHandler(Fn<void(const QJsonDocument&)> handler) {
 	});
 }
 
-Fn<void(std::string)> Window::messageHandler() const {
-	return [=](std::string message) {
+Fn<void(Message)> Window::messageHandler() const {
+	return [=](Message message) {
 		if (_messageHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
 				_messageHandler(std::move(message));

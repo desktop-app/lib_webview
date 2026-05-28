@@ -55,7 +55,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain;
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
@@ -73,7 +73,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 @end // @interface Handler
 
 @implementation Handler {
-	std::function<void(std::string)> _messageHandler;
+	std::function<void(Webview::Message)> _messageHandler;
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<Webview::DialogResult(Webview::DialogArgs)> _dialogHandler;
@@ -84,7 +84,7 @@ using TaskPointer = id<WKURLSchemeTask>;
 	base::has_weak_ptr _guard;
 }
 
-- (id) initWithMessageHandler:(std::function<void(std::string)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain {
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationStartHandler = std::move(navigationStartHandler);
@@ -105,7 +105,11 @@ using TaskPointer = id<WKURLSchemeTask>;
 	id body = [message body];
 	if ([body isKindOfClass:[NSString class]]) {
 		NSString *string = (NSString*)body;
-		_messageHandler([string UTF8String]);
+		NSString *sourceUrl = message.frameInfo.request.URL.absoluteString;
+		_messageHandler(Webview::Message{
+			.text = [string UTF8String],
+			.sourceUrl = sourceUrl ? [sourceUrl UTF8String] : "",
+		});
 	}
 }
 
