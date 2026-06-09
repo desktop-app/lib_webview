@@ -592,7 +592,7 @@ private:
 	gulong _frameExtentsComputeSizeHandler = 0;
 
 	bool _debug = false;
-	std::function<void(Webview::Message)> _messageHandler;
+	std::function<void(Message)> _messageHandler;
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<void()> _externalWindowCloseHandler;
@@ -2496,7 +2496,7 @@ void Instance::registerMasterMethodHandlers() {
 			Gio::DBusMethodInvocation invocation,
 			const std::string &message) {
 		if (_messageHandler) {
-			_messageHandler(Webview::Message{ .text = message });
+			_messageHandler(Message{ .text = message });
 			_master.complete_message_received(invocation);
 		} else {
 			invocation.return_gerror(MethodError());
