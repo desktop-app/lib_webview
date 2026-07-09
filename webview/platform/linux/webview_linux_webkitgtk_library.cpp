@@ -11,9 +11,9 @@
 namespace Webview::WebKitGTK::Library {
 
 ResolveResult Resolve(Platform platform, WindowMode mode) {
-	const auto allowGtk4 = (platform != Platform::X11)
-		|| (mode == WindowMode::External);
-	const auto lib = (allowGtk4
+	const auto gtkPlug = (platform == Platform::X11)
+		&& (mode != WindowMode::External);
+	const auto lib = (!gtkPlug
 			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 			: nullptr)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
@@ -44,7 +44,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
-		&& (platform != Platform::X11
+		&& (!gtkPlug
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))

@@ -616,17 +616,13 @@ Instance::Instance(bool remoting, WindowMode mode)
 : _remoting(remoting)
 , _mode(mode) {
 	if (_remoting) {
-		if (_mode == WindowMode::External) {
-			_platform = Platform::Any;
-		} else {
-			_platform = ::Platform::IsX11()
-				? Platform::X11
+		_platform = ::Platform::IsX11()
+			? Platform::X11
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-				: Platform::Wayland;
+			: Platform::Wayland;
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-				: Platform::Any;
+			: Platform::Any;
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-		}
 		_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
 		startProcess();
 	}
@@ -1134,7 +1130,7 @@ bool Instance::create(Config config) {
 	}
 	if (gtk_window_set_child) {
 		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
-	} else if (_platform == Platform::X11) {
+	} else if (GTK_IS_PLUG(_window)) {
 		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
 		if (gtk_scrolled_window_set_shadow_type) {
 			gtk_scrolled_window_set_shadow_type(
@@ -2278,6 +2274,7 @@ void Instance::startProcess() {
 		Gio::SubprocessFlags::NONE_);
 
 	if (_platform == Platform::Wayland
+			&& _mode != WindowMode::External
 			&& _glBackend == Ui::GL::Backend::Raster) {
 		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
 		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
@@ -2328,7 +2325,9 @@ void Instance::startProcess() {
 
 	Gio::File::new_for_path(socketPath).delete_();
 
-	if (_platform == Platform::Wayland && !_compositor) {
+	if (_platform == Platform::Wayland
+			&& _mode != WindowMode::External
+			&& !_compositor) {
 		_compositor = new Compositor(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
