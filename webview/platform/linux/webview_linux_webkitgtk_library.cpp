@@ -10,7 +10,7 @@
 
 namespace Webview::WebKitGTK::Library {
 
-ResolveResult Resolve(const Platform &platform, WindowMode mode) {
+ResolveResult Resolve(Platform platform, WindowMode mode) {
 	const auto allowGtk4 = (platform != Platform::X11)
 		|| (mode == WindowMode::External);
 	const auto lib = (allowGtk4

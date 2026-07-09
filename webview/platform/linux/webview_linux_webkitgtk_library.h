@@ -474,7 +474,7 @@ enum class Platform {
 };
 
 [[nodiscard]] ResolveResult Resolve(
-	const Platform &platform,
+	Platform platform,
 	WindowMode mode);
 
 } // namespace Webview::WebKitGTK::Library
