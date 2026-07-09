@@ -767,34 +767,26 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		const auto createPlaceholder = [&](bool forwardResize) {
+		if (_mode == WindowMode::External) {
 			_widget = ::base::make_unique_q<QWidget>(config.parent);
-			if (forwardResize) {
-				::base::install_event_filter(_widget, [=](
-						not_null<QEvent*> e) {
-					if (e->type() == QEvent::Resize) {
-						const auto size = static_cast<QResizeEvent*>(
-							e.get()
-						)->size();
-						resize(size.width(), size.height());
-					}
-					return ::base::EventFilterResult::Continue;
-				});
-			}
-			if (_mode != WindowMode::External) {
-				_widget->show();
-			}
-		};
+			return true;
+		}
 
 		switch (_platform) {
 		case Platform::Any:
-			createPlaceholder(_mode != WindowMode::External);
+			_widget = ::base::make_unique_q<QWidget>(config.parent);
+			::base::install_event_filter(_widget, [=](
+					not_null<QEvent*> e) {
+				if (e->type() == QEvent::Resize) {
+					const auto size = static_cast<QResizeEvent*>(
+						e.get()
+					)->size();
+					resize(size.width(), size.height());
+				}
+				return ::base::EventFilterResult::Continue;
+			});
 			break;
 		case Platform::X11:
-			if (_mode == WindowMode::External) {
-				createPlaceholder(false);
-				break;
-			}
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
 			::base::install_event_filter(window, [=](
 					not_null<QEvent*> e) {
