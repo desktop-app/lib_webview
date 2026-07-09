@@ -2436,6 +2436,9 @@ void Instance::startProcess() {
 }
 
 void Instance::stopProcess() {
+	if (_dbusServer) {
+		_dbusServer.stop();
+	}
 	if (_serviceProcess) {
 		_serviceProcess.send_signal(SIGTERM);
 	}
