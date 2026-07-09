@@ -2,6 +2,7 @@
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
 		<method name='GetStartData'>
 			<arg type='i' name='platform' direction='out'/>
+			<arg type='i' name='mode' direction='out'/>
 			<arg type='s' name='waylandDisplay' direction='out'/>
 			<arg type='s' name='appId' direction='out'/>
 		</method>
@@ -56,7 +57,6 @@
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>
-			<arg type='i' name='mode' direction='in'/>
 			<arg type='i' name='result' direction='out'/>
 		</method>
 		<method name='Navigate'>
