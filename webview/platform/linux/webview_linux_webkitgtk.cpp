@@ -574,7 +574,7 @@ private:
 	Platform _platform = Platform::Any;
 	Ui::GL::Backend _glBackend;
 	::base::unique_qptr<QWidget> _widget;
-	QPointer<Compositor> _compositor;
+	::base::unique_qptr<Compositor> _compositor;
 	std::optional<HttpServer> _dataServer;
 
 	GtkWidget *_window = nullptr;
@@ -2325,10 +2325,8 @@ void Instance::startProcess() {
 
 	Gio::File::new_for_path(socketPath).delete_();
 
-	if (_platform == Platform::Wayland
-			&& _mode != WindowMode::External
-			&& !_compositor) {
-		_compositor = new Compositor(
+	if (_platform == Platform::Wayland && _mode != WindowMode::External) {
+		_compositor.emplace(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
 	}
@@ -2433,11 +2431,6 @@ void Instance::stopProcess() {
 	if (_serviceProcess) {
 		_serviceProcess.send_signal(SIGTERM);
 	}
-	GLib::timeout_add_seconds_once(1, [compositor = _compositor] {
-		if (compositor) {
-			compositor->deleteLater();
-		}
-	});
 	_compositor = nullptr;
 }
 
