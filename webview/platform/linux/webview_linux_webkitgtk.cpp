@@ -1625,7 +1625,7 @@ ResolveResult Instance::resolve() {
 
 		const ::base::has_weak_ptr guard;
 		std::optional<ResolveResult> result;
-		_helper.call_resolve(int(_mode), crl::guard(&guard, [&](
+		_helper.call_resolve(crl::guard(&guard, [&](
 				GObject::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
@@ -2468,6 +2468,7 @@ void Instance::registerMasterMethodHandlers() {
 		_master.complete_get_start_data(
 			invocation,
 			int(_platform),
+			int(_mode),
 			_compositor ? _compositor->socketName().toStdString() : "",
 			[] {
 				if (auto app = Gio::Application::get_default()) {
@@ -2692,11 +2693,12 @@ int Instance::exec() {
 					return;
 				}
 				_platform = Platform(std::get<1>(*settings));
-				if (const auto waylandDisplay = std::get<2>(*settings)
+				_mode = WindowMode(std::get<2>(*settings));
+				if (const auto waylandDisplay = std::get<3>(*settings)
 						; !waylandDisplay.empty()) {
 					GLib::setenv("WAYLAND_DISPLAY", waylandDisplay, true);
 				}
-				if (const auto appId = std::get<3>(*settings)
+				if (const auto appId = std::get<4>(*settings)
 						; !appId.empty()) {
 					app.set_application_id(appId);
 				}
@@ -2751,19 +2753,12 @@ void Instance::registerHelperMethodHandlers() {
 			int marginBottom,
 			int initialWidth,
 			int initialHeight) {
-		const auto windowMode = (mode == int(WindowMode::External))
-			? WindowMode::External
-			: WindowMode::Embedded;
-		const auto frameStyle = (windowStyle == int(WindowStyle::Frameless))
-			? WindowStyle::Frameless
-			: WindowStyle::Default;
-		_mode = windowMode;
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
-			.mode = windowMode,
-			.windowStyle = frameStyle,
+			.mode = WindowMode(mode),
+			.windowStyle = WindowStyle(windowStyle),
 			.windowMargins = QMargins(
 				marginLeft,
 				marginTop,
@@ -2789,11 +2784,7 @@ void Instance::registerHelperMethodHandlers() {
 
 	_helper.signal_handle_resolve().connect([=](
 			Helper,
-			Gio::DBusMethodInvocation invocation,
-			int mode) {
-		_mode = (mode == int(WindowMode::External))
-			? WindowMode::External
-			: WindowMode::Embedded;
+			Gio::DBusMethodInvocation invocation) {
 		_helper.complete_resolve(invocation, int(resolve()));
 		return true;
 	});
