@@ -85,7 +85,7 @@ inline auto MethodError() {
 }
 
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
-	return "unix:path=" + socketPath;
+	return "unix:path=" + Gio::dbus_address_escape_value(socketPath);
 }
 
 enum class ShellControlAction {
