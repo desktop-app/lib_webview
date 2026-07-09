@@ -2334,6 +2334,8 @@ void Instance::startProcess() {
 		return;
 	}
 
+	Gio::File::new_for_path(socketPath).delete_();
+
 	if (_platform == Platform::Wayland && !_compositor) {
 		_compositor = new Compositor(
 			QByteArray::fromStdString(
