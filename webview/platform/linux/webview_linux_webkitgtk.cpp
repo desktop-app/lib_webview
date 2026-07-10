@@ -1130,7 +1130,7 @@ bool Instance::create(Config config) {
 	}
 	if (gtk_window_set_child) {
 		gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
-	} else if (GTK_IS_PLUG(_window)) {
+	} else if (gtk_plug_get_type && GTK_IS_PLUG(_window)) {
 		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
 		if (gtk_scrolled_window_set_shadow_type) {
 			gtk_scrolled_window_set_shadow_type(
