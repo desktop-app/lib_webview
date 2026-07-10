@@ -1397,10 +1397,36 @@ bool Instance::decidePolicy(
 
 GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
-	const gchar *uri = webkit_uri_request_get_uri(request);
-	if (_master) {
-		_master.call_navigation_started(uri, true, nullptr);
+	const std::string uri = webkit_uri_request_get_uri(request);
+	if (!_master) {
+		return nullptr;
 	}
+	_master.call_navigation_started(uri, true, [=](
+			GObject::Object source_object,
+			Gio::AsyncResult res) {
+		const auto ret = _master.call_navigation_started_finish(res);
+		if (!ret || !std::get<1>(*ret)) {
+			return;
+		}
+		if (gtk_uri_launcher_new && gtk_uri_launcher_launch) {
+			const auto launcher = gtk_uri_launcher_new(uri.c_str());
+			gtk_uri_launcher_launch(
+				launcher,
+				GTK_WINDOW(_window),
+				nullptr,
+				nullptr,
+				nullptr);
+				g_object_unref(launcher);
+		} else if (gtk_show_uri_on_window) {
+			gtk_show_uri_on_window(
+				GTK_WINDOW(_window),
+				uri.c_str(),
+				GDK_CURRENT_TIME,
+				nullptr);
+		} else {
+			gtk_show_uri(GTK_WINDOW(_window), uri.c_str(), GDK_CURRENT_TIME);
+		}
+	});
 	return nullptr;
 }
 
@@ -2515,6 +2541,11 @@ void Instance::registerMasterMethodHandlers() {
 		if (newWindow) {
 			if (_navigationStartHandler
 					&& _navigationStartHandler(uri, true)) {
+				if (_platform == Platform::Any
+						|| _mode == WindowMode::External) {
+					_master.complete_navigation_started(invocation, true);
+					return true;
+				}
 				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
 			_master.complete_navigation_started(invocation, false);

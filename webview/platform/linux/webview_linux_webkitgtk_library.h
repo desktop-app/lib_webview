@@ -10,6 +10,8 @@
 
 #include <gio/gio.h>
 
+#define GDK_CURRENT_TIME 0L 
+
 #define GTK_TYPE_CONTAINER (gtk_container_get_type ())
 #define GTK_CONTAINER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_CONTAINER, GtkContainer))
 
@@ -94,6 +96,7 @@ typedef GdkToplevel GdkWaylandToplevel;
 typedef struct _GdkToplevelSize GdkToplevelSize;
 typedef struct _GtkEventController GtkEventController;
 typedef struct _GtkGesture GtkGesture;
+typedef struct _GtkUriLauncher GtkUriLauncher;
 typedef unsigned int GdkModifierType;
 typedef void (*GdkWaylandToplevelExported)(
 	GdkToplevel *toplevel,
@@ -357,6 +360,22 @@ inline void (*gtk_window_get_size)(
 	GtkWindow *window,
 	gint *width,
 	gint *height);
+inline void (*gtk_show_uri)(
+	GtkWindow *parent,
+	const char *uri,
+	guint32 timestamp);
+inline gboolean (*gtk_show_uri_on_window)(
+	GtkWindow *parent,
+	const char *uri,
+	guint32 timestamp,
+	GError **error);
+inline GtkUriLauncher *(*gtk_uri_launcher_new)(const char *uri);
+inline void (*gtk_uri_launcher_launch)(
+	GtkUriLauncher *self,
+	GtkWindow *parent,
+	GCancellable *cancellable,
+	GAsyncReadyCallback callback,
+	gpointer user_data);
 
 // returns Window that is a typedef to unsigned long,
 // but we avoid to include Xlib.h here
