@@ -30,7 +30,7 @@
 
 #define GTK_TYPE_PLUG (gtk_plug_get_type ())
 #define GTK_PLUG(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_PLUG, GtkPlug))
-#define GTK_IS_PLUG(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GTK_TYPE_PLUG))
+#define GTK_IS_PLUG(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GTK_TYPE_PLUG))
 
 #define GTK_TYPE_STYLE_PROVIDER (gtk_style_provider_get_type ())
 #define GTK_STYLE_PROVIDER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_STYLE_PROVIDER, GtkStyleProvider))
