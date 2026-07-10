@@ -44,6 +44,10 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
+		&& ((LOAD_LIBRARY_SYMBOL(lib, gtk_uri_launcher_new)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_uri_launcher_launch))
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_show_uri_on_window)
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_show_uri))
 		&& (!gtkPlug
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
