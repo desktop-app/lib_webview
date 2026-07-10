@@ -945,8 +945,7 @@ bool Instance::create(Config config) {
 		G_CALLBACK(+[](
 				Instance *instance,
 				WebKitWebProcessTerminationReason reason) {
-			LOG(("WebView Error: Web process terminated: %1.").arg(
-				int(reason)));
+			g_critical("Web process terminated: %d.", reason);
 			Gio::Application::get_default().quit();
 		}),
 		this);
@@ -958,7 +957,7 @@ bool Instance::create(Config config) {
 				GParamSpec *pspec) {
 			if (!webkit_web_view_get_is_web_process_responsive(
 					instance->_webview)) {
-				LOG(("WebView Error: Web process became unresponsive."));
+				g_critical("Web process became unresponsive.");
 				Gio::Application::get_default().quit();
 			}
 		}),
