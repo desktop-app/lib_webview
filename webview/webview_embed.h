@@ -69,6 +69,7 @@ public:
 		QColor scrollBarBgOver);
 	void navigate(const QString &url);
 	void navigateToData(const QString &id);
+	void loadHtml(const QString &html, const QString &baseUrl);
 	void reload();
 	void setMessageHandler(Fn<void(Message)> handler);
 	void setMessageHandler(Fn<void(std::string)> handler);

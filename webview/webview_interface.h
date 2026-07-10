@@ -64,6 +64,14 @@ public:
 
 	virtual void navigate(std::string url) = 0;
 	virtual void navigateToData(std::string id) = 0;
+
+	// Loads the given content without any network requests, giving the
+	// document the security origin of baseUrl. Backends that can't provide
+	// such origin for local content fall back to navigating to baseUrl.
+	virtual void loadHtml(std::string html, std::string baseUrl) {
+		navigate(std::move(baseUrl));
+	}
+
 	virtual void reload() = 0;
 
 	virtual void init(std::string js) = 0;

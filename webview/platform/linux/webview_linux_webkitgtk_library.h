@@ -412,6 +412,10 @@ inline gboolean (*webkit_web_view_is_loading)(WebKitWebView *web_view);
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
 	const gchar *uri);
+inline void (*webkit_web_view_load_html)(
+	WebKitWebView *web_view,
+	const gchar *content,
+	const gchar *base_uri);
 inline void (*webkit_web_view_reload_bypass_cache)(WebKitWebView *web_view);
 inline WebKitUserScript *(*webkit_user_script_new)(
 	const gchar *source,

@@ -482,6 +482,7 @@ public:
 
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
+	void loadHtml(std::string html, std::string baseUrl) override;
 	void reload() override;
 
 	void init(std::string js) override;
@@ -1667,6 +1668,19 @@ void Instance::navigateToData(std::string id) {
 	navigate(dataDomain() + id);
 }
 
+void Instance::loadHtml(std::string html, std::string baseUrl) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_load_html(html, baseUrl, nullptr);
+		return;
+	}
+
+	webkit_web_view_load_html(_webview, html.c_str(), baseUrl.c_str());
+}
+
 void Instance::reload() {
 	if (_remoting) {
 		if (!_helper) {
@@ -2786,6 +2800,16 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &url) {
 		navigate(url);
 		_helper.complete_navigate(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_load_html().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &html,
+			const std::string &baseUrl) {
+		loadHtml(html, baseUrl);
+		_helper.complete_load_html(invocation);
 		return true;
 	});
 

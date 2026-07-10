@@ -157,6 +157,12 @@ void Window::navigateToData(const QString &id) {
 	_webview->navigateToData(id.toStdString());
 }
 
+void Window::loadHtml(const QString &html, const QString &baseUrl) {
+	Expects(_webview != nullptr);
+
+	_webview->loadHtml(html.toStdString(), baseUrl.toStdString());
+}
+
 void Window::reload() {
 	Expects(_webview != nullptr);
 

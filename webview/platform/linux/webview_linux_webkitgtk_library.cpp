@@ -71,6 +71,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_developer_extras)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_is_loading)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_uri)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_html)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_reload_bypass_cache)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_script_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_content_manager_add_script)

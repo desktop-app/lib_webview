@@ -62,6 +62,10 @@
 		<method name='Navigate'>
 			<arg type='s' name='url' direction='in'/>
 		</method>
+		<method name='LoadHtml'>
+			<arg type='ay' name='html' direction='in'/>
+			<arg type='s' name='baseUrl' direction='in'/>
+		</method>
 		<method name='Resize'>
 			<arg type='i' name='w' direction='in'/>
 			<arg type='i' name='h' direction='in'/>
