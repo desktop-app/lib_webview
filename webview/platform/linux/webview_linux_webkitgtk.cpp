@@ -11,6 +11,7 @@
 #include "webview/platform/linux/webview_linux_http_server.h"
 #include "webview/webview_data_stream.h"
 #include "base/platform/base_platform_info.h"
+#include "base/platform/linux/base_linux_xdg_activation_token.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
@@ -2321,6 +2322,11 @@ void Instance::startProcess() {
 		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
 		serviceLauncher.setenv("GDK_GL", "disable", true);
 		serviceLauncher.setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", true);
+	} else if (_platform == Platform::Any || _mode == WindowMode::External) {
+		const auto token = ::base::Platform::XdgActivationToken().toStdString();
+		if (!token.empty()) {
+			serviceLauncher.setenv("XDG_ACTIVATION_TOKEN", token, true);
+		}
 	}
 
 	int pipefd[2] = { -1, -1 };
