@@ -2934,7 +2934,7 @@ Available Availability() {
 		return Available{
 			.error = Available::Error::NoWebKitGTK,
 			.details = "Please install WebKitGTK "
-			"(webkit2gtk-4.1/webkit2gtk-4.0) "
+			"(webkitgtk-6.0/webkit2gtk-4.1/webkit2gtk-4.0) "
 			"from your package manager.",
 		};
 	}
