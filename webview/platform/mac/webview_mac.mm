@@ -28,8 +28,8 @@
 
 namespace {
 
-constexpr auto kDataUrlScheme = std::string_view("desktop-app-resource");
-constexpr auto kFullDomain = std::string_view("desktop-app-resource://domain/");
+constexpr auto kDataUrlScheme = std::string_view("desktopappresource");
+constexpr auto kFullDomain = std::string_view("desktopappresource://domain/");
 constexpr auto kPartsCacheLimit = 32 * 1024 * 1024;
 constexpr auto kUuidSize = 16;
 
