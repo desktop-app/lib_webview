@@ -27,9 +27,9 @@ struct Compositor::Private {
 	}
 
 	QPointer<QQuickWidget> widget;
-	base::unique_qptr<Output> output;
 	QWaylandXdgShell shell;
 	QWaylandXdgOutputManagerV1 xdgOutput;
+	base::unique_qptr<Output> output;
 	rpl::lifetime lifetime;
 };
 
@@ -291,6 +291,12 @@ Compositor::Compositor(const QByteArray &socketName)
 
 	setSocketName(socketName);
 	create();
+}
+
+Compositor::~Compositor() {
+	for (const auto output : outputs()) {
+		delete output;
+	}
 }
 
 void Compositor::setWidget(QQuickWidget *widget) {
