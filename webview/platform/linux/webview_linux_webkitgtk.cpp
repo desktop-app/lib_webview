@@ -12,6 +12,7 @@
 #include "webview/webview_data_stream.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/linux/base_linux_xdg_activation_token.h"
+#include "base/algorithm.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
 #include "base/unique_qptr.h"
@@ -1789,28 +1790,12 @@ void Instance::scheduleQueuedEvals() {
 	if (_queuedScriptDialogEvals.empty()) {
 		return;
 	}
-	struct QueuedEvals {
-		::base::weak_ptr<Instance> instance;
-		std::vector<std::string> scripts;
-	};
-	auto queued = std::make_unique<QueuedEvals>();
-	queued->instance = this;
-	queued->scripts = std::move(_queuedScriptDialogEvals);
-	_queuedScriptDialogEvals = {};
-	g_idle_add_full(
-		G_PRIORITY_DEFAULT_IDLE,
-		+[](gpointer userData) -> gboolean {
-			const auto queued = std::unique_ptr<QueuedEvals>(
-				static_cast<QueuedEvals*>(userData));
-			if (const auto instance = queued->instance.get()) {
-				for (auto &script : queued->scripts) {
-					instance->eval(std::move(script));
-				}
-			}
-			return G_SOURCE_REMOVE;
-		},
-		queued.release(),
-		nullptr);
+	const auto scripts = ::base::take(_queuedScriptDialogEvals);
+	GLib::idle_add_once(crl::guard(this, [=] {
+		for (const auto &script : scripts) {
+			eval(script);
+		}
+	}));
 }
 
 void Instance::focus() {
@@ -1828,9 +1813,6 @@ QWidget *Instance::widget() {
 }
 
 void Instance::scheduleWaylandPopupAnchorExport() {
-	struct WaylandPopupAnchorSchedule {
-		::base::weak_ptr<Instance> instance;
-	};
 	if (!_window
 		|| _waylandPopupAnchorExportAllowed
 		|| _waylandPopupAnchorExportScheduled
@@ -1839,26 +1821,14 @@ void Instance::scheduleWaylandPopupAnchorExport() {
 		return;
 	}
 	_waylandPopupAnchorExportScheduled = true;
-	const auto schedule = new WaylandPopupAnchorSchedule{
-		.instance = this,
-	};
-	g_idle_add_full(
-		G_PRIORITY_DEFAULT_IDLE,
-		+[](gpointer userData) -> gboolean {
-			const auto schedule = std::unique_ptr<WaylandPopupAnchorSchedule>(
-				static_cast<WaylandPopupAnchorSchedule*>(userData));
-			if (const auto instance = schedule->instance.get()) {
-				if (!instance->_waylandPopupAnchorExportScheduled) {
-					return G_SOURCE_REMOVE;
-				}
-				instance->_waylandPopupAnchorExportScheduled = false;
-				instance->_waylandPopupAnchorExportAllowed = true;
-				instance->ensureWaylandPopupAnchorExport();
-			}
-			return G_SOURCE_REMOVE;
-		},
-		schedule,
-		nullptr);
+	GLib::idle_add_once(crl::guard(this, [=] {
+		if (!_waylandPopupAnchorExportScheduled) {
+			return;
+		}
+		_waylandPopupAnchorExportScheduled = false;
+		_waylandPopupAnchorExportAllowed = true;
+		ensureWaylandPopupAnchorExport();
+	}));
 }
 
 void Instance::ensureWaylandPopupAnchorExport() {
