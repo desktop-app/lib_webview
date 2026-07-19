@@ -1705,7 +1705,11 @@ void Instance::loadHtml(std::string html, std::string baseUrl) {
 		return;
 	}
 
-	webkit_web_view_load_html(_webview, html.c_str(), baseUrl.c_str());
+	webkit_web_view_load_alternate_html(
+		_webview,
+		html.c_str(),
+		baseUrl.c_str(),
+		baseUrl.c_str());
 }
 
 void Instance::reload() {
