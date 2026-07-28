@@ -26,6 +26,20 @@
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
 
+// Private WebKit API. Everything using it is guarded by respondsToSelector,
+// _WKFeature / _WKInternalDebugFeature are matched by their string key.
+@protocol WebviewWKFeature <NSObject>
+@property (nonatomic, readonly, copy) NSString *key;
+@end // @protocol WebviewWKFeature
+
+@interface WKPreferences (WebviewPrivate)
++ (NSArray<id<WebviewWKFeature>> *)_features;
++ (NSArray<id<WebviewWKFeature>> *)_internalDebugFeatures;
+- (void)_setEnabled:(BOOL)value forFeature:(id<WebviewWKFeature>)feature;
+- (void)_setEnabled:(BOOL)value
+	forInternalDebugFeature:(id<WebviewWKFeature>)feature;
+@end // @interface WKPreferences (WebviewPrivate)
+
 namespace {
 
 constexpr auto kDataUrlScheme = std::string_view("desktopappresource");
@@ -48,6 +62,48 @@ using TaskPointer = id<WKURLSchemeTask>;
 	auto result = std::unique_ptr<char[]>(new char[length]);
 	memcpy(result.get(), data, length);
 	return result;
+}
+
+[[nodiscard]] id<WebviewWKFeature> FindFeature(
+		NSArray<id<WebviewWKFeature>> *features,
+		NSString *key) {
+	for (id<WebviewWKFeature> feature in features) {
+		if ([feature respondsToSelector:@selector(key)]
+			&& [[feature key] isEqualToString:key]) {
+			return feature;
+		}
+	}
+	return nil;
+}
+
+void DisableClipboardReading(WKPreferences *preferences) {
+	// navigator.clipboard.read/readText() and document.execCommand("paste")
+	// all end up in WebKit's "DOM paste access request", which on macOS pops
+	// up a system "Paste" menu right under the cursor. A page can bait a
+	// click into that menu, so we turn the request flow off completely. The
+	// embedder is expected to expose its own method for reading the
+	// clipboard, gated on a real user interaction.
+	//
+	// Pasting initiated by the user (Cmd+V, the context menu) is allowed
+	// before this flag is checked in WebCore, so it keeps working, and so
+	// does writing to the clipboard.
+	NSString *key = @"DOMPasteAccessRequestsEnabled";
+	if ([WKPreferences respondsToSelector:@selector(_internalDebugFeatures)]
+		&& [preferences respondsToSelector:
+			@selector(_setEnabled:forInternalDebugFeature:)]) {
+		if (const auto feature = FindFeature(
+				[WKPreferences _internalDebugFeatures],
+				key)) {
+			[preferences _setEnabled:NO forInternalDebugFeature:feature];
+			return;
+		}
+	}
+	if ([WKPreferences respondsToSelector:@selector(_features)]
+		&& [preferences respondsToSelector:@selector(_setEnabled:forFeature:)]) {
+		if (const auto feature = FindFeature([WKPreferences _features], key)) {
+			[preferences _setEnabled:NO forFeature:feature];
+		}
+	}
 }
 
 } // namespace
@@ -472,6 +528,7 @@ Instance::Instance(Config config) {
 	if (config.safe) {
 		[configuration.preferences setValue:@NO forKey:@"fraudulentWebsiteWarningEnabled"];
 	}
+	DisableClipboardReading(configuration.preferences);
 	const auto updateStates = [=] {
 		updateHistoryStates();
 	};

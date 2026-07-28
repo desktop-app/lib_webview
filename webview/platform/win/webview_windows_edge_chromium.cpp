@@ -353,7 +353,12 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_PermissionKind(&kind);
 	if (result == S_OK) {
 		if (kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ) {
-			args->put_State(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
+			// Never let the page read the clipboard on its own, not even
+			// after asking the user: navigator.clipboard.read/readText()
+			// would give any embedded content silent access to whatever
+			// the user copied. The embedder is expected to expose its own
+			// method for that, gated on a real user interaction.
+			args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
 		}
 	}
 	return S_OK;

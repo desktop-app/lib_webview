@@ -534,6 +534,7 @@ private:
 	void evalNow(std::string js);
 	void scheduleQueuedEvals();
 	bool authenticate(WebKitAuthenticationRequest *request);
+	bool permissionRequest(WebKitPermissionRequest *request);
 
 	std::string dataDomain();
 	void dataRequest(
@@ -1043,6 +1044,15 @@ bool Instance::create(Config config) {
 			return instance->authenticate(request);
 		}),
 		this);
+	g_signal_connect_swapped(
+		_webview,
+		"permission-request",
+		G_CALLBACK(+[](
+			Instance *instance,
+			WebKitPermissionRequest *request) -> gboolean {
+			return instance->permissionRequest(request);
+		}),
+		this);
 	if (gtk_widget_add_controller
 		&& gtk_gesture_click_new
 		&& gtk_event_controller_key_new
@@ -1482,6 +1492,21 @@ bool Instance::authenticate(WebKitAuthenticationRequest *request) {
 	webkit_authentication_request_authenticate(request, credential);
 	webkit_credential_free(credential);
 	return true;
+}
+
+bool Instance::permissionRequest(WebKitPermissionRequest *request) {
+	// navigator.clipboard.read/readText() asks for this one. Never let the
+	// page read the clipboard on its own, the embedder is expected to expose
+	// its own method for that, gated on a real user interaction.
+	//
+	// WebKitGTK denies unhandled requests by default, we make it explicit.
+	if (webkit_clipboard_permission_request_get_type
+		&& webkit_permission_request_deny
+		&& WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(request)) {
+		webkit_permission_request_deny(request);
+		return true;
+	}
+	return false;
 }
 
 // https://bugs.webkit.org/show_bug.cgi?id=146351

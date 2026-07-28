@@ -65,6 +65,9 @@
 #define WEBKIT_TYPE_WEB_VIEW (webkit_web_view_get_type())
 #define WEBKIT_WEB_VIEW(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_WEB_VIEW, WebKitWebView))
 
+#define WEBKIT_TYPE_CLIPBOARD_PERMISSION_REQUEST (webkit_clipboard_permission_request_get_type())
+#define WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), WEBKIT_TYPE_CLIPBOARD_PERMISSION_REQUEST))
+
 struct _GdkRGBA {
 	float red;
 	float green;
@@ -124,6 +127,7 @@ typedef struct _WebKitWebContext WebKitWebContext;
 typedef struct _WebKitNetworkSession WebKitNetworkSession;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
+typedef struct _WebKitPermissionRequest WebKitPermissionRequest;
 
 typedef enum {
 	GTK_WINDOW_TOPLEVEL,
@@ -484,6 +488,9 @@ inline WebKitCredential *(*webkit_credential_new)(
 	const gchar *password,
 	WebKitCredentialPersistence persistence);
 inline void (*webkit_credential_free)(WebKitCredential *credential);
+inline GType (*webkit_clipboard_permission_request_get_type)(void);
+inline void (*webkit_permission_request_deny)(
+	WebKitPermissionRequest *request);
 
 enum class ResolveResult {
 	Success,

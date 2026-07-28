@@ -130,6 +130,11 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_shadow_width);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
+
+	// Since 2.42, before that clipboard reads were denied outright.
+	LOAD_LIBRARY_SYMBOL(lib, webkit_clipboard_permission_request_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_permission_request_deny);
+
 	if (gtk_native_get_surface) {
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_drop_exported_handle);
