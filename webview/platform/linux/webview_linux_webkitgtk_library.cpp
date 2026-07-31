@@ -106,6 +106,9 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_get_cookie_manager);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_get_cookie_manager);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_cookie_manager_set_accept_policy);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type);

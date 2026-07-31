@@ -79,6 +79,16 @@ void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
 
 std::string SocketPath;
 
+[[nodiscard]] bool AllowThirdPartyCookies(WebKitCookieManager *manager) {
+	if (!manager || !webkit_cookie_manager_set_accept_policy) {
+		return false;
+	}
+	webkit_cookie_manager_set_accept_policy(
+		manager,
+		WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
+	return true;
+}
+
 inline auto MethodError() {
 	return GLib::Error::new_literal(
 		Gio::DBusErrorNS_::quark(),
@@ -736,6 +746,7 @@ bool Instance::create(Config config) {
 		const auto shellMessageToken = _shellMessageToken;
 		const auto margins = config.windowMargins;
 		const auto initialSize = config.initialSize;
+		const auto allowThirdPartyCookies = config.allowThirdPartyCookies;
 		_helper.call_create(
 			debug,
 			r,
@@ -752,6 +763,7 @@ bool Instance::create(Config config) {
 			margins.bottom(),
 			initialSize.width(),
 			initialSize.height(),
+			allowThirdPartyCookies,
 			crl::guard(&guard, [&](
 					GObject::Object source_object,
 					Gio::AsyncResult res) {
@@ -881,6 +893,16 @@ bool Instance::create(Config config) {
 		WebKitNetworkSession *session = webkit_network_session_new(
 			baseData.c_str(),
 			baseCache.c_str());
+		if (config.allowThirdPartyCookies) {
+			const auto manager = webkit_network_session_get_cookie_manager
+				? webkit_network_session_get_cookie_manager(session)
+				: nullptr;
+			if (!AllowThirdPartyCookies(manager)) {
+				LOG(("WebView Error: Cookie policy API is unavailable."));
+				g_object_unref(session);
+				return false;
+			}
+		}
 		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
 			"network-session",
@@ -892,6 +914,16 @@ bool Instance::create(Config config) {
 			"base-cache-directory", baseCache.c_str(),
 			"base-data-directory", baseData.c_str(),
 			nullptr);
+		if (config.allowThirdPartyCookies) {
+			const auto manager = webkit_website_data_manager_get_cookie_manager
+				? webkit_website_data_manager_get_cookie_manager(data)
+				: nullptr;
+			if (!AllowThirdPartyCookies(manager)) {
+				LOG(("WebView Error: Cookie policy API is unavailable."));
+				g_object_unref(data);
+				return false;
+			}
+		}
 		WebKitWebContext *context
 			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
@@ -2793,11 +2825,13 @@ void Instance::registerHelperMethodHandlers() {
 			int marginTop,
 			int marginBottom,
 			int initialWidth,
-			int initialHeight) {
+			int initialHeight,
+			bool allowThirdPartyCookies) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
+			.allowThirdPartyCookies = allowThirdPartyCookies,
 			.mode = WindowMode(mode),
 			.windowStyle = WindowStyle(windowStyle),
 			.windowMargins = QMargins(
