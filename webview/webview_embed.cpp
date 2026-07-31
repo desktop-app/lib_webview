@@ -71,6 +71,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.userDataToken = config.storageId.token.toStdString(),
 		.debug = OptionWebviewDebugEnabled.value(),
 		.safe = config.safe,
+		.allowThirdPartyCookies = config.allowThirdPartyCookies,
 		.mode = config.mode,
 		.windowStyle = config.windowStyle,
 		.windowMargins = config.windowMargins,

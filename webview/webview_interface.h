@@ -167,6 +167,7 @@ struct Config {
 	std::string userDataToken;
 	bool debug = false;
 	bool safe = false;
+	bool allowThirdPartyCookies = false;
 	WindowMode mode = WindowMode::Embedded;
 	WindowStyle windowStyle = WindowStyle::Default;
 	QMargins windowMargins;

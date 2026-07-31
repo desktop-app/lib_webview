@@ -42,6 +42,7 @@ struct WindowConfig {
 	StorageId storageId;
 	QString dataProtocolOverride;
 	bool safe = false;
+	bool allowThirdPartyCookies = false;
 	WindowMode mode = WindowMode::Embedded;
 	WindowStyle windowStyle = WindowStyle::Default;
 	QMargins windowMargins;

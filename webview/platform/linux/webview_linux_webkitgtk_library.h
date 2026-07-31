@@ -125,6 +125,7 @@ typedef struct _WebKitScriptDialog WebKitScriptDialog;
 typedef struct _WebKitWebsiteDataManager WebKitWebsiteDataManager;
 typedef struct _WebKitWebContext WebKitWebContext;
 typedef struct _WebKitNetworkSession WebKitNetworkSession;
+typedef struct _WebKitCookieManager WebKitCookieManager;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
 typedef struct _WebKitPermissionRequest WebKitPermissionRequest;
@@ -205,6 +206,12 @@ typedef enum {
 	WEBKIT_CREDENTIAL_PERSISTENCE_FOR_SESSION,
 	WEBKIT_CREDENTIAL_PERSISTENCE_PERMANENT,
 } WebKitCredentialPersistence;
+
+typedef enum {
+	WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS,
+	WEBKIT_COOKIE_POLICY_ACCEPT_NEVER,
+	WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY,
+} WebKitCookieAcceptPolicy;
 
 namespace Webview::WebKitGTK::Library {
 
@@ -476,6 +483,13 @@ inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 inline WebKitNetworkSession *(*webkit_network_session_new)(
 	const char* data_directory,
 	const char* cache_directory);
+inline WebKitCookieManager *(*webkit_network_session_get_cookie_manager)(
+	WebKitNetworkSession *session);
+inline WebKitCookieManager *(*webkit_website_data_manager_get_cookie_manager)(
+	WebKitWebsiteDataManager *manager);
+inline void (*webkit_cookie_manager_set_accept_policy)(
+	WebKitCookieManager *cookie_manager,
+	WebKitCookieAcceptPolicy policy);
 inline void (*webkit_authentication_request_authenticate)(
 	WebKitAuthenticationRequest *request,
 	WebKitCredential *credential);
