@@ -898,7 +898,7 @@ bool Instance::create(Config config) {
 				? webkit_network_session_get_cookie_manager(session)
 				: nullptr;
 			if (!AllowThirdPartyCookies(manager)) {
-				LOG(("WebView Error: Cookie policy API is unavailable."));
+				g_critical("Cookie policy API is unavailable.");
 				g_object_unref(session);
 				return false;
 			}
@@ -919,7 +919,7 @@ bool Instance::create(Config config) {
 				? webkit_website_data_manager_get_cookie_manager(data)
 				: nullptr;
 			if (!AllowThirdPartyCookies(manager)) {
-				LOG(("WebView Error: Cookie policy API is unavailable."));
+				g_critical("Cookie policy API is unavailable.");
 				g_object_unref(data);
 				return false;
 			}
