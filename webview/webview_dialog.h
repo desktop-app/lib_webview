@@ -54,6 +54,17 @@ void ShowPopupAsync(
 	bool modal = true);
 bool CloseBlockingPopup();
 
+// True while the nested event loop of a blocking popup is running.
+// Destroying a webview or its owner in that state is unsafe: the popup
+// may have been opened from inside a webview callback, and the frames of
+// that callback, together with the closures owning them, are still on the
+// stack below the loop.
+[[nodiscard]] bool InsideBlockingPopup();
+
+// Calls `callback` right away when no blocking popup loop is running, or
+// otherwise from a clean stack once that loop is finished.
+void RunWhenBlockingPopupFinished(Fn<void()> callback);
+
 struct DialogArgs;
 struct DialogResult;
 

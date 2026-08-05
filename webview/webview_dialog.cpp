@@ -14,6 +14,7 @@
 #include "ui/wrap/vertical_layout.h"
 #include "ui/integration.h"
 #include "ui/qt_object_factory.h"
+#include "base/algorithm.h"
 #include "base/invoke_queued.h"
 #include "base/unique_qptr.h"
 #include "base/integration.h"
@@ -25,6 +26,7 @@
 #include <QtCore/QEventLoop>
 #include <QtCore/QPointer>
 #include <QtCore/QCoreApplication>
+#include <QtWidgets/QWidget>
 
 #include <memory>
 
@@ -35,10 +37,12 @@ constexpr auto kPopupsQuicklyLimit = 3;
 constexpr auto kPopupsQuicklyDelay = 8 * crl::time(1000);
 
 bool InBlockingPopup/* = false*/;
+bool InBlockingPopupLoop/* = false*/;
 int PopupsShownQuickly/* = 0*/;
 crl::time PopupLastShown/* = 0*/;
 QPointer<Ui::SeparatePanel> CurrentBlockingPopup;
 bool CloseBlockingPopupRequested/* = false*/;
+std::vector<Fn<void()>> BlockingPopupFinishCallbacks;
 
 struct AsyncPopupState {
 	PopupResult result;
@@ -56,6 +60,25 @@ struct AsyncPopupState {
 			: result.value.value_or(QString()).toStdString()),
 		.accepted = (result.id == "ok" || result.value.has_value()),
 	};
+}
+
+void FlushBlockingPopupFinishCallbacks() {
+	if (InBlockingPopupLoop || BlockingPopupFinishCallbacks.empty()) {
+		return;
+	}
+	const auto invoke = [] {
+		if (InBlockingPopupLoop) {
+			return;
+		}
+		for (const auto &callback : base::take(BlockingPopupFinishCallbacks)) {
+			callback();
+		}
+	};
+	if (const auto context = QCoreApplication::instance()) {
+		InvokeQueued(context, invoke);
+	} else {
+		invoke();
+	}
 }
 
 void FinishAsyncPopup(
@@ -92,15 +115,30 @@ bool CloseBlockingPopup() {
 	return false;
 }
 
+bool InsideBlockingPopup() {
+	return InBlockingPopupLoop;
+}
+
+void RunWhenBlockingPopupFinished(Fn<void()> callback) {
+	if (!callback) {
+		return;
+	} else if (!InBlockingPopupLoop) {
+		callback();
+		return;
+	}
+	BlockingPopupFinishCallbacks.push_back(std::move(callback));
+}
+
 PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	if (InBlockingPopup) {
 		return {};
 	}
-	InBlockingPopup = true;
+	InBlockingPopup = InBlockingPopupLoop = true;
 	const auto guard = gsl::finally([] {
-		InBlockingPopup = false;
+		InBlockingPopup = InBlockingPopupLoop = false;
 		CurrentBlockingPopup = nullptr;
 		CloseBlockingPopupRequested = false;
+		FlushBlockingPopupFinishCallbacks();
 	});
 
 	if (!args.ignoreFloodCheck) {
@@ -351,9 +389,21 @@ void ShowPopupAsync(
 		FinishAsyncPopup(state, false);
 		return;
 	}
-	InvokeQueued(context, [state, popup = std::move(popup), modal]() mutable {
+	const auto parent = QPointer<QWidget>(popup.parent);
+	const auto parentRequired = (popup.parent != nullptr);
+	InvokeQueued(context, [
+		state,
+		popup = std::move(popup),
+		modal,
+		parent,
+		parentRequired
+	]() mutable {
+		if (parentRequired && !parent) {
+			FinishAsyncPopup(state, false);
+			return;
+		}
 		auto separatePanelArgs = Ui::SeparatePanelArgs{
-			.parent = popup.parent,
+			.parent = parent.data(),
 		};
 		separatePanelArgs.anchorGeometry = popup.anchorGeometry;
 		separatePanelArgs.transientParent = popup.transientParent;
