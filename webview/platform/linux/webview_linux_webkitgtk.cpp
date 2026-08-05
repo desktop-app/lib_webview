@@ -2659,7 +2659,13 @@ void Instance::registerMasterMethodHandlers() {
 			}
 		}
 
+		// The handler spins a nested event loop, and anything running in it
+		// may destroy this instance together with `_master`.
+		const auto weak = ::base::make_weak(this);
 		const auto result = _dialogHandler(std::move(args));
+		if (!weak || !_master) {
+			return true;
+		}
 
 		_master.complete_script_dialog(
 			invocation,

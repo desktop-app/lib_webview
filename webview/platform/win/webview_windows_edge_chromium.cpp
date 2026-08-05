@@ -131,6 +131,14 @@ public:
 		return _window && _environment && _controller && _webview;
 	}
 
+	// Set by ~Instance before it closes the controller. The WebView2
+	// runtime keeps its own reference to this handler, so it may well
+	// outlive the Instance, and a callback that is still on the stack
+	// must not touch the runtime objects after that point.
+	void setDestroying() {
+		_destroying = true;
+	}
+
 	void setOpaqueBg(QColor opaqueBg);
 
 	HRESULT STDMETHODCALLTYPE Invoke(
@@ -212,6 +220,7 @@ private:
 
 	QColor _opaqueBg;
 	bool _debug = false;
+	bool _destroying = false;
 
 };
 
@@ -337,10 +346,16 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	if (result == S_OK && message) {
 		const auto messageText = FromWide(message);
 		const auto sourceText = FromWide(sourceUrl);
+		const auto weak = base::make_weak(this);
 		_messageHandler(Webview::Message{
 			.text = messageText,
 			.sourceUrl = sourceText,
 		});
+		if (!weak || _destroying) {
+			// The handler destroyed the webview, so `sender` and the rest
+			// of the object graph below this callback are already gone.
+			return S_OK;
+		}
 		sender->PostWebMessageAsString(message.data());
 	}
 	return S_OK;
@@ -370,9 +385,12 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	auto uri = base::CoTaskMemString();
 	const auto result = args->get_Uri(uri.put());
 
-	if (result == S_OK && uri) {
-		if (_navigationStartHandler
-			&& !_navigationStartHandler(FromWide(uri), false)) {
+	if (result == S_OK && uri && _navigationStartHandler) {
+		const auto weak = base::make_weak(this);
+		const auto allowed = _navigationStartHandler(FromWide(uri), false);
+		if (!weak || _destroying) {
+			return S_OK;
+		} else if (!allowed) {
 			args->put_Cancel(TRUE);
 			return S_OK;
 		}
@@ -469,12 +487,18 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		}
 		return DialogType::Alert;
 	}();
+	// The handler may spin a nested event loop, and anything running in it
+	// may destroy the webview together with this handler.
+	const auto weak = base::make_weak(this);
 	const auto result = _dialogHandler(DialogArgs{
 		.type = type,
 		.value = FromWide(value),
 		.text = FromWide(text),
 		.url = FromWide(uri),
 	});
+	if (!weak || _destroying) {
+		return S_OK;
+	}
 
 	if (result.accepted) {
 		args->Accept();
@@ -739,6 +763,7 @@ Instance::~Instance() {
 		RemovePropW(_handle, L"WebviewInstance");
 	}
 	if (_handler) {
+		_handler->setDestroying();
 		if (_handler->valid()) {
 			_handler->controller()->Close();
 		}
