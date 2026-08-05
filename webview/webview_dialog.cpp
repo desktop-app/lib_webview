@@ -28,6 +28,8 @@
 #include <QtCore/QCoreApplication>
 #include <QtWidgets/QWidget>
 
+#include "rpl/take.h"
+
 #include <memory>
 
 namespace Webview {
@@ -280,7 +282,7 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		container->resizeToWidth(st::boxWideWidth);
 
 		container->heightValue(
-		) | rpl::on_next([=](int height) {
+		) | rpl::take(1) | rpl::on_next([=](int height) {
 			raw->setInnerSize({ st::boxWideWidth, titleHeight + height });
 		}, container->lifetime());
 
@@ -519,7 +521,7 @@ void ShowPopupAsync(
 		container->resizeToWidth(st::boxWideWidth);
 
 		container->heightValue(
-		) | rpl::on_next([=](int height) {
+		) | rpl::take(1) | rpl::on_next([=](int height) {
 			raw->setInnerSize({ st::boxWideWidth, titleHeight + height });
 		}, container->lifetime());
 
