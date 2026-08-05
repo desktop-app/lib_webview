@@ -244,6 +244,7 @@ inline GtkWidget *(*gtk_scrolled_window_new)(
 inline void (*gtk_scrolled_window_set_shadow_type)(
 	GtkWidget *scrolled_window,
 	GtkShadowType type);
+inline GtkWidget *(*gtk_graphics_offload_new)(GtkWidget *child);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
 inline void (*gtk_widget_set_size_request)(
