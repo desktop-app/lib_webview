@@ -555,15 +555,15 @@ Instance::Instance(Config config) {
 
 	[configuration release];
 
-	_window.reset(QWindow::fromWinId(WId(_webview)));
-	_widget.reset();
-
-	_widget.reset(
-		QWidget::createWindowContainer(
-			_window.get(),
-			config.parent,
-			Qt::FramelessWindowHint));
-	_widget->show();
+	if (config.mode != WindowMode::Hidden) {
+		_window.reset(QWindow::fromWinId(WId(_webview)));
+		_widget.reset(
+			QWidget::createWindowContainer(
+				_window.get(),
+				config.parent,
+				Qt::FramelessWindowHint));
+		_widget->show();
+	}
 
 	setOpaqueBg(config.opaqueBg);
 	init(R"(
@@ -985,6 +985,10 @@ Available Availability() {
 		.customRangeRequests = true,
 		.customReferer = true,
 	};
+}
+
+bool HiddenSupported() {
+	return true;
 }
 
 bool SupportsEmbedAfterCreate() {

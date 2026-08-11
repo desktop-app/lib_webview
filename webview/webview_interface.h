@@ -195,6 +195,7 @@ void ParseRangeHeaderFor(DataRequest &request, std::string_view header);
 [[nodiscard]] inline bool Supported() {
 	return Availability().error == Available::Error::None;
 }
+[[nodiscard]] bool HiddenSupported();
 [[nodiscard]] bool SupportsEmbedAfterCreate();
 [[nodiscard]] bool SeparateStorageIdSupported();
 

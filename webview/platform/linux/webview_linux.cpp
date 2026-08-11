@@ -15,6 +15,10 @@ Available Availability() {
 	return WebKitGTK::Availability();
 }
 
+bool HiddenSupported() {
+	return WebKitGTK::HiddenSupported();
+}
+
 bool SupportsEmbedAfterCreate() {
 	return true;
 }

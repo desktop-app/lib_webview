@@ -633,7 +633,9 @@ Instance::Instance(bool remoting, WindowMode mode)
 		_platform = ::Platform::IsX11()
 			? Platform::X11
 #ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-			: Platform::Wayland;
+			: (_mode == WindowMode::Embedded
+				? Platform::Wayland
+				: Platform::Any);
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 			: Platform::Any;
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
@@ -782,6 +784,8 @@ bool Instance::create(Config config) {
 		if (_mode == WindowMode::External) {
 			_widget = ::base::make_unique_q<QWidget>(config.parent);
 			return true;
+		} else if (_mode == WindowMode::Hidden) {
+			return true;
 		}
 
 		switch (_platform) {
@@ -824,7 +828,7 @@ bool Instance::create(Config config) {
 	}
 
 	_window = (_platform == Platform::X11)
-		&& (_mode != WindowMode::External)
+		&& (_mode == WindowMode::Embedded)
 		? gtk_plug_new(0)
 		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
@@ -856,7 +860,7 @@ bool Instance::create(Config config) {
 				this);
 		}
 	}
-	const auto customPainting = (_mode != WindowMode::External)
+	const auto customPainting = (_mode == WindowMode::Embedded)
 		|| customWindowFrame();
 	if (customPainting && gtk_widget_set_app_paintable) {
 		gtk_widget_set_app_paintable(_window, TRUE);
@@ -1192,10 +1196,12 @@ bool Instance::create(Config config) {
 	} else {
 		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
-	if (!gtk_widget_show_all) {
-		gtk_widget_set_visible(_window, true);
-	} else {
-		gtk_widget_show_all(_window);
+	if (_mode != WindowMode::Hidden) {
+		if (!gtk_widget_show_all) {
+			gtk_widget_set_visible(_window, true);
+		} else {
+			gtk_widget_show_all(_window);
+		}
 	}
 	updateWindowFrameExtents();
 	init(R"(
@@ -2083,7 +2089,7 @@ void *Instance::winId() {
 		return xid ? reinterpret_cast<void*>(xid) : nullptr;
 	}
 
-	return (_platform == Platform::X11)
+	return (_mode == WindowMode::Embedded && _platform == Platform::X11)
 		? reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)))
 		: nullptr;
 }
@@ -2996,6 +3002,11 @@ Available Availability() {
 		.customRangeRequests = success,
 		.customReferer = success,
 	};
+}
+
+bool HiddenSupported() {
+	Instance instance(true, WindowMode::Hidden);
+	return instance.resolve() == ResolveResult::Success;
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {

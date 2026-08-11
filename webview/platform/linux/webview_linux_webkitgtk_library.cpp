@@ -12,7 +12,7 @@ namespace Webview::WebKitGTK::Library {
 
 ResolveResult Resolve(Platform platform, WindowMode mode) {
 	const auto gtkPlug = (platform == Platform::X11)
-		&& (mode != WindowMode::External);
+		&& (mode == WindowMode::Embedded);
 	const auto lib = (!gtkPlug
 			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 			: nullptr)

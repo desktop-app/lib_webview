@@ -57,6 +57,8 @@ public:
 		WindowConfig config = WindowConfig());
 	~Window();
 
+	[[nodiscard]] bool valid() const;
+
 	// May be nullptr or destroyed any time (in case webview crashed).
 	[[nodiscard]] QWidget *widget() const;
 	[[nodiscard]] void *winId() const;

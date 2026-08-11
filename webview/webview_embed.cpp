@@ -46,12 +46,17 @@ const char kOptionWebviewDebugEnabled[] = "webview-debug-enabled";
 const char kOptionWebviewLegacyEdge[] = "webview-legacy-edge";
 
 Window::Window(QWidget *parent, WindowConfig config) {
-	if (createWebView(parent, config)) {
+	if (createWebView(parent, config)
+		&& config.mode != WindowMode::Hidden) {
 		setDialogHandler(nullptr);
 	}
 }
 
 Window::~Window() = default;
+
+bool Window::valid() const {
+	return (_webview != nullptr);
+}
 
 bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 	Expects(!_webview);

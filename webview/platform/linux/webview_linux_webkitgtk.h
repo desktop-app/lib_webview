@@ -11,6 +11,7 @@
 namespace Webview::WebKitGTK {
 
 [[nodiscard]] Available Availability();
+[[nodiscard]] bool HiddenSupported();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
 int Exec();

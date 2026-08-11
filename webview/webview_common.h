@@ -17,6 +17,7 @@ namespace Webview {
 enum class WindowMode {
 	Embedded,
 	External,
+	Hidden,
 };
 
 enum class WindowStyle {

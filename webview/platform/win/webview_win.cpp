@@ -49,6 +49,10 @@ Available Availability() {
 	};
 }
 
+bool HiddenSupported() {
+	return !SystemTooOld() && EdgeChromium::Supported();
+}
+
 bool SupportsEmbedAfterCreate() {
 	return !SystemTooOld()
 		&& !EdgeChromium::Supported()
@@ -62,6 +66,8 @@ bool SeparateStorageIdSupported() {
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (SystemTooOld()) {
 		return nullptr;
+	} else if (config.mode == WindowMode::Hidden) {
+		return EdgeChromium::CreateInstance(std::move(config));
 	} else if (auto result = EdgeChromium::CreateInstance(config)) {
 		return result;
 	}

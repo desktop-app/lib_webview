@@ -733,6 +733,7 @@ private:
 	base::unique_qptr<QWidget> _widget;
 	bool _pendingFocus = false;
 	bool _readyFlag = false;
+	bool _hidden = false;
 	Fn<void()> _interactionHandler;
 	WNDPROC _originalWndProc = nullptr;
 
@@ -741,12 +742,15 @@ private:
 Instance::Instance(Config &&config)
 : _window(MakeFramelessWindow())
 , _handle(HWND(_window->winId()))
-, _widget(
-	QWidget::createWindowContainer(
-		_window,
-		config.parent,
-		Qt::FramelessWindowHint)) {
-	_widget->show();
+, _hidden(config.mode == WindowMode::Hidden) {
+	if (!_hidden) {
+		_widget.reset(
+			QWidget::createWindowContainer(
+				_window,
+				config.parent,
+				Qt::FramelessWindowHint));
+		_widget->show();
+	}
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
 	init("if(window===window.top){window.external={invoke:s=>window.chrome.webview.postMessage(s)}}");
@@ -823,7 +827,7 @@ void Instance::processReadySteps() {
 		return;
 	}
 	if (guard) {
-		_handler->controller()->put_IsVisible(TRUE);
+		_handler->controller()->put_IsVisible(_hidden ? FALSE : TRUE);
 	}
 	if (const auto widget = guard ? _widget.get() : nullptr) {
 		base::install_event_filter(widget, [=](not_null<QEvent*> e) {
@@ -973,6 +977,9 @@ void Instance::eval(std::string js) {
 }
 
 void Instance::focus() {
+	if (_hidden) {
+		return;
+	}
 	if (_window) {
 		_window->requestActivate();
 	}
@@ -1039,4 +1046,3 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 }
 
 } // namespace Webview::EdgeChromium
-
