@@ -72,6 +72,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.asyncDialogHandler = asyncDialogHandler(),
 		.dataRequestHandler = dataRequestHandler(),
 		.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
+		.dataRequestRedirectHost = config.dataRequestRedirectHost.toStdString(),
 		.userDataPath = config.storageId.path.toStdString(),
 		.userDataToken = config.storageId.token.toStdString(),
 		.debug = OptionWebviewDebugEnabled.value(),

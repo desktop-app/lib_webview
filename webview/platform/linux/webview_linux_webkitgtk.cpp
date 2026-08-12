@@ -615,6 +615,7 @@ private:
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
+	std::string _dataRequestRedirectHost;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
@@ -726,6 +727,7 @@ bool Instance::create(Config config) {
 	_dialogHandler = std::move(config.dialogHandler);
 	_asyncDialogHandler = std::move(config.asyncDialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
+	_dataRequestRedirectHost = std::move(config.dataRequestRedirectHost);
 	_windowStyle = config.windowStyle;
 	_windowMargins = config.windowMargins;
 	_shellMessageToken = std::move(config.shellMessageToken);
@@ -1561,6 +1563,7 @@ bool Instance::startDataServer() {
 
 	_dataServer.emplace(
 		(_dataPassword = GLib::uuid_string_random()).c_str(),
+		QByteArray::fromStdString(_dataRequestRedirectHost),
 		[=](
 				QTcpSocket *socket,
 				const QByteArray &id,

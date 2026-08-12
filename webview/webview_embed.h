@@ -41,6 +41,7 @@ struct WindowConfig {
 	QColor opaqueBg;
 	StorageId storageId;
 	QString dataProtocolOverride;
+	QString dataRequestRedirectHost;
 	bool safe = false;
 	bool allowThirdPartyCookies = false;
 	WindowMode mode = WindowMode::Embedded;

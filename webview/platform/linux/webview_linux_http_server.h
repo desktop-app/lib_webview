@@ -20,6 +20,7 @@ public:
 
 	HttpServer(
 		const QByteArray &password,
+		const QByteArray &redirectHost,
 		const std::function<void(
 			QTcpSocket *socket,
 			const QByteArray &id,

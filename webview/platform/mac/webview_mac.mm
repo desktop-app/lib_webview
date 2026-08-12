@@ -106,12 +106,56 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	}
 }
 
+[[nodiscard]] bool IsAllowedRedirectUrl(
+		const QUrl &url,
+		const std::string &host) {
+	const auto port = url.port(-1);
+	return !host.empty()
+		&& url.isValid()
+		&& !url.isRelative()
+		&& !url.scheme().compare(u"https"_q, Qt::CaseInsensitive)
+		&& !url.host().compare(
+			QString::fromStdString(host),
+			Qt::CaseInsensitive)
+		&& url.userInfo().isEmpty()
+		&& (port == -1 || port == 443);
+}
+
 } // namespace
+
+@interface RedirectDelegate : NSObject<NSURLSessionTaskDelegate> {
+}
+
+- (id) initWithHost:(std::string)host;
+- (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler;
+
+@end // @interface RedirectDelegate
+
+@implementation RedirectDelegate {
+	std::string _host;
+}
+
+- (id) initWithHost:(std::string)host {
+	if (self = [super init]) {
+		_host = std::move(host);
+	}
+	return self;
+}
+
+- (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
+	NSString *string = request.URL.absoluteString;
+	const auto url = QUrl(
+		QString::fromUtf8([string UTF8String]),
+		QUrl::StrictMode);
+	completionHandler(IsAllowedRedirectUrl(url, _host) ? request : nil);
+}
+
+@end // @implementation RedirectDelegate
 
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain;
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
@@ -136,11 +180,14 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	std::function<void(id<WKURLSchemeTask> task, bool started)> _dataRequested;
 	std::function<void()> _updateStates;
 	std::string _dataDomain;
+	std::string _dataRequestRedirectHost;
+	RedirectDelegate *_redirectDelegate;
+	NSURLSession *_redirectSession;
 	base::flat_map<TaskPointer, NSURLSessionDataTask*> _redirectedTasks;
 	base::has_weak_ptr _guard;
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain {
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationStartHandler = std::move(navigationStartHandler);
@@ -149,6 +196,15 @@ void DisableClipboardReading(WKPreferences *preferences) {
 		_dataRequested = std::move(dataRequested);
 		_updateStates = std::move(updateStates);
 		_dataDomain = std::move(dataDomain);
+		_dataRequestRedirectHost = std::move(dataRequestRedirectHost);
+		if (!_dataRequestRedirectHost.empty()) {
+			_redirectDelegate = [[RedirectDelegate alloc]
+				initWithHost:_dataRequestRedirectHost];
+			_redirectSession = [[NSURLSession
+				sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration
+				delegate:_redirectDelegate
+				delegateQueue:nil] retain];
+		}
 	}
 	return self;
 }
@@ -298,24 +354,37 @@ void DisableClipboardReading(WKPreferences *preferences) {
 - (BOOL) processRedirect:(id<WKURLSchemeTask>)task {
 	NSString *url = task.request.URL.absoluteString;
 	NSString *prefix = stdToNS(_dataDomain);
-	NSString *resource = [url substringFromIndex:[prefix length]];
-	const auto id = std::string([resource UTF8String]);
-	const auto dot = id.find_first_of('.');
-	const auto slash = id.find_first_of('/');
-	if (dot == std::string::npos
-		|| slash == std::string::npos
-		|| dot > slash) {
+	if (![url hasPrefix:prefix] || !_redirectSession) {
+		[prefix release];
 		return NO;
 	}
+	NSString *resource = [url substringFromIndex:[prefix length]];
+	[prefix release];
+	const auto id = QByteArray([resource UTF8String]);
+	const auto host = QByteArray::fromStdString(_dataRequestRedirectHost);
+	const auto slash = id.indexOf('/');
+	if (slash <= 0
+		|| id.first(slash).compare(host, Qt::CaseInsensitive)) {
+		return NO;
+	}
+	const auto target = QUrl(
+		QString::fromUtf8("https://" + id),
+		QUrl::StrictMode);
+	if (!IsAllowedRedirectUrl(target, _dataRequestRedirectHost)
+		|| target.port(-1) != -1) {
+		return NO;
+	}
+	const auto encoded = target.toEncoded();
 	NSMutableURLRequest *redirected = [task.request mutableCopy];
-	redirected.URL = [NSURL URLWithString:[@"https://" stringByAppendingString:resource]];
+	redirected.URL = [NSURL URLWithString:
+		[NSString stringWithUTF8String:encoded.constData()]];
 	[redirected
 		setValue:@"http://desktop-app-resource/page.html"
 		forHTTPHeaderField:@"Referer"];
 
 	const auto weak = base::make_weak(&_guard);
 
-	NSURLSessionDataTask *dataTask = [[NSURLSession sharedSession]
+	NSURLSessionDataTask *dataTask = [_redirectSession
 		dataTaskWithRequest:redirected
 		completionHandler:^(
 				NSData * _Nullable data,
@@ -372,6 +441,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) dealloc {
+	[_redirectSession invalidateAndCancel];
 	for (const auto &[task, dataTask] : base::take(_redirectedTasks)) {
 		NSError *error = [NSError
 			errorWithDomain:@"org.telegram.desktop"
@@ -382,6 +452,8 @@ void DisableClipboardReading(WKPreferences *preferences) {
 		[dataTask cancel];
 		[dataTask release];
 	}
+	[_redirectSession release];
+	[_redirectDelegate release];
 	[super dealloc];
 }
 
@@ -532,7 +604,7 @@ Instance::Instance(Config config) {
 	const auto updateStates = [=] {
 		updateHistoryStates();
 	};
-	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain];
+	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost)];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(_dataProtocol)];
 	if (@available(macOS 14, *)) {

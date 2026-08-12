@@ -6,7 +6,10 @@
 //
 #include "webview/platform/linux/webview_linux_http_server.h"
 
+#include "base/basic_types.h"
+
 #include <QtCore/QPointer>
+#include <QtCore/QUrl>
 #include <QtNetwork/QTcpSocket>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
@@ -26,6 +29,7 @@ struct HttpServer::Private {
 
 	QNetworkAccessManager manager;
 	QByteArray password;
+	QByteArray redirectHost;
 	std::function<void(
 		QTcpSocket *socket,
 		const QByteArray &id,
@@ -99,14 +103,31 @@ bool HttpServer::Private::processRedirect(
 		const QByteArray &id,
 		const ::base::flat_map<QByteArray, QByteArray> &headers,
 		const std::shared_ptr<Guard> &guard) {
-	const auto dot = id.indexOf('.');
 	const auto slash = id.indexOf('/');
-	if (dot < 0 || slash < 0 || dot > slash) {
+	if (redirectHost.isEmpty()
+		|| slash <= 0
+		|| id.first(slash).compare(redirectHost, Qt::CaseInsensitive)) {
+		return false;
+	}
+
+	const auto url = QUrl(
+		QString::fromUtf8("https://" + id),
+		QUrl::StrictMode);
+	if (!url.isValid()
+		|| url.scheme().compare(u"https"_q, Qt::CaseInsensitive)
+		|| url.host().compare(
+			QString::fromUtf8(redirectHost),
+			Qt::CaseInsensitive)
+		|| !url.userInfo().isEmpty()
+		|| url.port(-1) != -1) {
 		return false;
 	}
 
 	auto request = QNetworkRequest();
-	request.setUrl(QString::fromUtf8("https://" + id));
+	request.setUrl(url);
+	request.setAttribute(
+		QNetworkRequest::RedirectPolicyAttribute,
+		QNetworkRequest::SameOriginRedirectPolicy);
 
 	if (!headers.empty()) {
 		const auto headersToCopy = {
@@ -160,6 +181,7 @@ bool HttpServer::Private::processRedirect(
 
 HttpServer::HttpServer(
 		const QByteArray &password,
+		const QByteArray &redirectHost,
 		const std::function<void(
 			QTcpSocket *socket,
 			const QByteArray &id,
@@ -167,6 +189,7 @@ HttpServer::HttpServer(
 			const std::shared_ptr<Guard> &guard)> &handler)
 : _private(std::make_unique<Private>()) {
 	_private->password = password;
+	_private->redirectHost = redirectHost;
 	_private->handler = handler;
 
 	connect(this, &QTcpServer::newConnection, [=] {

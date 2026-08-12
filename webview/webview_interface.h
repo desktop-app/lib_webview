@@ -163,6 +163,7 @@ struct Config {
 	AsyncDialogHandler asyncDialogHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
 	std::string dataProtocolOverride;
+	std::string dataRequestRedirectHost;
 	std::string userDataPath;
 	std::string userDataToken;
 	bool debug = false;
