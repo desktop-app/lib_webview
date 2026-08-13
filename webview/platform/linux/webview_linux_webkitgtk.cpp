@@ -15,6 +15,7 @@
 #include "base/algorithm.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
+#include "base/random.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
 #include "base/event_filter.h"
@@ -32,6 +33,7 @@
 #include <QtWidgets/QWidget>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -78,6 +80,19 @@ void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
 #endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 std::string SocketPath;
+
+[[nodiscard]] std::string GenerateMessageToken() {
+	auto bytes = std::array<std::uint8_t, 32>();
+	base::RandomFill(bytes.data(), bytes.size());
+	constexpr auto kHex = "0123456789abcdef";
+	auto result = std::string();
+	result.reserve(bytes.size() * 2);
+	for (const auto byte : bytes) {
+		result.push_back(kHex[byte >> 4]);
+		result.push_back(kHex[byte & 0x0F]);
+	}
+	return result;
+}
 
 [[nodiscard]] bool AllowThirdPartyCookies(WebKitCookieManager *manager) {
 	if (!manager || !webkit_cookie_manager_set_accept_policy) {
@@ -619,6 +634,7 @@ private:
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
+	std::string _messageToken = GenerateMessageToken();
 	int _scriptDialogDepth = 0;
 	std::vector<std::string> _queuedScriptDialogEvals;
 	bool _loadFailed = false;
@@ -1206,11 +1222,14 @@ bool Instance::create(Config config) {
 		}
 	}
 	updateWindowFrameExtents();
-	init(R"(
+	init(std::string(R"(
 if (window === window.top) {
+	const messageToken = '")") + _messageToken + R"(';
+	const handler = window.webkit.messageHandlers.external;
+	const postMessage = handler.postMessage.bind(handler);
 	const external = Object.freeze({
 		invoke: function(s) {
-			window.webkit.messageHandlers.external.postMessage(s);
+			postMessage(messageToken + s);
 		}
 	});
 	Object.defineProperty(window, 'external', {
@@ -1224,17 +1243,20 @@ if (window === window.top) {
 }
 
 void Instance::scriptMessageReceived(void *message) {
-	const auto text = JavascriptMessageText(message);
-	if (text.size() > kMaxScriptMessageBytes) {
+	const auto received = JavascriptMessageText(message);
+	if (received.size() > kMaxScriptMessageBytes + _messageToken.size()
+		|| !received.starts_with(_messageToken)) {
 		return;
 	}
+	const auto text = received.substr(_messageToken.size());
 	if (handleShellControlMessage(text)) {
 		return;
 	}
 	if (!_master) {
 		return;
 	}
-	_master.call_message_received(text, nullptr);
+	const auto sourceUrl = webkit_web_view_get_uri(_webview);
+	_master.call_message_received(text, sourceUrl ? sourceUrl : "", nullptr);
 }
 
 bool Instance::handleShellControlMessage(const std::string &message) {
@@ -2575,9 +2597,13 @@ void Instance::registerMasterMethodHandlers() {
 	_master.signal_handle_message_received().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation,
-			const std::string &message) {
+			const std::string &message,
+			const std::string &sourceUrl) {
 		if (_messageHandler) {
-			_messageHandler(Message{ .text = message });
+			_messageHandler(Message{
+				.text = message,
+				.sourceUrl = sourceUrl,
+			});
 			_master.complete_message_received(invocation);
 		} else {
 			invocation.return_gerror(MethodError());

@@ -8,6 +8,7 @@
 		</method>
 		<method name='MessageReceived'>
 			<arg type='ay' name='message' direction='in'/>
+			<arg type='s' name='sourceUrl' direction='in'/>
 		</method>
 		<method name='NavigationStarted'>
 			<arg type='s' name='uri' direction='in'/>
