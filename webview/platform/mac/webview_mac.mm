@@ -155,12 +155,14 @@ void DisableClipboardReading(WKPreferences *preferences) {
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost;
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler;
+- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView;
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
 - (void) webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
 - (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
@@ -171,6 +173,15 @@ void DisableClipboardReading(WKPreferences *preferences) {
 - (void) dealloc;
 
 @end // @interface Handler
+
+@interface RestrictedHandler : Handler {
+}
+
+- (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0));
+- (void) webView:(WKWebView *)webView requestDeviceOrientationAndMotionPermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0));
+- (void) webView:(WKWebView *)webView didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler;
+
+@end // @interface RestrictedHandler
 
 @implementation Handler {
 	std::function<void(Webview::Message)> _messageHandler;
@@ -185,9 +196,10 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	NSURLSession *_redirectSession;
 	base::flat_map<TaskPointer, NSURLSessionDataTask*> _redirectedTasks;
 	base::has_weak_ptr _guard;
+	BOOL _restricted;
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost {
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationStartHandler:(std::function<bool(std::string,bool)>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationStartHandler = std::move(navigationStartHandler);
@@ -197,6 +209,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 		_updateStates = std::move(updateStates);
 		_dataDomain = std::move(dataDomain);
 		_dataRequestRedirectHost = std::move(dataRequestRedirectHost);
+		_restricted = restricted;
 		if (!_dataRequestRedirectHost.empty()) {
 			_redirectDelegate = [[RedirectDelegate alloc]
 				initWithHost:_dataRequestRedirectHost];
@@ -230,6 +243,17 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	WKFrameInfo *target = [navigationAction targetFrame];
 	const auto newWindow = !target;
 	const auto url = [string UTF8String];
+	auto download = false;
+	if (@available(macOS 11.3, *)) {
+		download = navigationAction.shouldPerformDownload;
+	}
+	if (_restricted
+		&& (newWindow
+			|| !target.isMainFrame
+			|| download)) {
+		decisionHandler(WKNavigationActionPolicyCancel);
+		return;
+	}
 	if (newWindow) {
 		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
 			QDesktopServices::openUrl(QString::fromUtf8(url));
@@ -273,7 +297,22 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	}
 }
 
+- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
+	decisionHandler((_restricted && !navigationResponse.canShowMIMEType)
+		? WKNavigationResponsePolicyCancel
+		: WKNavigationResponsePolicyAllow);
+}
+
+- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+	if (_restricted && _navigationDoneHandler) {
+		_navigationDoneHandler(false);
+	}
+}
+
 - (nullable WKWebView *) webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
+	if (_restricted) {
+		return nil;
+	}
 	NSString *string = [[[navigationAction request] URL] absoluteString];
 	const auto url = [string UTF8String];
 	if (_navigationStartHandler && _navigationStartHandler(url, true)) {
@@ -283,6 +322,10 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
+	if (_restricted) {
+		completionHandler(nil);
+		return;
+	}
 
 	NSOpenPanel *openPanel = [NSOpenPanel openPanel];
 
@@ -304,6 +347,10 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
+	if (_restricted) {
+		completionHandler();
+		return;
+	}
 	auto text = [message UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
 	auto url = [uri UTF8String];
@@ -316,6 +363,10 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
+	if (_restricted) {
+		completionHandler(NO);
+		return;
+	}
 	auto text = [message UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
 	auto url = [uri UTF8String];
@@ -328,6 +379,10 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler {
+	if (_restricted) {
+		completionHandler(nil);
+		return;
+	}
 	auto text = [prompt UTF8String];
 	auto value = [defaultText UTF8String];
 	auto uri = [[[frame request] URL] absoluteString];
@@ -459,6 +514,27 @@ void DisableClipboardReading(WKPreferences *preferences) {
 
 @end // @implementation Handler
 
+@implementation RestrictedHandler
+
+- (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler {
+	decisionHandler(WKPermissionDecisionDeny);
+}
+
+- (void) webView:(WKWebView *)webView requestDeviceOrientationAndMotionPermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler {
+	decisionHandler(WKPermissionDecisionDeny);
+}
+
+- (void) webView:(WKWebView *)webView didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
+	const auto method = challenge.protectionSpace.authenticationMethod;
+	completionHandler(
+		[method isEqualToString:NSURLAuthenticationMethodServerTrust]
+			? NSURLSessionAuthChallengePerformDefaultHandling
+			: NSURLSessionAuthChallengeCancelAuthenticationChallenge,
+		nil);
+}
+
+@end // @implementation RestrictedHandler
+
 namespace Webview {
 namespace {
 
@@ -587,6 +663,8 @@ Instance::Instance(Config config) {
 	};
 
 	WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+	const auto restricted = !config.restrictedOrigin.empty();
+	const auto debug = config.debug && !restricted;
 	_manager = configuration.userContentController;
 	_dataProtocol = kDataUrlScheme;
 	_dataDomain = kFullDomain;
@@ -594,29 +672,40 @@ Instance::Instance(Config config) {
 		_dataProtocol = config.dataProtocolOverride;
 		_dataDomain = _dataProtocol + "://domain/";
 	}
-	if (config.debug) {
+	if (debug) {
 		[configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
 	}
 	if (config.safe) {
 		[configuration.preferences setValue:@NO forKey:@"fraudulentWebsiteWarningEnabled"];
 	}
+	if (restricted) {
+		configuration.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
+		configuration.mediaTypesRequiringUserActionForPlayback
+			= WKAudiovisualMediaTypeAll;
+		configuration.allowsAirPlayForMediaPlayback = NO;
+	}
 	DisableClipboardReading(configuration.preferences);
 	const auto updateStates = [=] {
 		updateHistoryStates();
 	};
-	_handler = [[Handler alloc] initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost)];
+	const auto handler = restricted
+		? [RestrictedHandler alloc]
+		: [Handler alloc];
+	_handler = [handler initWithMessageHandler:config.messageHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost) restricted:restricted];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(_dataProtocol)];
-	if (@available(macOS 14, *)) {
-		if (config.userDataToken != LegacyStorageIdToken().toStdString()) {
-			NSUUID *uuid = UuidFromToken(config.userDataToken);
-			[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
-			[uuid release];
+	if (!restricted) {
+		if (@available(macOS 14, *)) {
+			if (config.userDataToken != LegacyStorageIdToken().toStdString()) {
+				NSUUID *uuid = UuidFromToken(config.userDataToken);
+				[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
+				[uuid release];
+			}
 		}
 	}
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
 	if (@available(macOS 13.3, *)) {
-		_webview.inspectable = config.debug ? YES : NO;
+		_webview.inspectable = debug ? YES : NO;
 	}
 	[_manager addScriptMessageHandler:_handler name:@"external"];
 	[_webview setNavigationDelegate:_handler];

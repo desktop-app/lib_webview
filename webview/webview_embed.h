@@ -18,6 +18,7 @@
 #include <QSize>
 
 class QString;
+class QTemporaryDir;
 class QWidget;
 class QWindow;
 
@@ -49,6 +50,7 @@ struct WindowConfig {
 	QMargins windowMargins;
 	QSize initialSize;
 	QString shellMessageToken;
+	QString restrictedOrigin;
 };
 
 class Window final {
@@ -112,6 +114,7 @@ private:
 	[[nodiscard]] AsyncDialogHandler asyncDialogHandler() const;
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
 
+	std::unique_ptr<QTemporaryDir> _temporaryStorage;
 	std::unique_ptr<Interface> _webview;
 	Fn<void(Message)> _messageHandler;
 	Fn<bool(std::string,bool)> _navigationStartHandler;

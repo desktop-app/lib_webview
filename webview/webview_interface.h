@@ -174,6 +174,7 @@ struct Config {
 	QMargins windowMargins;
 	QSize initialSize;
 	std::string shellMessageToken;
+	std::string restrictedOrigin;
 };
 
 struct Available {

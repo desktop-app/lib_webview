@@ -6,19 +6,22 @@
 //
 #include "webview/webview_embed.h"
 
+#include "base/platform/base_platform_info.h"
+#include "base/debug_log.h"
+#include "base/event_filter.h"
+#include "base/integration.h"
+#include "base/invoke_queued.h"
+#include "base/options.h"
 #include "webview/webview_data_stream.h"
 #include "webview/webview_dialog.h"
 #include "webview/webview_interface.h"
-#include "base/debug_log.h"
-#include "base/event_filter.h"
-#include "base/options.h"
-#include "base/invoke_queued.h"
-#include "base/platform/base_platform_info.h"
-#include "base/integration.h"
 
-#include <QtWidgets/QWidget>
-#include <QtGui/QWindow>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QTemporaryDir>
+#include <QtCore/QUrl>
+#include <QtGui/QWindow>
+#include <QtWidgets/QWidget>
 
 #include <charconv>
 
@@ -38,6 +41,66 @@ base::options::toggle OptionWebviewLegacyEdge({
 	.scope = base::options::windows,
 	.restartRequired = true,
 });
+
+[[nodiscard]] QByteArray RestrictedScript(const QString &origin) {
+	const auto url = QUrl(origin, QUrl::StrictMode);
+	if (!url.isValid()
+		|| url.scheme() != u"https"_q
+		|| url.host().isEmpty()
+		|| !url.path().isEmpty()
+		|| !url.query().isEmpty()
+		|| !url.fragment().isEmpty()
+		|| !url.userInfo().isEmpty()
+		|| url.port(-1) != -1) {
+		return {};
+	}
+
+	auto websocket = url;
+	websocket.setScheme(u"wss"_q);
+	const auto policy = u"default-src 'none'; "_q
+		+ u"base-uri 'none'; "_q
+		+ u"child-src 'none'; "_q
+		+ u"connect-src "_q
+		+ origin
+		+ u" "_q
+		+ websocket.toString(QUrl::FullyEncoded)
+		+ u"; font-src 'none'; "_q
+		+ u"form-action 'none'; "_q
+		+ u"frame-src 'none'; "_q
+		+ u"img-src 'none'; "_q
+		+ u"manifest-src 'none'; "_q
+		+ u"media-src 'none'; "_q
+		+ u"object-src 'none'; "_q
+		+ u"script-src 'unsafe-inline'; "_q
+		+ u"style-src 'none'; "_q
+		+ u"worker-src 'none'"_q;
+	const auto encoded = QJsonDocument(QJsonArray{ policy }).toJson(
+		QJsonDocument::Compact);
+	const auto literal = encoded.mid(1, encoded.size() - 2);
+	return "(()=>{const policy="
+		+ literal
+		+ R"JS(;
+const root=document.documentElement||document.appendChild(document.createElement('html'));
+const head=document.head||root.insertBefore(document.createElement('head'),root.firstChild);
+const dns=document.createElement('meta');
+dns.httpEquiv='x-dns-prefetch-control';
+dns.content='off';
+head.insertBefore(dns,head.firstChild);
+const meta=document.createElement('meta');
+meta.httpEquiv='Content-Security-Policy';
+meta.content=policy;
+head.insertBefore(meta,head.firstChild);
+const lock=(object,name,value)=>{try{Object.defineProperty(object,name,{value,configurable:false,writable:false})}catch(error){}};
+for(const name of ['localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','BroadcastChannel','Audio','AudioContext','webkitAudioContext','OfflineAudioContext','webkitOfflineAudioContext','speechSynthesis','SpeechSynthesisUtterance'])lock(globalThis,name,undefined);
+for(const name of ['serviceWorker','clipboard','geolocation','mediaDevices','usb','serial','hid','bluetooth'])lock(navigator,name,undefined);
+lock(globalThis,'open',()=>null);
+lock(globalThis,'print',()=>{});
+lock(globalThis,'alert',()=>{});
+lock(globalThis,'confirm',()=>false);
+lock(globalThis,'prompt',()=>null);
+try{Object.defineProperty(document,'cookie',{get:()=>'',set:()=>true,configurable:false})}catch(error){}
+})())JS";
+}
 
 } // namespace
 
@@ -60,6 +123,21 @@ bool Window::valid() const {
 
 bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 	Expects(!_webview);
+	const auto restrictedScript = config.restrictedOrigin.isEmpty()
+		? QByteArray()
+		: RestrictedScript(config.restrictedOrigin);
+	if (!config.restrictedOrigin.isEmpty() && restrictedScript.isEmpty()) {
+		return false;
+	}
+	auto userDataPath = config.storageId.path;
+	if (!config.restrictedOrigin.isEmpty()) {
+		_temporaryStorage = std::make_unique<QTemporaryDir>();
+		if (!_temporaryStorage->isValid()) {
+			_temporaryStorage = nullptr;
+			return false;
+		}
+		userDataPath = _temporaryStorage->path();
+	}
 
 	_webview = CreateInstance({
 		.parent = parent,
@@ -73,7 +151,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.dataRequestHandler = dataRequestHandler(),
 		.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
 		.dataRequestRedirectHost = config.dataRequestRedirectHost.toStdString(),
-		.userDataPath = config.storageId.path.toStdString(),
+		.userDataPath = userDataPath.toStdString(),
 		.userDataToken = config.storageId.token.toStdString(),
 		.debug = OptionWebviewDebugEnabled.value(),
 		.safe = config.safe,
@@ -83,7 +161,11 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.windowMargins = config.windowMargins,
 		.initialSize = config.initialSize,
 		.shellMessageToken = config.shellMessageToken.toStdString(),
+		.restrictedOrigin = config.restrictedOrigin.toStdString(),
 	});
+	if (_webview && !config.restrictedOrigin.isEmpty()) {
+		_webview->init(restrictedScript.toStdString());
+	}
 	return (_webview != nullptr);
 }
 

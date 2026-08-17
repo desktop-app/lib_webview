@@ -91,6 +91,42 @@ constexpr auto kDataUrlPrefix
 	return string ? FromWide(string.data()) : std::string();
 }
 
+[[nodiscard]] bool AllowedRestrictedUrl(
+		const std::string &value,
+		const std::string &origin) {
+	const auto url = QUrl(
+		QString::fromStdString(value),
+		QUrl::StrictMode);
+	const auto expected = QUrl(
+		QString::fromStdString(origin),
+		QUrl::StrictMode);
+	return url.isValid()
+		&& expected.isValid()
+		&& expected.scheme() == u"https"_q
+		&& expected.userInfo().isEmpty()
+		&& expected.port(443) == 443
+		&& (url.scheme() == u"https"_q || url.scheme() == u"wss"_q)
+		&& url.host() == expected.host()
+		&& url.port(443) == 443
+		&& url.userInfo().isEmpty();
+}
+
+HRESULT BlockRequest(
+		ICoreWebView2Environment *environment,
+		ICoreWebView2WebResourceRequestedEventArgs *args) {
+	auto response = winrt::com_ptr<ICoreWebView2WebResourceResponse>();
+	const auto result = environment->CreateWebResourceResponse(
+		nullptr,
+		403,
+		L"Forbidden",
+		L"Cache-Control: no-store",
+		response.put());
+	if (result != S_OK || !response) {
+		return (result != S_OK) ? result : E_FAIL;
+	}
+	return args->put_Response(response.get());
+}
+
 class Handler
 	: public winrt::implements<
 		Handler,
@@ -106,6 +142,10 @@ class Handler
 		ICoreWebView2NewWindowRequestedEventHandler,
 		ICoreWebView2ScriptDialogOpeningEventHandler,
 		ICoreWebView2WebResourceRequestedEventHandler,
+		ICoreWebView2DownloadStartingEventHandler,
+		ICoreWebView2BasicAuthenticationRequestedEventHandler,
+		ICoreWebView2ClientCertificateRequestedEventHandler,
+		ICoreWebView2ProcessFailedEventHandler,
 		ICoreWebView2ZoomFactorChangedEventHandler>
 	, public ZoomController
 	, public base::has_weak_ptr {
@@ -178,6 +218,18 @@ public:
 		ICoreWebView2 *sender,
 		ICoreWebView2WebResourceRequestedEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2DownloadStartingEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2BasicAuthenticationRequestedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ClientCertificateRequestedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ProcessFailedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2Controller *sender,
 		IUnknown *args) override;
 
@@ -219,6 +271,7 @@ private:
 	rpl::variable<int> _zoomValue;
 
 	QColor _opaqueBg;
+	std::string _restrictedOrigin;
 	bool _debug = false;
 	bool _destroying = false;
 
@@ -237,6 +290,7 @@ Handler::Handler(
 , _dataRequestHandler(std::move(config.dataRequestHandler))
 , _readyHandler(std::move(readyHandler))
 , _opaqueBg(config.opaqueBg)
+, _restrictedOrigin(std::move(config.restrictedOrigin))
 , _debug(config.debug) {
 	saveThis(this);
 	setOpaqueBg(_opaqueBg);
@@ -264,6 +318,25 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_environment.copy_from(env);
 	if (!_environment) {
 		return E_FAIL;
+	}
+	if (!_restrictedOrigin.empty()) {
+		const auto advanced = _environment.try_as<ICoreWebView2Environment10>();
+		if (!advanced) {
+			return E_NOINTERFACE;
+		}
+		auto options = winrt::com_ptr<ICoreWebView2ControllerOptions>();
+		auto result = advanced->CreateCoreWebView2ControllerOptions(
+			options.put());
+		if (result != S_OK || !options) {
+			return E_FAIL;
+		}
+		result = options->put_IsInPrivateModeEnabled(TRUE);
+		return (result == S_OK)
+			? advanced->CreateCoreWebView2ControllerWithOptions(
+				_window,
+				options.get(),
+				this)
+			: result;
 	}
 	_environment->CreateCoreWebView2Controller(_window, this);
 	return S_OK;
@@ -301,10 +374,41 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_webview->add_NewWindowRequested(this, &token);
 	_webview->add_ScriptDialogOpening(this, &token);
 	_webview->add_WebResourceRequested(this, &token);
+	const auto downloads = _webview.try_as<ICoreWebView2_4>();
+	if (!_restrictedOrigin.empty()) {
+		if (!downloads) {
+			return E_NOINTERFACE;
+		}
+		auto result = downloads->add_DownloadStarting(this, &token);
+		if (result != S_OK) {
+			return result;
+		}
+		const auto authentication = _webview.try_as<ICoreWebView2_10>();
+		const auto certificates = _webview.try_as<ICoreWebView2_5>();
+		if (!authentication || !certificates) {
+			return E_NOINTERFACE;
+		}
+		result = authentication->add_BasicAuthenticationRequested(
+			this,
+			&token);
+		if (result != S_OK) {
+			return result;
+		}
+		result = certificates->add_ClientCertificateRequested(this, &token);
+		if (result != S_OK) {
+			return result;
+		}
+		result = _webview->add_ProcessFailed(this, &token);
+		if (result != S_OK) {
+			return result;
+		}
+	}
 
 	_controller->add_ZoomFactorChanged(this, &token);
 
-	const auto filter = ToWide(kDataUrlPrefix) + L'*';
+	const auto filter = _restrictedOrigin.empty()
+		? (ToWide(kDataUrlPrefix) + L'*')
+		: L"*";
 	auto hr = _webview->AddWebResourceRequestedFilter(
 		filter.c_str(),
 		COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
@@ -317,10 +421,21 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	if (hr != S_OK || !settings) {
 		return E_FAIL;
 	}
-	settings->put_AreDefaultContextMenusEnabled(_debug);
-	settings->put_AreDevToolsEnabled(_debug);
+	settings->put_AreDefaultContextMenusEnabled(
+		_debug && _restrictedOrigin.empty());
+	settings->put_AreDevToolsEnabled(_debug && _restrictedOrigin.empty());
 	settings->put_AreDefaultScriptDialogsEnabled(FALSE);
 	settings->put_IsStatusBarEnabled(FALSE);
+	if (!_restrictedOrigin.empty()) {
+		const auto advanced = _webview.try_as<ICoreWebView2_8>();
+		if (!advanced) {
+			return E_NOINTERFACE;
+		}
+		const auto result = advanced->put_IsMuted(TRUE);
+		if (result != S_OK) {
+			return result;
+		}
+	}
 
 	setOpaqueBg(_opaqueBg);
 
@@ -367,7 +482,9 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	auto kind = COREWEBVIEW2_PERMISSION_KIND{};
 	const auto result = args->get_PermissionKind(&kind);
 	if (result == S_OK) {
-		if (kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ) {
+		if (!_restrictedOrigin.empty()) {
+			args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+		} else if (kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ) {
 			// Never let the page read the clipboard on its own, not even
 			// after asking the user: navigator.clipboard.read/readText()
 			// would give any embedded content silent access to whatever
@@ -532,17 +649,24 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	if (hr != S_OK || !uri) {
 		return S_OK;
 	}
+	const auto ansi = FromWide(uri);
+	if (!_restrictedOrigin.empty()
+		&& !AllowedRestrictedUrl(ansi, _restrictedOrigin)) {
+		return BlockRequest(_environment.get(), args);
+	}
 	auto headers = winrt::com_ptr<ICoreWebView2HttpRequestHeaders>();
 	hr = request->get_Headers(headers.put());
 	if (hr != S_OK || !headers) {
 		return S_OK;
+	}
+	if (!_restrictedOrigin.empty()) {
+		headers->SetHeader(L"Cookie", L"");
 	}
 	winrt::com_ptr<ICoreWebView2HttpHeadersCollectionIterator> iterator;
 	hr = headers->GetIterator(iterator.put());
 	if (hr != S_OK || !iterator) {
 		return S_OK;
 	}
-	const auto ansi = FromWide(uri);
 	const auto prefix = kDataUrlPrefix.size();
 	if (ansi.size() <= prefix || ansi.compare(0, prefix, kDataUrlPrefix)) {
 		return S_OK;
@@ -649,6 +773,44 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		auto copy = winrt::com_ptr<ICoreWebView2WebResourceRequestedEventArgs>();
 		copy.copy_from(args);
 		_pending.emplace(std::move(copy), std::move(deferral));
+	}
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2DownloadStartingEventArgs *args) {
+	if (!_restrictedOrigin.empty()) {
+		args->put_Cancel(TRUE);
+		args->put_Handled(TRUE);
+	}
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2BasicAuthenticationRequestedEventArgs *args) {
+	if (!_restrictedOrigin.empty()) {
+		args->put_Cancel(TRUE);
+	}
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ClientCertificateRequestedEventArgs *args) {
+	if (!_restrictedOrigin.empty()) {
+		args->put_Cancel(TRUE);
+		args->put_Handled(TRUE);
+	}
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ProcessFailedEventArgs *args) {
+	if (!_restrictedOrigin.empty() && _navigationDoneHandler) {
+		_navigationDoneHandler(false);
 	}
 	return S_OK;
 }
@@ -780,8 +942,9 @@ void Instance::start(Config &&config) {
 	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
 		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
 		winrt::take_ownership_from_abi);
-	options->put_AdditionalBrowserArguments(
-		L"--disable-features=ElasticOverscroll");
+	options->put_AdditionalBrowserArguments(config.restrictedOrigin.empty()
+		? L"--disable-features=ElasticOverscroll"
+		: L"--disable-features=ElasticOverscroll --mute-audio");
 
 	auto handler = (Handler*)nullptr;
 	const auto ready = [=] {

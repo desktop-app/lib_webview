@@ -126,6 +126,7 @@ typedef struct _WebKitWebsiteDataManager WebKitWebsiteDataManager;
 typedef struct _WebKitWebContext WebKitWebContext;
 typedef struct _WebKitNetworkSession WebKitNetworkSession;
 typedef struct _WebKitCookieManager WebKitCookieManager;
+typedef struct _WebKitDownload WebKitDownload;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
 typedef struct _WebKitPermissionRequest WebKitPermissionRequest;
@@ -436,7 +437,46 @@ inline gboolean (*webkit_user_content_manager_register_script_message_handler)(
 	const gchar *world_name);
 inline WebKitSettings *(*webkit_web_view_get_settings)(
 	WebKitWebView *web_view);
+inline void (*webkit_settings_set_auto_load_images)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_dns_prefetching)(
+	WebKitSettings *settings,
+	gboolean enabled);
 inline void (*webkit_settings_set_enable_developer_extras)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_fullscreen)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_html5_database)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_html5_local_storage)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_hyperlink_auditing)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_media)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_offline_web_application_cache)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_page_cache)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_webaudio)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_webgl)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_javascript_can_access_clipboard)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_javascript_can_open_windows_automatically)(
 	WebKitSettings *settings,
 	gboolean enabled);
 inline gboolean (*webkit_web_view_is_loading)(WebKitWebView *web_view);
@@ -476,14 +516,19 @@ inline void (*webkit_web_view_run_javascript)(
 inline void (*webkit_web_view_set_background_color)(
 	WebKitWebView *web_view,
 	const GdkRGBA *rgba);
+inline void (*webkit_web_view_set_is_muted)(
+	WebKitWebView *web_view,
+	gboolean muted);
 inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
 	const gchar *first_option_name,
 	...);
+inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new_ephemeral)(void);
 inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 	WebKitWebsiteDataManager* manager);
 inline WebKitNetworkSession *(*webkit_network_session_new)(
 	const char* data_directory,
 	const char* cache_directory);
+inline WebKitNetworkSession *(*webkit_network_session_new_ephemeral)(void);
 inline WebKitCookieManager *(*webkit_network_session_get_cookie_manager)(
 	WebKitNetworkSession *session);
 inline WebKitCookieManager *(*webkit_website_data_manager_get_cookie_manager)(
@@ -491,9 +536,15 @@ inline WebKitCookieManager *(*webkit_website_data_manager_get_cookie_manager)(
 inline void (*webkit_cookie_manager_set_accept_policy)(
 	WebKitCookieManager *cookie_manager,
 	WebKitCookieAcceptPolicy policy);
+inline void (*webkit_download_cancel)(WebKitDownload *download);
+inline void (*webkit_settings_set_media_playback_requires_user_gesture)(
+	WebKitSettings *settings,
+	gboolean enabled);
 inline void (*webkit_authentication_request_authenticate)(
 	WebKitAuthenticationRequest *request,
 	WebKitCredential *credential);
+inline void (*webkit_authentication_request_cancel)(
+	WebKitAuthenticationRequest *request);
 inline const gchar *(*webkit_authentication_request_get_host)(
 	WebKitAuthenticationRequest *request);
 inline guint (*webkit_authentication_request_get_port)(

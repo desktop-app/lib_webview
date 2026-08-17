@@ -94,13 +94,99 @@ std::string SocketPath;
 	return result;
 }
 
-[[nodiscard]] bool AllowThirdPartyCookies(WebKitCookieManager *manager) {
+[[nodiscard]] bool SetCookiePolicy(
+		WebKitCookieManager *manager,
+		WebKitCookieAcceptPolicy policy) {
 	if (!manager || !webkit_cookie_manager_set_accept_policy) {
 		return false;
 	}
-	webkit_cookie_manager_set_accept_policy(
-		manager,
-		WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
+	webkit_cookie_manager_set_accept_policy(manager, policy);
+	return true;
+}
+
+[[nodiscard]] bool AllowThirdPartyCookies(WebKitCookieManager *manager) {
+	return SetCookiePolicy(manager, WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
+}
+
+[[nodiscard]] bool BlockDownloads(GObject *owner) {
+	if (!owner
+		|| !webkit_download_cancel
+		|| !g_signal_lookup("download-started", G_OBJECT_TYPE(owner))) {
+		return false;
+	}
+	g_signal_connect(
+		owner,
+		"download-started",
+		G_CALLBACK(+[](
+				GObject*,
+				WebKitDownload *download,
+				gpointer) {
+			webkit_download_cancel(download);
+		}),
+		nullptr);
+	return true;
+}
+
+[[nodiscard]] bool BlockNativePrompts(WebKitWebView *webview) {
+	const auto type = G_OBJECT_TYPE(webview);
+	if (!g_signal_lookup("run-file-chooser", type)) {
+		return false;
+	}
+	for (const auto signal : {
+		"run-file-chooser",
+		"run-color-chooser",
+		"print",
+	}) {
+		if (g_signal_lookup(signal, type)) {
+			g_signal_connect(
+				webview,
+				signal,
+				G_CALLBACK(+[](
+						WebKitWebView*,
+						gpointer,
+						gpointer) -> gboolean {
+					return true;
+				}),
+				nullptr);
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] bool ApplyRestrictedSettings(WebKitSettings *settings) {
+	if (!settings
+		|| !webkit_settings_set_auto_load_images
+		|| !webkit_settings_set_enable_dns_prefetching
+		|| !webkit_settings_set_enable_fullscreen
+		|| !webkit_settings_set_enable_html5_database
+		|| !webkit_settings_set_enable_html5_local_storage
+		|| !webkit_settings_set_enable_hyperlink_auditing
+		|| !webkit_settings_set_enable_media
+		|| !webkit_settings_set_enable_offline_web_application_cache
+		|| !webkit_settings_set_enable_page_cache
+		|| !webkit_settings_set_enable_webaudio
+		|| !webkit_settings_set_enable_webgl
+		|| !webkit_settings_set_javascript_can_access_clipboard
+		|| !webkit_settings_set_javascript_can_open_windows_automatically
+		|| !webkit_settings_set_media_playback_requires_user_gesture) {
+		return false;
+	}
+	webkit_settings_set_auto_load_images(settings, false);
+	webkit_settings_set_enable_dns_prefetching(settings, false);
+	webkit_settings_set_enable_fullscreen(settings, false);
+	webkit_settings_set_enable_html5_database(settings, false);
+	webkit_settings_set_enable_html5_local_storage(settings, false);
+	webkit_settings_set_enable_hyperlink_auditing(settings, false);
+	webkit_settings_set_enable_media(settings, false);
+	webkit_settings_set_enable_offline_web_application_cache(settings, false);
+	webkit_settings_set_enable_page_cache(settings, false);
+	webkit_settings_set_enable_webaudio(settings, false);
+	webkit_settings_set_enable_webgl(settings, false);
+	webkit_settings_set_javascript_can_access_clipboard(settings, false);
+	webkit_settings_set_javascript_can_open_windows_automatically(
+		settings,
+		false);
+	webkit_settings_set_media_playback_requires_user_gesture(settings, true);
 	return true;
 }
 
@@ -631,6 +717,7 @@ private:
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
 	std::string _dataRequestRedirectHost;
+	std::string _restrictedOrigin;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
@@ -735,7 +822,8 @@ bool Instance::create(Config config) {
 #endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 	}
 
-	_debug = config.debug;
+	_restrictedOrigin = std::move(config.restrictedOrigin);
+	_debug = config.debug && _restrictedOrigin.empty();
 	_messageHandler = std::move(config.messageHandler);
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
@@ -767,6 +855,7 @@ bool Instance::create(Config config) {
 		const auto margins = config.windowMargins;
 		const auto initialSize = config.initialSize;
 		const auto allowThirdPartyCookies = config.allowThirdPartyCookies;
+		const auto restrictedOrigin = _restrictedOrigin;
 		_helper.call_create(
 			debug,
 			r,
@@ -784,6 +873,7 @@ bool Instance::create(Config config) {
 			initialSize.width(),
 			initialSize.height(),
 			allowThirdPartyCookies,
+			restrictedOrigin,
 			crl::guard(&guard, [&](
 					GObject::Object source_object,
 					Gio::AsyncResult res) {
@@ -911,19 +1001,36 @@ bool Instance::create(Config config) {
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
 
+	const auto restricted = !_restrictedOrigin.empty();
 	if (webkit_network_session_new) {
-		WebKitNetworkSession *session = webkit_network_session_new(
-			baseData.c_str(),
-			baseCache.c_str());
-		if (config.allowThirdPartyCookies) {
+		const auto session = restricted
+			? (webkit_network_session_new_ephemeral
+				? webkit_network_session_new_ephemeral()
+				: nullptr)
+			: webkit_network_session_new(
+				baseData.c_str(),
+				baseCache.c_str());
+		if (!session) {
+			return false;
+		}
+		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_network_session_get_cookie_manager
 				? webkit_network_session_get_cookie_manager(session)
 				: nullptr;
-			if (!AllowThirdPartyCookies(manager)) {
+			const auto policySet = restricted
+				? SetCookiePolicy(
+					manager,
+					WEBKIT_COOKIE_POLICY_ACCEPT_NEVER)
+				: AllowThirdPartyCookies(manager);
+			if (!policySet) {
 				g_critical("Cookie policy API is unavailable.");
 				g_object_unref(session);
 				return false;
 			}
+		}
+		if (restricted && !BlockDownloads(G_OBJECT(session))) {
+			g_object_unref(session);
+			return false;
 		}
 		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
@@ -932,23 +1039,39 @@ bool Instance::create(Config config) {
 			nullptr));
 		g_object_unref(session);
 	} else {
-		WebKitWebsiteDataManager *data = webkit_website_data_manager_new(
-			"base-cache-directory", baseCache.c_str(),
-			"base-data-directory", baseData.c_str(),
-			nullptr);
-		if (config.allowThirdPartyCookies) {
+		const auto data = restricted
+			? (webkit_website_data_manager_new_ephemeral
+				? webkit_website_data_manager_new_ephemeral()
+				: nullptr)
+			: webkit_website_data_manager_new(
+				"base-cache-directory", baseCache.c_str(),
+				"base-data-directory", baseData.c_str(),
+				nullptr);
+		if (!data) {
+			return false;
+		}
+		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_website_data_manager_get_cookie_manager
 				? webkit_website_data_manager_get_cookie_manager(data)
 				: nullptr;
-			if (!AllowThirdPartyCookies(manager)) {
+			const auto policySet = restricted
+				? SetCookiePolicy(
+					manager,
+					WEBKIT_COOKIE_POLICY_ACCEPT_NEVER)
+				: AllowThirdPartyCookies(manager);
+			if (!policySet) {
 				g_critical("Cookie policy API is unavailable.");
 				g_object_unref(data);
 				return false;
 			}
 		}
-		WebKitWebContext *context
+		const auto context
 			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
+		if (restricted && !BlockDownloads(G_OBJECT(context))) {
+			g_object_unref(context);
+			return false;
+		}
 
 		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
 		g_object_unref(context);
@@ -1089,6 +1212,9 @@ bool Instance::create(Config config) {
 			return instance->scriptDialog(dialog);
 		}),
 		this);
+	if (restricted && !BlockNativePrompts(_webview)) {
+		return false;
+	}
 	g_signal_connect_swapped(
 		_webview,
 		"authenticate",
@@ -1190,9 +1316,18 @@ bool Instance::create(Config config) {
 			float(config.opaqueBg.blueF()),
 			float(config.opaqueBg.alphaF()) };
 	webkit_web_view_set_background_color(_webview, &rgba);
+	const auto settings = webkit_web_view_get_settings(_webview);
 	if (_debug) {
-		WebKitSettings *settings = webkit_web_view_get_settings(_webview);
 		webkit_settings_set_enable_developer_extras(settings, true);
+	}
+	if (restricted) {
+		if (!ApplyRestrictedSettings(settings)
+			|| !webkit_web_view_set_is_muted
+			|| !webkit_permission_request_deny
+			|| !webkit_authentication_request_cancel) {
+			return false;
+		}
+		webkit_web_view_set_is_muted(_webview, true);
 	}
 	if (gtk_window_set_child) {
 		if (gtk_graphics_offload_new) {
@@ -1476,6 +1611,9 @@ bool Instance::decidePolicy(
 }
 
 GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
+	if (!_restrictedOrigin.empty()) {
+		return nullptr;
+	}
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const std::string uri = webkit_uri_request_get_uri(request);
 	if (!_master) {
@@ -1512,6 +1650,14 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 
 bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	const auto type = webkit_script_dialog_get_dialog_type(dialog);
+	if (!_restrictedOrigin.empty()) {
+		if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
+			webkit_script_dialog_prompt_set_text(dialog, nullptr);
+		} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
+			webkit_script_dialog_confirm_set_confirmed(dialog, false);
+		}
+		return true;
+	}
 	const auto text = webkit_script_dialog_get_message(dialog);
 	const auto value = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
 		? webkit_script_dialog_prompt_get_default_text(dialog)
@@ -1549,6 +1695,10 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 }
 
 bool Instance::authenticate(WebKitAuthenticationRequest *request) {
+	if (!_restrictedOrigin.empty()) {
+		webkit_authentication_request_cancel(request);
+		return true;
+	}
 	if (strcmp(webkit_authentication_request_get_host(request), kDataHost)
 			|| webkit_authentication_request_get_port(request) != _dataPort) {
 		return false;
@@ -1563,6 +1713,10 @@ bool Instance::authenticate(WebKitAuthenticationRequest *request) {
 }
 
 bool Instance::permissionRequest(WebKitPermissionRequest *request) {
+	if (!_restrictedOrigin.empty() && webkit_permission_request_deny) {
+		webkit_permission_request_deny(request);
+		return true;
+	}
 	// navigator.clipboard.read/readText() asks for this one. Never let the
 	// page read the clipboard on its own, the embedder is expected to expose
 	// its own method for that, gated on a real user interaction.
@@ -2873,7 +3027,8 @@ void Instance::registerHelperMethodHandlers() {
 			int marginBottom,
 			int initialWidth,
 			int initialHeight,
-			bool allowThirdPartyCookies) {
+			bool allowThirdPartyCookies,
+			const std::string &restrictedOrigin) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
@@ -2888,6 +3043,7 @@ void Instance::registerHelperMethodHandlers() {
 				marginBottom),
 			.initialSize = QSize(initialWidth, initialHeight),
 			.shellMessageToken = shellMessageToken,
+			.restrictedOrigin = restrictedOrigin,
 		})) {
 			_helper.complete_create(invocation);
 		} else {
