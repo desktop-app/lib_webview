@@ -897,6 +897,7 @@ private:
 	void start(Config &&config);
 	[[nodiscard]] bool ready() const;
 	void processReadySteps();
+	void processNextReadyStep();
 	void resizeToWindow();
 
 	base::unique_qptr<QWindow> _window;
@@ -907,6 +908,9 @@ private:
 	base::unique_qptr<QWidget> _widget;
 	bool _pendingFocus = false;
 	bool _readyFlag = false;
+	bool _readyProcessed = false;
+	bool _initPending = false;
+	bool _processingSteps = false;
 	bool _hidden = false;
 	Fn<void()> _interactionHandler;
 	WNDPROC _originalWndProc = nullptr;
@@ -1076,24 +1080,70 @@ void Instance::processReadySteps() {
 			&token);
 	}
 	if (guard) {
-		for (const auto &step : base::take(_waitingForReady)) {
-			v::match(step, [&](const NavigateToUrl &data) {
-				navigate(data.url);
-			}, [&](const NavigateToData &data) {
-				navigateToData(data.id);
-			}, [&](const InitScript &data) {
-				init(data.script);
-			}, [&](const EvalScript &data) {
-				eval(data.script);
-			});
-			if (!guard) {
-				return;
-			}
-		}
+		_readyProcessed = true;
+		processNextReadyStep();
 	}
 	if (guard && _pendingFocus) {
 		focus();
 	}
+}
+
+void Instance::processNextReadyStep() {
+	if (!ready()
+		|| !_readyProcessed
+		|| _initPending
+		|| _processingSteps) {
+		return;
+	}
+	_processingSteps = true;
+	const auto guard = base::make_weak(this);
+	while (!_waitingForReady.empty()) {
+		auto step = std::move(_waitingForReady.front());
+		_waitingForReady.erase(_waitingForReady.begin());
+		auto pending = false;
+		v::match(step, [&](const NavigateToUrl &data) {
+			const auto wide = ToWide(data.url);
+			_handler->webview()->Navigate(wide.c_str());
+		}, [&](const NavigateToData &data) {
+			auto full = std::string();
+			full.reserve(kDataUrlPrefix.size() + data.id.size());
+			full.append(kDataUrlPrefix);
+			full.append(data.id);
+			const auto wide = ToWide(full);
+			_handler->webview()->Navigate(wide.c_str());
+		}, [&](const InitScript &data) {
+			const auto weak = base::make_weak(this);
+			const auto wide = ToWide(data.script);
+			_initPending = true;
+			const auto result
+				= _handler->webview()->AddScriptToExecuteOnDocumentCreated(
+					wide.c_str(),
+					Microsoft::WRL::Callback<
+						ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+							[weak](HRESULT, PCWSTR) -> HRESULT {
+								if (const auto that = weak.get()) {
+									that->_initPending = false;
+									that->processNextReadyStep();
+								}
+								return S_OK;
+							}).Get());
+			if (result == S_OK && _initPending) {
+				pending = true;
+			} else {
+				_initPending = false;
+			}
+		}, [&](const EvalScript &data) {
+			const auto wide = ToWide(data.script);
+			_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
+		});
+		if (!guard) {
+			return;
+		} else if (pending) {
+			_processingSteps = false;
+			return;
+		}
+	}
+	_processingSteps = false;
 }
 
 bool Instance::ready() const {
@@ -1101,24 +1151,13 @@ bool Instance::ready() const {
 }
 
 void Instance::navigate(std::string url) {
-	if (!ready()) {
-		_waitingForReady.push_back(NavigateToUrl{ std::move(url) });
-		return;
-	}
-	const auto wide = ToWide(url);
-	_handler->webview()->Navigate(wide.c_str());
+	_waitingForReady.push_back(NavigateToUrl{ std::move(url) });
+	processNextReadyStep();
 }
 
 void Instance::navigateToData(std::string id) {
-	if (!ready()) {
-		_waitingForReady.push_back(NavigateToData{ std::move(id) });
-		return;
-	}
-	auto full = std::string();
-	full.reserve(kDataUrlPrefix.size() + id.size());
-	full.append(kDataUrlPrefix);
-	full.append(id);
-	navigate(full);
+	_waitingForReady.push_back(NavigateToData{ std::move(id) });
+	processNextReadyStep();
 }
 
 void Instance::reload() {
@@ -1134,14 +1173,8 @@ void Instance::resizeToWindow() {
 }
 
 void Instance::init(std::string js) {
-	if (!ready()) {
-		_waitingForReady.push_back(InitScript{ std::move(js) });
-		return;
-	}
-	const auto wide = ToWide(js);
-	_handler->webview()->AddScriptToExecuteOnDocumentCreated(
-		wide.c_str(),
-		nullptr);
+	_waitingForReady.push_back(InitScript{ std::move(js) });
+	processNextReadyStep();
 }
 
 void Instance::initAllFrames(std::string js) {
@@ -1149,12 +1182,8 @@ void Instance::initAllFrames(std::string js) {
 }
 
 void Instance::eval(std::string js) {
-	if (!ready()) {
-		_waitingForReady.push_back(EvalScript{ std::move(js) });
-		return;
-	}
-	const auto wide = ToWide(js);
-	_handler->webview()->ExecuteScript(wide.c_str(), nullptr);
+	_waitingForReady.push_back(EvalScript{ std::move(js) });
+	processNextReadyStep();
 }
 
 void Instance::focus() {

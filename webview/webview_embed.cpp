@@ -80,16 +80,22 @@ base::options::toggle OptionWebviewLegacyEdge({
 	return "(()=>{const policy="
 		+ literal
 		+ R"JS(;
-const root=document.documentElement||document.appendChild(document.createElement('html'));
-const head=document.head||root.insertBefore(document.createElement('head'),root.firstChild);
-const dns=document.createElement('meta');
-dns.httpEquiv='x-dns-prefetch-control';
-dns.content='off';
-head.insertBefore(dns,head.firstChild);
-const meta=document.createElement('meta');
-meta.httpEquiv='Content-Security-Policy';
-meta.content=policy;
-head.insertBefore(meta,head.firstChild);
+const applyPolicy=()=>{
+ const head=document.head;if(!head)return false;
+ const dns=document.createElement('meta');
+ dns.httpEquiv='x-dns-prefetch-control';
+ dns.content='off';
+ head.insertBefore(dns,head.firstChild);
+ const meta=document.createElement('meta');
+ meta.httpEquiv='Content-Security-Policy';
+ meta.content=policy;
+ head.insertBefore(meta,head.firstChild);
+ return true;
+};
+if(!applyPolicy()){
+ const observer=new MutationObserver(()=>{if(applyPolicy())observer.disconnect()});
+ observer.observe(document,{childList:true,subtree:true});
+}
 const lock=(object,name,value)=>{try{Object.defineProperty(object,name,{value,configurable:false,writable:false})}catch(error){}};
 for(const name of ['localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','BroadcastChannel','Audio','AudioContext','webkitAudioContext','OfflineAudioContext','webkitOfflineAudioContext','speechSynthesis','SpeechSynthesisUtterance','RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','RTCDataChannel','RTCIceGatherer','RTCSessionDescription','RTCIceCandidate','WebTransport','WebAssembly','Notification','PresentationRequest','PaymentRequest','MediaRecorder','ImageCapture','SpeechRecognition','webkitSpeechRecognition','EyeDropper','showOpenFilePicker','showSaveFilePicker','showDirectoryPicker'])lock(globalThis,name,undefined);
 for(const name of ['serviceWorker','clipboard','geolocation','mediaDevices','usb','serial','hid','bluetooth','credentials','getUserMedia','webkitGetUserMedia','wakeLock','share','presentation','xr','getGamepads','storage','locks','sendBeacon','permissions'])lock(navigator,name,undefined);
