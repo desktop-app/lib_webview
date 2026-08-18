@@ -64,7 +64,7 @@ constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataHost = "127.0.0.1";
 constexpr auto kExternalShellFallbackBackground = "#eeeeee";
-constexpr auto kMaxScriptMessageBytes = 1024 * 1024;
+constexpr auto kMaxScriptMessageBytes = 2 * 1024 * 1024;
 constexpr auto kExternalMessageType = "tdesktop_external_bot_webapp";
 constexpr auto kExternalShellSource = "shell";
 constexpr auto kMaxPopupAnchorDimension = 32768;
@@ -187,6 +187,12 @@ std::string SocketPath;
 		settings,
 		false);
 	webkit_settings_set_media_playback_requires_user_gesture(settings, true);
+	if (webkit_settings_set_enable_webrtc) {
+		webkit_settings_set_enable_webrtc(settings, false);
+	}
+	if (webkit_settings_set_enable_media_stream) {
+		webkit_settings_set_enable_media_stream(settings, false);
+	}
 	return true;
 }
 
@@ -599,6 +605,7 @@ public:
 	void reload() override;
 
 	void init(std::string js) override;
+	void initAllFrames(std::string js) override;
 	void eval(std::string js) override;
 
 	void focus() override;
@@ -619,6 +626,9 @@ public:
 
 private:
 	void scriptMessageReceived(void *message);
+	void addUserScript(
+		std::string js,
+		WebKitUserContentInjectedFrames frames);
 	bool handleShellControlMessage(const std::string &message);
 	void beginShellMove(const QJsonObject &arguments);
 	void beginShellResize(const QJsonObject &arguments);
@@ -1068,6 +1078,9 @@ bool Instance::create(Config config) {
 		const auto context
 			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
+		if (restricted && webkit_web_context_set_sandbox_enabled) {
+			webkit_web_context_set_sandbox_enabled(context, true);
+		}
 		if (restricted && !BlockDownloads(G_OBJECT(context))) {
 			g_object_unref(context);
 			return false;
@@ -1984,13 +1997,32 @@ void Instance::init(std::string js) {
 		return;
 	}
 
+	addUserScript(std::move(js), WEBKIT_USER_CONTENT_INJECT_TOP_FRAME);
+}
+
+void Instance::initAllFrames(std::string js) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_init_all_frames(js, nullptr);
+		return;
+	}
+
+	addUserScript(std::move(js), WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES);
+}
+
+void Instance::addUserScript(
+		std::string js,
+		WebKitUserContentInjectedFrames frames) {
 	WebKitUserContentManager *manager
 		= webkit_web_view_get_user_content_manager(_webview);
 	webkit_user_content_manager_add_script(
 		manager,
 		webkit_user_script_new(
 			js.c_str(),
-			WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+			frames,
 			WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
 			nullptr,
 			nullptr));
@@ -3111,6 +3143,15 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &js) {
 		init(js);
 		_helper.complete_init(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_init_all_frames().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			const std::string &js) {
+		initAllFrames(js);
+		_helper.complete_init_all_frames(invocation);
 		return true;
 	});
 

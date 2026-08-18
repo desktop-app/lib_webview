@@ -75,6 +75,12 @@ public:
 	virtual void reload() = 0;
 
 	virtual void init(std::string js) = 0;
+
+	// Same as init(), but the script also runs in every child frame,
+	// so that a fresh realm (about:blank iframe) can't be used to
+	// sidestep the restrictions the script applies to the top frame.
+	virtual void initAllFrames(std::string js) = 0;
+
 	virtual void eval(std::string js) = 0;
 
 	virtual void focus() = 0;

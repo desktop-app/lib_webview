@@ -79,6 +79,9 @@
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>
+		<method name='InitAllFrames'>
+			<arg type='ay' name='js' direction='in'/>
+		</method>
 		<method name='Eval'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>

@@ -427,6 +427,15 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	settings->put_AreDefaultScriptDialogsEnabled(FALSE);
 	settings->put_IsStatusBarEnabled(FALSE);
 	if (!_restrictedOrigin.empty()) {
+		const auto reputation = settings.try_as<ICoreWebView2Settings8>();
+		if (!reputation) {
+			return E_NOINTERFACE;
+		}
+		const auto reputationResult
+			= reputation->put_IsReputationCheckingRequired(FALSE);
+		if (reputationResult != S_OK) {
+			return reputationResult;
+		}
 		const auto advanced = _webview.try_as<ICoreWebView2_8>();
 		if (!advanced) {
 			return E_NOINTERFACE;
@@ -471,7 +480,9 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 			// of the object graph below this callback are already gone.
 			return S_OK;
 		}
-		sender->PostWebMessageAsString(message.data());
+		if (_restrictedOrigin.empty()) {
+			sender->PostWebMessageAsString(message.data());
+		}
 	}
 	return S_OK;
 }
@@ -559,7 +570,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	args->get_IsUserInitiated(&isUserInitiated);
 	args->put_Handled(TRUE);
 
-	if (result == S_OK && uri && isUserInitiated) {
+	if (result == S_OK && uri && isUserInitiated && _restrictedOrigin.empty()) {
 		const auto url = FromWide(uri);
 		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
 			QDesktopServices::openUrl(QString::fromStdString(url));
@@ -847,6 +858,7 @@ public:
 	void reload() override;
 
 	void init(std::string js) override;
+	void initAllFrames(std::string js) override;
 	void eval(std::string js) override;
 
 	void focus() override;
@@ -944,7 +956,9 @@ void Instance::start(Config &&config) {
 		winrt::take_ownership_from_abi);
 	options->put_AdditionalBrowserArguments(config.restrictedOrigin.empty()
 		? L"--disable-features=ElasticOverscroll"
-		: L"--disable-features=ElasticOverscroll --mute-audio");
+		: L"--disable-features=ElasticOverscroll,msSmartScreenProtection "
+			L"--force-webrtc-ip-handling-policy=disable_non_proxied_udp "
+			L"--mute-audio");
 
 	auto handler = (Handler*)nullptr;
 	const auto ready = [=] {
@@ -1128,6 +1142,10 @@ void Instance::init(std::string js) {
 	_handler->webview()->AddScriptToExecuteOnDocumentCreated(
 		wide.c_str(),
 		nullptr);
+}
+
+void Instance::initAllFrames(std::string js) {
+	init(std::move(js));
 }
 
 void Instance::eval(std::string js) {

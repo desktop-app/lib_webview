@@ -91,8 +91,8 @@ meta.httpEquiv='Content-Security-Policy';
 meta.content=policy;
 head.insertBefore(meta,head.firstChild);
 const lock=(object,name,value)=>{try{Object.defineProperty(object,name,{value,configurable:false,writable:false})}catch(error){}};
-for(const name of ['localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','BroadcastChannel','Audio','AudioContext','webkitAudioContext','OfflineAudioContext','webkitOfflineAudioContext','speechSynthesis','SpeechSynthesisUtterance'])lock(globalThis,name,undefined);
-for(const name of ['serviceWorker','clipboard','geolocation','mediaDevices','usb','serial','hid','bluetooth'])lock(navigator,name,undefined);
+for(const name of ['localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','BroadcastChannel','Audio','AudioContext','webkitAudioContext','OfflineAudioContext','webkitOfflineAudioContext','speechSynthesis','SpeechSynthesisUtterance','RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','RTCDataChannel','RTCIceGatherer','RTCSessionDescription','RTCIceCandidate','WebTransport','WebAssembly','Notification','PresentationRequest','PaymentRequest','MediaRecorder','ImageCapture','SpeechRecognition','webkitSpeechRecognition','EyeDropper','showOpenFilePicker','showSaveFilePicker','showDirectoryPicker'])lock(globalThis,name,undefined);
+for(const name of ['serviceWorker','clipboard','geolocation','mediaDevices','usb','serial','hid','bluetooth','credentials','getUserMedia','webkitGetUserMedia','wakeLock','share','presentation','xr','getGamepads','storage','locks','sendBeacon','permissions'])lock(navigator,name,undefined);
 lock(globalThis,'open',()=>null);
 lock(globalThis,'print',()=>{});
 lock(globalThis,'alert',()=>{});
@@ -164,7 +164,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.restrictedOrigin = config.restrictedOrigin.toStdString(),
 	});
 	if (_webview && !config.restrictedOrigin.isEmpty()) {
-		_webview->init(restrictedScript.toStdString());
+		_webview->initAllFrames(restrictedScript.toStdString());
 	}
 	return (_webview != nullptr);
 }

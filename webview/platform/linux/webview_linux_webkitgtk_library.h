@@ -473,6 +473,12 @@ inline void (*webkit_settings_set_enable_webaudio)(
 inline void (*webkit_settings_set_enable_webgl)(
 	WebKitSettings *settings,
 	gboolean enabled);
+inline void (*webkit_settings_set_enable_webrtc)(
+	WebKitSettings *settings,
+	gboolean enabled);
+inline void (*webkit_settings_set_enable_media_stream)(
+	WebKitSettings *settings,
+	gboolean enabled);
 inline void (*webkit_settings_set_javascript_can_access_clipboard)(
 	WebKitSettings *settings,
 	gboolean enabled);
@@ -525,6 +531,9 @@ inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
 inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new_ephemeral)(void);
 inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 	WebKitWebsiteDataManager* manager);
+inline void (*webkit_web_context_set_sandbox_enabled)(
+	WebKitWebContext *context,
+	gboolean enabled);
 inline WebKitNetworkSession *(*webkit_network_session_new)(
 	const char* data_directory,
 	const char* cache_directory);

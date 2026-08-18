@@ -76,6 +76,24 @@ using TaskPointer = id<WKURLSchemeTask>;
 	return nil;
 }
 
+// The private WKPreferences keys reach -[WKPreferences _setPeerConnectionEnabled:]
+// and _setMediaDevicesEnabled: (WKPreferencesPrivate, macOS 10.13.4+) through
+// KVC's _set<Key>: lookup, exactly like developerExtrasEnabled above; the JS
+// lock script stays as the fallback if a future OS drops the keys. Lockdown
+// mode (public API, macOS 13+) additionally disables JIT, WebAssembly, WebGL
+// and a long list of legacy engine features for the whole page.
+void DisableRestrictedEngineFeatures(WKWebViewConfiguration *configuration) {
+	for (NSString *key in @[@"peerConnectionEnabled", @"mediaDevicesEnabled"]) {
+		@try {
+			[configuration.preferences setValue:@NO forKey:key];
+		} @catch (NSException *exception) {
+		}
+	}
+	if (@available(macOS 13, *)) {
+		configuration.defaultWebpagePreferences.lockdownModeEnabled = YES;
+	}
+}
+
 void DisableClipboardReading(WKPreferences *preferences) {
 	// navigator.clipboard.read/readText() and document.execCommand("paste")
 	// all end up in WebKit's "DOM paste access request", which on macOS pops
@@ -161,8 +179,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
-- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler;
-- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView;
+- (void) navigationDone:(BOOL)success;
 - (nullable WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures;
 - (void) webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler;
 - (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
@@ -177,6 +194,9 @@ void DisableClipboardReading(WKPreferences *preferences) {
 @interface RestrictedHandler : Handler {
 }
 
+- (void) webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler;
+- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView;
 - (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0));
 - (void) webView:(WKWebView *)webView requestDeviceOrientationAndMotionPermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0));
 - (void) webView:(WKWebView *)webView didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler;
@@ -280,32 +300,19 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-	if (_navigationDoneHandler) {
-		_navigationDoneHandler(true);
-	}
-	if (_updateStates) {
-		_updateStates();
-	}
+	[self navigationDone:YES];
 }
 
 - (void) webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+	[self navigationDone:NO];
+}
+
+- (void) navigationDone:(BOOL)success {
 	if (_navigationDoneHandler) {
-		_navigationDoneHandler(false);
+		_navigationDoneHandler(success);
 	}
 	if (_updateStates) {
 		_updateStates();
-	}
-}
-
-- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-	decisionHandler((_restricted && !navigationResponse.canShowMIMEType)
-		? WKNavigationResponsePolicyCancel
-		: WKNavigationResponsePolicyAllow);
-}
-
-- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView {
-	if (_restricted && _navigationDoneHandler) {
-		_navigationDoneHandler(false);
 	}
 }
 
@@ -516,6 +523,27 @@ void DisableClipboardReading(WKPreferences *preferences) {
 
 @implementation RestrictedHandler
 
+- (void) webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+	// A refused connection, DNS failure or cancelled policy decision never
+	// reaches didFailNavigation; the restricted carrier should learn about it
+	// right away instead of waiting for its handshake deadline.
+	[self navigationDone:NO];
+}
+
+- (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
+	decisionHandler(navigationResponse.canShowMIMEType
+		? WKNavigationResponsePolicyAllow
+		: WKNavigationResponsePolicyCancel);
+}
+
+// Implementing this selector on the delegate makes WebKit skip its one-shot
+// automatic reload after a WebContent process crash, so it must stay on the
+// restricted handler only: an ordinary embed keeps WebKit's default recovery,
+// while the restricted carrier wants the failure reported immediately.
+- (void) webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+	[self navigationDone:NO];
+}
+
 - (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler {
 	decisionHandler(WKPermissionDecisionDeny);
 }
@@ -549,6 +577,7 @@ public:
 	void reload() override;
 
 	void init(std::string js) override;
+	void initAllFrames(std::string js) override;
 	void eval(std::string js) override;
 
 	void focus() override;
@@ -683,6 +712,7 @@ Instance::Instance(Config config) {
 		configuration.mediaTypesRequiringUserActionForPlayback
 			= WKAudiovisualMediaTypeAll;
 		configuration.allowsAirPlayForMediaPlayback = NO;
+		DisableRestrictedEngineFeatures(configuration);
 	}
 	DisableClipboardReading(configuration.preferences);
 	const auto updateStates = [=] {
@@ -1081,6 +1111,12 @@ void Instance::reload() {
 void Instance::init(std::string js) {
 	NSString *string = [NSString stringWithUTF8String:js.c_str()];
 	WKUserScript *script = [[WKUserScript alloc] initWithSource:string injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
+	[_manager addUserScript:script];
+}
+
+void Instance::initAllFrames(std::string js) {
+	NSString *string = [NSString stringWithUTF8String:js.c_str()];
+	WKUserScript *script = [[WKUserScript alloc] initWithSource:string injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO];
 	[_manager addUserScript:script];
 }
 
