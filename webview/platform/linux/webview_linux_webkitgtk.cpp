@@ -52,10 +52,11 @@
 namespace Webview::WebKitGTK {
 namespace {
 
-using namespace gi::repository;
 using namespace gi::repository::Webview;
 using namespace Library;
-namespace GObject = gi::repository::GObject;
+namespace Gio = gi::repository::Gio;
+namespace GLib = gi::repository::GLib;
+namespace GObjectCpp = gi::repository::GObject;
 
 constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration/Webview";
 constexpr auto kMasterObjectPath
@@ -83,7 +84,7 @@ std::string SocketPath;
 
 [[nodiscard]] std::string GenerateMessageToken() {
 	auto bytes = std::array<std::uint8_t, 32>();
-	base::RandomFill(bytes.data(), bytes.size());
+	::base::RandomFill(bytes.data(), bytes.size());
 	constexpr auto kHex = "0123456789abcdef";
 	auto result = std::string();
 	result.reserve(bytes.size() * 2);
@@ -108,7 +109,7 @@ std::string SocketPath;
 	return SetCookiePolicy(manager, WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
 }
 
-[[nodiscard]] bool BlockDownloads(GObject *owner) {
+[[nodiscard]] bool BlockDownloads(::GObject *owner) {
 	if (!owner
 		|| !webkit_download_cancel
 		|| !g_signal_lookup("download-started", G_OBJECT_TYPE(owner))) {
@@ -118,7 +119,7 @@ std::string SocketPath;
 		owner,
 		"download-started",
 		G_CALLBACK(+[](
-				GObject*,
+				::GObject*,
 				WebKitDownload *download,
 				gpointer) {
 			webkit_download_cancel(download);
@@ -885,7 +886,7 @@ bool Instance::create(Config config) {
 			allowThirdPartyCookies,
 			restrictedOrigin,
 			crl::guard(&guard, [&](
-					GObject::Object source_object,
+					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
 				success = _helper.call_create_finish(res, nullptr);
 				GLib::MainContext::default_().wakeup();
@@ -1372,7 +1373,7 @@ bool Instance::create(Config config) {
 	updateWindowFrameExtents();
 	init(std::string(R"(
 if (window === window.top) {
-	const messageToken = '")") + _messageToken + R"(';
+	const messageToken = ')") + _messageToken + R"(';
 	const handler = window.webkit.messageHandlers.external;
 	const postMessage = handler.postMessage.bind(handler);
 	const external = Object.freeze({
@@ -1600,7 +1601,7 @@ bool Instance::decidePolicy(
 	if (_master) {
 		auto loop = GLib::MainLoop::new_();
 		_master.call_navigation_started(uri, false, [&](
-				GObject::Object source_object,
+				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			if (const auto ret = _master.call_navigation_started_finish(
 					res)) {
@@ -1633,7 +1634,7 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 		return nullptr;
 	}
 	_master.call_navigation_started(uri, true, [=](
-			GObject::Object source_object,
+			GObjectCpp::Object source_object,
 			Gio::AsyncResult res) {
 		const auto ret = _master.call_navigation_started_finish(res);
 		if (!ret || !std::get<1>(*ret)) {
@@ -1689,7 +1690,7 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 			type,
 			text ? text : "",
 			value ? value : "",
-			[&](GObject::Object source_object, Gio::AsyncResult res) {
+			[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
 				if (const auto ret = _master.call_script_dialog_finish(res)) {
 					std::tie(std::ignore, accepted, result) = *ret;
 				}
@@ -1911,7 +1912,7 @@ ResolveResult Instance::resolve() {
 		const ::base::has_weak_ptr guard;
 		std::optional<ResolveResult> result;
 		_helper.call_resolve(crl::guard(&guard, [&](
-				GObject::Object source_object,
+				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
 			if (reply) {
@@ -2279,7 +2280,7 @@ void *Instance::winId() {
 		const ::base::has_weak_ptr guard;
 		std::optional<void*> ret;
 		_helper.call_get_win_id(crl::guard(&guard, [&](
-				GObject::Object source_object,
+				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_get_win_id_finish(res);
 			ret = reply
@@ -2376,7 +2377,7 @@ bool Instance::notifyExternalWindowClosed() {
 	_externalWindowClosePending = true;
 	const auto weak = ::base::make_weak(this);
 	_master.call_external_window_closed([=](
-			GObject::Object,
+			GObjectCpp::Object,
 			Gio::AsyncResult res) {
 		if (const auto instance = weak.get()) {
 			instance->_externalWindowClosePending = false;
@@ -2407,7 +2408,7 @@ PopupAnchor Instance::popupAnchor() {
 		const ::base::has_weak_ptr guard;
 		std::optional<PopupAnchor> ret;
 		_helper.call_get_window_anchor(crl::guard(&guard, [&](
-				GObject::Object source_object,
+				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			auto result = PopupAnchor();
 			if (const auto reply = _helper.call_get_window_anchor_finish(res)) {
@@ -2673,7 +2674,7 @@ void Instance::startProcess() {
 			Gio::DBusProxyFlags::NONE_,
 			kHelperObjectPath,
 			crl::guard(&guard, [&](
-					GObject::Object source_object,
+					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
 				auto helper = HelperProxy::new_finish(res);
 				if (!helper) {
@@ -2978,7 +2979,7 @@ int Instance::exec() {
 		*connection,
 		Gio::DBusProxyFlags::NONE_,
 		kMasterObjectPath,
-		[&](GObject::Object source_object, Gio::AsyncResult res) {
+		[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
 			auto master = MasterProxy::new_finish(res);
 			if (!master) {
 				error = true;
@@ -2988,7 +2989,7 @@ int Instance::exec() {
 			}
 			_master = *master;
 			_master.call_get_start_data([&](
-					GObject::Object source_object,
+					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
 				const auto settings = _master.call_get_start_data_finish(
 					res);
