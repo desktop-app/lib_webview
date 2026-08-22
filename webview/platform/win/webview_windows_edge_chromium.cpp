@@ -671,7 +671,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		return S_OK;
 	}
 	if (!_restrictedOrigin.empty()) {
-		headers->SetHeader(L"Cookie", L"");
+		headers->RemoveHeader(L"Cookie");
 	}
 	winrt::com_ptr<ICoreWebView2HttpHeadersCollectionIterator> iterator;
 	hr = headers->GetIterator(iterator.put());
