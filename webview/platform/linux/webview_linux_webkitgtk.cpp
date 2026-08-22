@@ -55,6 +55,9 @@ namespace {
 using namespace gi::repository::Webview;
 using namespace Library;
 namespace Gio = gi::repository::Gio;
+#if __has_include(<giounix/giounix.hpp>)
+namespace GioUnix = gi::repository::GioUnix;
+#endif // __has_include(<giounix/giounix.hpp>)
 namespace GLib = gi::repository::GLib;
 namespace GObjectCpp = gi::repository::GObject;
 
