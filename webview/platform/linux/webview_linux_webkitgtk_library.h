@@ -118,6 +118,7 @@ typedef struct _WebKitScriptDialog WebKitScriptDialog;
 typedef struct _WebKitWebsiteDataManager WebKitWebsiteDataManager;
 typedef struct _WebKitWebContext WebKitWebContext;
 typedef struct _WebKitNetworkSession WebKitNetworkSession;
+typedef struct _WebKitNetworkProxySettings WebKitNetworkProxySettings;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
 
@@ -197,6 +198,12 @@ typedef enum {
 	WEBKIT_CREDENTIAL_PERSISTENCE_FOR_SESSION,
 	WEBKIT_CREDENTIAL_PERSISTENCE_PERMANENT,
 } WebKitCredentialPersistence;
+
+typedef enum {
+    WEBKIT_NETWORK_PROXY_MODE_DEFAULT,
+    WEBKIT_NETWORK_PROXY_MODE_NO_PROXY,
+    WEBKIT_NETWORK_PROXY_MODE_CUSTOM
+} WebKitNetworkProxyMode;
 
 namespace Webview::WebKitGTK::Library {
 
@@ -442,11 +449,24 @@ inline void (*webkit_web_view_set_background_color)(
 inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
 	const gchar *first_option_name,
 	...);
+inline void (*webkit_website_data_manager_set_network_proxy_settings)(
+	WebKitWebsiteDataManager *manager,
+	WebKitNetworkProxyMode proxy_mode,
+	WebKitNetworkProxySettings *proxy_settings);
 inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 	WebKitWebsiteDataManager* manager);
 inline WebKitNetworkSession *(*webkit_network_session_new)(
 	const char* data_directory,
 	const char* cache_directory);
+inline void (*webkit_network_session_set_proxy_settings)(
+	WebKitNetworkSession *session,
+	WebKitNetworkProxyMode proxy_mode,
+	WebKitNetworkProxySettings *proxy_settings);
+inline WebKitNetworkProxySettings *(*webkit_network_proxy_settings_new)(
+	const gchar* default_proxy_uri,
+	const gchar* const* ignore_hosts);
+inline void (*webkit_network_proxy_settings_free)(
+		WebKitNetworkProxySettings *proxy_settings);
 inline void (*webkit_authentication_request_authenticate)(
 	WebKitAuthenticationRequest *request,
 	WebKitCredential *credential);

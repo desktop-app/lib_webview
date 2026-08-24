@@ -76,6 +76,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.windowMargins = config.windowMargins,
 		.initialSize = config.initialSize,
 		.shellMessageToken = config.shellMessageToken.toStdString(),
+		.proxySettings = config.proxySettings,
 	});
 	return (_webview != nullptr);
 }

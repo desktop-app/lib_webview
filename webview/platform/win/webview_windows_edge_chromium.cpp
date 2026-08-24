@@ -743,11 +743,25 @@ Instance::~Instance() {
 }
 
 void Instance::start(Config &&config) {
+	auto arguments = std::wstring(L"--disable-features=ElasticOverscroll");
+	if (config.proxySettings
+		&& config.proxySettings->type == ProxyType::SOCKS5) {
+		const auto &proxy = *config.proxySettings;
+		arguments += L" --proxy-server=socks5://";
+		if (!proxy.username.empty()) {
+			arguments += ToWide(proxy.username);
+			arguments += L":";
+			arguments += ToWide(proxy.password);
+			arguments += L"@";
+		}
+		arguments += ToWide(proxy.server);
+		arguments += L":";
+		arguments += ToWide(proxy.port);
+	}
 	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
 		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
 		winrt::take_ownership_from_abi);
-	options->put_AdditionalBrowserArguments(
-		L"--disable-features=ElasticOverscroll");
+	options->put_AdditionalBrowserArguments(arguments.c_str());
 
 	auto handler = (Handler*)nullptr;
 	const auto ready = [=] {

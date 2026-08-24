@@ -17,6 +17,7 @@
 #include "base/weak_ptr.h"
 #include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
+#include "webview/webview_interface.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
@@ -885,10 +886,40 @@ bool Instance::create(Config config) {
 	const auto baseCache = base + "/cache";
 	const auto baseData = base + "/data";
 
+	const auto proxySettings = [&]() -> WebKitNetworkProxySettings* {
+		if (!config.proxySettings
+			|| config.proxySettings->type != ProxyType::SOCKS5) {
+			return nullptr;
+		}
+		const auto &proxy = *config.proxySettings;
+		const auto uri = proxy.username.empty()
+			? std::format(
+				"socks5://{}:{}",
+				proxy.host,
+				proxy.port)
+			: std::format(
+				"socks5://{}:{}@{}:{}",
+				proxy.username,
+				proxy.password,
+				proxy.host,
+				proxy.port);
+		return webkit_network_proxy_settings_new(uri.c_str(), nullptr);
+	}();
+	const auto proxyGuard = gsl::finally([&] {
+		if (proxySettings) {
+			webkit_network_proxy_settings_free(proxySettings);
+		}
+	});
 	if (webkit_network_session_new) {
 		WebKitNetworkSession *session = webkit_network_session_new(
 			baseData.c_str(),
 			baseCache.c_str());
+		if (proxySettings && webkit_network_session_set_proxy_settings) {
+			webkit_network_session_set_proxy_settings(
+				session,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
+		}
 		_webview = WEBKIT_WEB_VIEW(g_object_new(
 			WEBKIT_TYPE_WEB_VIEW,
 			"network-session",
@@ -900,6 +931,13 @@ bool Instance::create(Config config) {
 			"base-cache-directory", baseCache.c_str(),
 			"base-data-directory", baseData.c_str(),
 			nullptr);
+		if (proxySettings
+			&& webkit_website_data_manager_set_network_proxy_settings) {
+			webkit_website_data_manager_set_network_proxy_settings(
+				data,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
+		}
 		WebKitWebContext *context
 			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
