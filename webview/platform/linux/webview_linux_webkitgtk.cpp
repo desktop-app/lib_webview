@@ -21,6 +21,7 @@
 #include "base/weak_ptr.h"
 #include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
+#include "webview/webview_interface.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
@@ -1057,6 +1058,30 @@ bool Instance::create(Config config) {
 		&& !webkit_web_view_get_default_content_security_policy) {
 		return false;
 	}
+	const auto proxySettings = [&]() -> WebKitNetworkProxySettings* {
+		if (!config.proxySettings
+			|| config.proxySettings->type != ProxyType::SOCKS5) {
+			return nullptr;
+		}
+		const auto &proxy = *config.proxySettings;
+		const auto uri = proxy.username.empty()
+			? std::format(
+				"socks5://{}:{}",
+				proxy.host,
+				proxy.port)
+			: std::format(
+				"socks5://{}:{}@{}:{}",
+				proxy.username,
+				proxy.password,
+				proxy.host,
+				proxy.port);
+		return webkit_network_proxy_settings_new(uri.c_str(), nullptr);
+	}();
+	const auto proxyGuard = gsl::finally([&] {
+		if (proxySettings) {
+			webkit_network_proxy_settings_free(proxySettings);
+		}
+	});
 	if (webkit_network_session_new) {
 		const auto session = restricted
 			? (webkit_network_session_new_ephemeral
@@ -1067,6 +1092,12 @@ bool Instance::create(Config config) {
 				baseCache.c_str());
 		if (!session) {
 			return false;
+		}
+		if (proxySettings && webkit_network_session_set_proxy_settings) {
+			webkit_network_session_set_proxy_settings(
+				session,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
 		}
 		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_network_session_get_cookie_manager
@@ -1112,6 +1143,13 @@ bool Instance::create(Config config) {
 				nullptr);
 		if (!data) {
 			return false;
+		}
+		if (proxySettings
+			&& webkit_website_data_manager_set_network_proxy_settings) {
+			webkit_website_data_manager_set_network_proxy_settings(
+				data,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
 		}
 		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_website_data_manager_get_cookie_manager

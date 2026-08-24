@@ -1000,16 +1000,31 @@ Instance::~Instance() {
 }
 
 void Instance::start(Config &&config) {
-	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
-		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
-		winrt::take_ownership_from_abi);
 	// Avoid Windows account lockouts: crbug.com/541310282.
-	options->put_AdditionalBrowserArguments(config.restrictedOrigin.empty()
+	auto arguments = std::wstring(config.restrictedOrigin.empty()
 		? L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses"
 		: L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses,"
 			L"msSmartScreenProtection "
 			L"--force-webrtc-ip-handling-policy=disable_non_proxied_udp "
 			L"--mute-audio");
+	if (config.proxySettings
+		&& config.proxySettings->type == ProxyType::SOCKS5) {
+		const auto &proxy = *config.proxySettings;
+		arguments += L" --proxy-server=socks5://";
+		if (!proxy.username.empty()) {
+			arguments += ToWide(proxy.username);
+			arguments += L":";
+			arguments += ToWide(proxy.password);
+			arguments += L"@";
+		}
+		arguments += ToWide(proxy.host);
+		arguments += L":";
+		arguments += ToWide(proxy.port);
+	}
+	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
+		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
+		winrt::take_ownership_from_abi);
+	options->put_AdditionalBrowserArguments(arguments.c_str());
 	if (_hidden && !config.restrictedOrigin.empty()) {
 		_keepActiveTimer.callEach(kKeepActiveInterval);
 	}

@@ -25,6 +25,7 @@
 
 #import <Foundation/Foundation.h>
 #import <WebKit/WebKit.h>
+#import <Network/Network.h>
 
 // Private WebKit API. Everything using it is guarded by respondsToSelector,
 // _WKFeature / _WKInternalDebugFeature are matched by their string key.
@@ -819,6 +820,27 @@ Instance::Instance(Config config) {
 				[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
 				[uuid release];
 			}
+		}
+		if (config.proxySettings
+			&& config.proxySettings->type == ProxyType::SOCKS5) {
+			const auto &proxy = *config.proxySettings;
+			auto store = configuration.websiteDataStore;
+			if (!store) {
+				store = [WKWebsiteDataStore defaultDataStore];
+				[configuration setWebsiteDataStore:store];
+			}
+			nw_endpoint_t endpoint = nw_endpoint_create_host(
+				proxy.host.c_str(),
+				proxy.port.c_str());
+			nw_proxy_config_t proxyConfig
+				= nw_proxy_config_create_socksv5(endpoint);
+			if (!proxy.username.empty()) {
+				nw_proxy_config_set_username_and_password(
+					proxyConfig,
+					proxy.username.c_str(),
+					proxy.password.c_str());
+			}
+			store.proxyConfigurations = @[ (id)proxyConfig ];
 		}
 	}
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];

@@ -158,6 +158,19 @@ struct Message {
 	std::string sourceUrl;
 };
 
+enum class ProxyType {
+	SOCKS5,
+	Unsupported
+};
+
+struct ProxySettings {
+	ProxyType type;
+	std::string host;
+	std::string port;
+	std::string username;
+	std::string password;
+};
+
 struct Config {
 	QWidget *parent = nullptr;
 	QColor opaqueBg;
@@ -182,6 +195,7 @@ struct Config {
 	std::string shellMessageToken;
 	std::string restrictedOrigin;
 	std::string restrictedContentSecurityPolicy;
+	std::optional<ProxySettings> proxySettings;
 };
 
 struct Available {
