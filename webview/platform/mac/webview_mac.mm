@@ -56,6 +56,59 @@ using TaskPointer = id<WKURLSchemeTask>;
 		encoding:NSUTF8StringEncoding];
 }
 
+[[nodiscard]] NSString *RestrictedContentRules(const std::string &origin) {
+	const auto string = [NSString stringWithUTF8String:origin.c_str()];
+	const auto url = [NSURL URLWithString:string];
+	if (!url
+		|| ![url.scheme isEqualToString:@"https"]
+		|| !url.host.length) {
+		return nil;
+	}
+	const auto httpsOrigin = [NSRegularExpression
+		escapedPatternForString:string];
+	const auto wssOrigin = [NSRegularExpression escapedPatternForString:
+		[@"wss://" stringByAppendingString:[string substringFromIndex:8]]];
+	const auto https = [NSString stringWithFormat:@"^%@/", httpsOrigin];
+	const auto httpsPort = [NSString stringWithFormat:@"^%@:443/", httpsOrigin];
+	const auto wss = [NSString stringWithFormat:@"^%@/", wssOrigin];
+	const auto wssPort = [NSString stringWithFormat:@"^%@:443/", wssOrigin];
+	const auto rules = @[
+		@{
+			@"trigger": @{ @"url-filter": @"^https?://" },
+			@"action": @{ @"type": @"block" },
+		},
+		@{
+			@"trigger": @{ @"url-filter": @"^wss?://" },
+			@"action": @{ @"type": @"block" },
+		},
+		@{
+			@"trigger": @{ @"url-filter": https },
+			@"action": @{ @"type": @"ignore-previous-rules" },
+		},
+		@{
+			@"trigger": @{ @"url-filter": httpsPort },
+			@"action": @{ @"type": @"ignore-previous-rules" },
+		},
+		@{
+			@"trigger": @{ @"url-filter": wss },
+			@"action": @{ @"type": @"ignore-previous-rules" },
+		},
+		@{
+			@"trigger": @{ @"url-filter": wssPort },
+			@"action": @{ @"type": @"ignore-previous-rules" },
+		},
+	];
+	const auto data = [NSJSONSerialization
+		dataWithJSONObject:rules
+		options:0
+		error:nil];
+	return data
+		? [[[NSString alloc]
+			initWithData:data
+			encoding:NSUTF8StringEncoding] autorelease]
+		: nil;
+}
+
 [[nodiscard]] std::unique_ptr<char[]> WrapBytes(const char *data, int64 length) {
 	Expects(length > 0);
 
@@ -531,7 +584,11 @@ void DisableClipboardReading(WKPreferences *preferences) {
 }
 
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-	decisionHandler(navigationResponse.canShowMIMEType
+	const auto mime = navigationResponse.response.MIMEType;
+	decisionHandler(navigationResponse.forMainFrame
+		&& navigationResponse.canShowMIMEType
+		&& mime
+		&& [mime caseInsensitiveCompare:@"text/html"] == NSOrderedSame
 		? WKNavigationResponsePolicyAllow
 		: WKNavigationResponsePolicyCancel);
 }
@@ -592,6 +649,13 @@ public:
 	void setOpaqueBg(QColor opaqueBg) override;
 
 private:
+	enum class RestrictedRulesState {
+		None,
+		Pending,
+		Ready,
+		Failed,
+	};
+
 	struct Task {
 		int index = 0;
 		crl::time started = 0;
@@ -635,6 +699,13 @@ private:
 	void removeCacheEntry(CacheKey key);
 	void pruneCache();
 
+	void compileRestrictedRules(
+		const std::string &origin,
+		const std::string &path);
+	void finishRestrictedRules(
+		WKContentRuleList *rules,
+		NSError *error);
+	void navigateNow(const std::string &url);
 	void updateHistoryStates();
 
 	[[nodiscard]] static CacheKey KeyFromValues(
@@ -657,6 +728,8 @@ private:
 	base::flat_map<std::string, PartialResource> _partialResources;
 	base::flat_map<CacheKey, PartData> _partsCache;
 	std::vector<CacheKey> _partsLRU;
+	RestrictedRulesState _restrictedRulesState = RestrictedRulesState::None;
+	std::string _pendingNavigation;
 	int64 _cacheTotal = 0;
 	int _taskAutoincrement = 0;
 	id _eventMonitor = nil;
@@ -708,6 +781,7 @@ Instance::Instance(Config config) {
 		[configuration.preferences setValue:@NO forKey:@"fraudulentWebsiteWarningEnabled"];
 	}
 	if (restricted) {
+		_restrictedRulesState = RestrictedRulesState::Pending;
 		configuration.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
 		configuration.mediaTypesRequiringUserActionForPlayback
 			= WKAudiovisualMediaTypeAll;
@@ -763,6 +837,11 @@ window.external = {
 		window.webkit.messageHandlers.external.postMessage(s);
 	}
 };)");
+	if (restricted) {
+		compileRestrictedRules(
+			config.restrictedOrigin,
+			config.userDataPath);
+	}
 }
 
 Instance::~Instance() {
@@ -1083,10 +1162,74 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 	}
 }
 
-void Instance::navigate(std::string url) {
+void Instance::compileRestrictedRules(
+		const std::string &origin,
+		const std::string &path) {
+	const auto encoded = RestrictedContentRules(origin);
+	const auto directory = [NSURL fileURLWithPath:
+		[NSString stringWithUTF8String:path.c_str()]
+		isDirectory:YES];
+	const auto store = [WKContentRuleListStore storeWithURL:directory];
+	if (!encoded || !store) {
+		finishRestrictedRules(nil, nil);
+		return;
+	}
+	const auto weak = base::make_weak(this);
+	[store
+		compileContentRuleListForIdentifier:@"tdesktop-web-proxy-restricted"
+		encodedContentRuleList:encoded
+		completionHandler:^(
+				WKContentRuleList *rules,
+				NSError *error) {
+			if (rules) [rules retain];
+			if (error) [error retain];
+			crl::on_main([=] {
+				if (weak) {
+					weak->finishRestrictedRules(rules, error);
+				}
+				if (rules) [rules release];
+				if (error) [error release];
+			});
+		}];
+}
+
+void Instance::finishRestrictedRules(
+		WKContentRuleList *rules,
+		NSError *error) {
+	Expects(_restrictedRulesState == RestrictedRulesState::Pending);
+	if (!rules) {
+		if (error) {
+			LOG(("WebView Error: Restricted content rules failed: %1").arg(
+				QString::fromUtf8(error.localizedDescription.UTF8String)));
+		}
+		_restrictedRulesState = RestrictedRulesState::Failed;
+		if (!_pendingNavigation.empty()) {
+			_pendingNavigation.clear();
+			[_handler navigationDone:NO];
+		}
+		return;
+	}
+	[_manager addContentRuleList:rules];
+	_restrictedRulesState = RestrictedRulesState::Ready;
+	if (!_pendingNavigation.empty()) {
+		navigate(base::take(_pendingNavigation));
+	}
+}
+
+void Instance::navigateNow(const std::string &url) {
 	NSString *string = [NSString stringWithUTF8String:url.c_str()];
 	NSURL *native = [NSURL URLWithString:string];
 	[_webview loadRequest:[NSURLRequest requestWithURL:native]];
+}
+
+void Instance::navigate(std::string url) {
+	if (_restrictedRulesState == RestrictedRulesState::Pending) {
+		_pendingNavigation = std::move(url);
+	} else if (_restrictedRulesState == RestrictedRulesState::Failed) {
+		[_handler navigationDone:NO];
+	} else {
+		navigateNow(url);
+	}
 }
 
 void Instance::navigateToData(std::string id) {
@@ -1105,7 +1248,11 @@ void Instance::loadHtml(std::string html, std::string baseUrl) {
 }
 
 void Instance::reload() {
-	[_webview reload];
+	if (_restrictedRulesState == RestrictedRulesState::Failed) {
+		[_handler navigationDone:NO];
+	} else if (_restrictedRulesState != RestrictedRulesState::Pending) {
+		[_webview reload];
+	}
 }
 
 void Instance::init(std::string js) {

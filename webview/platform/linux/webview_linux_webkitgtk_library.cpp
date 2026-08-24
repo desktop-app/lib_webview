@@ -58,6 +58,9 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_action_get_request)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_request_get_uri)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_policy_decision_ignore)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_response_policy_decision_get_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_response_policy_decision_get_response)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_response_get_mime_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_get_dialog_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_get_message)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_confirm_set_confirmed)
@@ -112,6 +115,10 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_get_cookie_manager);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_get_cookie_manager);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_cookie_manager_set_accept_policy);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_default_content_security_policy);
+	LOAD_LIBRARY_SYMBOL(
+		lib,
+		webkit_response_policy_decision_is_main_frame_main_resource);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_download_cancel);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_auto_load_images);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_dns_prefetching);

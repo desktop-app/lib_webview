@@ -62,6 +62,9 @@
 #define WEBKIT_TYPE_NAVIGATION_POLICY_DECISION (webkit_navigation_policy_decision_get_type())
 #define WEBKIT_NAVIGATION_POLICY_DECISION(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_NAVIGATION_POLICY_DECISION, WebKitNavigationPolicyDecision))
 
+#define WEBKIT_TYPE_RESPONSE_POLICY_DECISION (webkit_response_policy_decision_get_type())
+#define WEBKIT_RESPONSE_POLICY_DECISION(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_RESPONSE_POLICY_DECISION, WebKitResponsePolicyDecision))
+
 #define WEBKIT_TYPE_WEB_VIEW (webkit_web_view_get_type())
 #define WEBKIT_WEB_VIEW(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_WEB_VIEW, WebKitWebView))
 
@@ -116,7 +119,9 @@ typedef struct _WebKitJavascriptResult WebKitJavascriptResult;
 typedef struct _WebKitNavigationAction WebKitNavigationAction;
 typedef struct _WebKitNavigationPolicyDecision WebKitNavigationPolicyDecision;
 typedef struct _WebKitPolicyDecision WebKitPolicyDecision;
+typedef struct _WebKitResponsePolicyDecision WebKitResponsePolicyDecision;
 typedef struct _WebKitURIRequest WebKitURIRequest;
+typedef struct _WebKitURIResponse WebKitURIResponse;
 typedef struct _WebKitUserContentManager WebKitUserContentManager;
 typedef struct _WebKitUserScript WebKitUserScript;
 typedef struct _WebKitWebView WebKitWebView;
@@ -407,6 +412,13 @@ inline WebKitURIRequest *(*webkit_navigation_action_get_request)(
 	WebKitNavigationAction *navigation);
 inline const gchar *(*webkit_uri_request_get_uri)(WebKitURIRequest *request);
 inline void (*webkit_policy_decision_ignore)(WebKitPolicyDecision *decision);
+inline GType (*webkit_response_policy_decision_get_type)(void);
+inline WebKitURIResponse *(*webkit_response_policy_decision_get_response)(
+	WebKitResponsePolicyDecision *decision);
+inline gboolean (*webkit_response_policy_decision_is_main_frame_main_resource)(
+	WebKitResponsePolicyDecision *decision);
+inline const gchar *(*webkit_uri_response_get_mime_type)(
+	WebKitURIResponse *response);
 
 inline WebKitScriptDialogType (*webkit_script_dialog_get_dialog_type)(
 	WebKitScriptDialog *dialog);
@@ -426,6 +438,8 @@ inline GType (*webkit_web_view_get_type)(void);
 inline gboolean (*webkit_web_view_get_is_web_process_responsive)(
 	WebKitWebView *web_view);
 inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
+	WebKitWebView *web_view);
+inline const gchar *(*webkit_web_view_get_default_content_security_policy)(
 	WebKitWebView *web_view);
 inline const gchar *(*webkit_web_view_get_uri)(WebKitWebView *web_view);
 inline const gchar *(*webkit_web_view_get_title)(WebKitWebView *web_view);

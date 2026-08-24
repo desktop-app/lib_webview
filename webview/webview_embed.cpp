@@ -42,7 +42,12 @@ base::options::toggle OptionWebviewLegacyEdge({
 	.restartRequired = true,
 });
 
-[[nodiscard]] QByteArray RestrictedScript(const QString &origin) {
+struct RestrictedContent {
+	QByteArray policy;
+	QByteArray script;
+};
+
+[[nodiscard]] RestrictedContent MakeRestrictedContent(const QString &origin) {
 	const auto url = QUrl(origin, QUrl::StrictMode);
 	if (!url.isValid()
 		|| url.scheme() != u"https"_q
@@ -77,9 +82,11 @@ base::options::toggle OptionWebviewLegacyEdge({
 	const auto encoded = QJsonDocument(QJsonArray{ policy }).toJson(
 		QJsonDocument::Compact);
 	const auto literal = encoded.mid(1, encoded.size() - 2);
-	return "(()=>{const policy="
-		+ literal
-		+ R"JS(;
+	return {
+		.policy = policy.toUtf8(),
+		.script = "(()=>{const policy="
+			+ literal
+			+ R"JS(;
 const applyPolicy=()=>{
  const head=document.head;if(!head)return false;
  const dns=document.createElement('meta');
@@ -105,7 +112,8 @@ lock(globalThis,'alert',()=>{});
 lock(globalThis,'confirm',()=>false);
 lock(globalThis,'prompt',()=>null);
 try{Object.defineProperty(document,'cookie',{get:()=>'',set:()=>true,configurable:false})}catch(error){}
-})())JS";
+})())JS",
+	};
 }
 
 } // namespace
@@ -129,14 +137,15 @@ bool Window::valid() const {
 
 bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 	Expects(!_webview);
-	const auto restrictedScript = config.restrictedOrigin.isEmpty()
-		? QByteArray()
-		: RestrictedScript(config.restrictedOrigin);
-	if (!config.restrictedOrigin.isEmpty() && restrictedScript.isEmpty()) {
+	const auto restricted = !config.restrictedOrigin.isEmpty();
+	const auto restrictedContent = restricted
+		? MakeRestrictedContent(config.restrictedOrigin)
+		: RestrictedContent();
+	if (restricted && restrictedContent.policy.isEmpty()) {
 		return false;
 	}
 	auto userDataPath = config.storageId.path;
-	if (!config.restrictedOrigin.isEmpty()) {
+	if (restricted) {
 		_temporaryStorage = std::make_unique<QTemporaryDir>();
 		if (!_temporaryStorage->isValid()) {
 			_temporaryStorage = nullptr;
@@ -168,9 +177,11 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.initialSize = config.initialSize,
 		.shellMessageToken = config.shellMessageToken.toStdString(),
 		.restrictedOrigin = config.restrictedOrigin.toStdString(),
+		.restrictedContentSecurityPolicy
+			= restrictedContent.policy.toStdString(),
 	});
-	if (_webview && !config.restrictedOrigin.isEmpty()) {
-		_webview->initAllFrames(restrictedScript.toStdString());
+	if (_webview && restricted) {
+		_webview->initAllFrames(restrictedContent.script.toStdString());
 	}
 	return (_webview != nullptr);
 }

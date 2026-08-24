@@ -57,6 +57,7 @@
 			<arg type='i' name='initialHeight' direction='in'/>
 			<arg type='b' name='allowThirdPartyCookies' direction='in'/>
 			<arg type='s' name='restrictedOrigin' direction='in'/>
+			<arg type='s' name='restrictedContentSecurityPolicy' direction='in'/>
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>

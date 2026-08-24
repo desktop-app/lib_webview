@@ -181,6 +181,7 @@ struct Config {
 	QSize initialSize;
 	std::string shellMessageToken;
 	std::string restrictedOrigin;
+	std::string restrictedContentSecurityPolicy;
 };
 
 struct Available {

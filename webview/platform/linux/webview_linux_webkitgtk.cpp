@@ -732,6 +732,7 @@ private:
 	Fn<void()> _interactionHandler;
 	std::string _dataRequestRedirectHost;
 	std::string _restrictedOrigin;
+	std::string _restrictedContentSecurityPolicy;
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
@@ -837,6 +838,12 @@ bool Instance::create(Config config) {
 	}
 
 	_restrictedOrigin = std::move(config.restrictedOrigin);
+	_restrictedContentSecurityPolicy = std::move(
+		config.restrictedContentSecurityPolicy);
+	if (!_restrictedOrigin.empty()
+		&& _restrictedContentSecurityPolicy.empty()) {
+		return false;
+	}
 	_debug = config.debug && _restrictedOrigin.empty();
 	_messageHandler = std::move(config.messageHandler);
 	_navigationStartHandler = std::move(config.navigationStartHandler);
@@ -870,6 +877,8 @@ bool Instance::create(Config config) {
 		const auto initialSize = config.initialSize;
 		const auto allowThirdPartyCookies = config.allowThirdPartyCookies;
 		const auto restrictedOrigin = _restrictedOrigin;
+		const auto restrictedContentSecurityPolicy
+			= _restrictedContentSecurityPolicy;
 		_helper.call_create(
 			debug,
 			r,
@@ -888,6 +897,7 @@ bool Instance::create(Config config) {
 			initialSize.height(),
 			allowThirdPartyCookies,
 			restrictedOrigin,
+			restrictedContentSecurityPolicy,
 			crl::guard(&guard, [&](
 					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
@@ -1016,6 +1026,10 @@ bool Instance::create(Config config) {
 	const auto baseData = base + "/data";
 
 	const auto restricted = !_restrictedOrigin.empty();
+	if (restricted
+		&& !webkit_web_view_get_default_content_security_policy) {
+		return false;
+	}
 	if (webkit_network_session_new) {
 		const auto session = restricted
 			? (webkit_network_session_new_ephemeral
@@ -1046,11 +1060,19 @@ bool Instance::create(Config config) {
 			g_object_unref(session);
 			return false;
 		}
-		_webview = WEBKIT_WEB_VIEW(g_object_new(
-			WEBKIT_TYPE_WEB_VIEW,
-			"network-session",
-			session,
-			nullptr));
+		_webview = restricted
+			? WEBKIT_WEB_VIEW(g_object_new(
+				WEBKIT_TYPE_WEB_VIEW,
+				"network-session",
+				session,
+				"default-content-security-policy",
+				_restrictedContentSecurityPolicy.c_str(),
+				nullptr))
+			: WEBKIT_WEB_VIEW(g_object_new(
+				WEBKIT_TYPE_WEB_VIEW,
+				"network-session",
+				session,
+				nullptr));
 		g_object_unref(session);
 	} else {
 		const auto data = restricted
@@ -1090,7 +1112,15 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		_webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
+		_webview = restricted
+			? WEBKIT_WEB_VIEW(g_object_new(
+				WEBKIT_TYPE_WEB_VIEW,
+				"web-context",
+				context,
+				"default-content-security-policy",
+				_restrictedContentSecurityPolicy.c_str(),
+				nullptr))
+			: WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
 		g_object_unref(context);
 	}
 
@@ -1590,6 +1620,26 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 bool Instance::decidePolicy(
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType) {
+	if (decisionType == WEBKIT_POLICY_DECISION_TYPE_RESPONSE
+		&& !_restrictedOrigin.empty()
+		&& webkit_response_policy_decision_is_main_frame_main_resource) {
+		const auto responseDecision = WEBKIT_RESPONSE_POLICY_DECISION(decision);
+		if (!webkit_response_policy_decision_is_main_frame_main_resource(
+				responseDecision)) {
+			return false;
+		}
+		const auto response = webkit_response_policy_decision_get_response(
+			responseDecision);
+		const auto mime = response
+			? webkit_uri_response_get_mime_type(response)
+			: nullptr;
+		if (!mime || g_ascii_strcasecmp(mime, "text/html")) {
+			webkit_policy_decision_ignore(decision);
+			_loadFailed = true;
+			return true;
+		}
+		return false;
+	}
 	if (decisionType != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
 		return false;
 	}
@@ -3064,7 +3114,8 @@ void Instance::registerHelperMethodHandlers() {
 			int initialWidth,
 			int initialHeight,
 			bool allowThirdPartyCookies,
-			const std::string &restrictedOrigin) {
+			const std::string &restrictedOrigin,
+			const std::string &restrictedContentSecurityPolicy) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
@@ -3080,6 +3131,8 @@ void Instance::registerHelperMethodHandlers() {
 			.initialSize = QSize(initialWidth, initialHeight),
 			.shellMessageToken = shellMessageToken,
 			.restrictedOrigin = restrictedOrigin,
+			.restrictedContentSecurityPolicy
+				= restrictedContentSecurityPolicy,
 		})) {
 			_helper.complete_create(invocation);
 		} else {
