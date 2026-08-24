@@ -51,6 +51,7 @@ struct WindowConfig {
 	QSize initialSize;
 	QString shellMessageToken;
 	QString restrictedOrigin;
+	std::optional<ProxySettings> proxySettings;
 };
 
 class Window final {
