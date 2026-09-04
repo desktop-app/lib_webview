@@ -15,6 +15,7 @@
 #include "base/flat_map.h"
 #include "base/invoke_queued.h"
 #include "base/options.h"
+#include "base/timer.h"
 #include "base/variant.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
@@ -41,6 +42,8 @@
 
 namespace Webview::EdgeChromium {
 namespace {
+
+constexpr auto kKeepActiveInterval = crl::time(1000);
 
 constexpr auto kDataUrlPrefix
 	= std::string_view("http://desktop-app-resource/");
@@ -125,6 +128,41 @@ HRESULT BlockRequest(
 		return (result != S_OK) ? result : E_FAIL;
 	}
 	return args->put_Response(response.get());
+}
+
+void KeepProcessesActive(
+		winrt::com_ptr<ICoreWebView2Environment> environment) {
+	const auto processes = environment.try_as<ICoreWebView2Environment8>();
+	auto infos = winrt::com_ptr<ICoreWebView2ProcessInfoCollection>();
+	if (!processes || processes->GetProcessInfos(infos.put()) != S_OK) {
+		return;
+	}
+	auto count = UINT();
+	if (!infos || infos->get_Count(&count) != S_OK) {
+		return;
+	}
+	for (auto i = UINT(); i != count; ++i) {
+		auto info = winrt::com_ptr<ICoreWebView2ProcessInfo>();
+		auto id = INT32();
+		if (infos->GetValueAtIndex(i, info.put()) != S_OK
+			|| !info
+			|| info->get_ProcessId(&id) != S_OK
+			|| id <= 0) {
+			continue;
+		}
+		const auto process = OpenProcess(
+			PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_INFORMATION,
+			FALSE,
+			id);
+		if (process) {
+			const auto guard = gsl::finally([&] { CloseHandle(process); });
+			const auto priority = GetPriorityClass(process);
+			if (priority == IDLE_PRIORITY_CLASS
+				|| priority == BELOW_NORMAL_PRIORITY_CLASS) {
+				SetPriorityClass(process, NORMAL_PRIORITY_CLASS);
+			}
+		}
+	}
 }
 
 class Handler
@@ -900,6 +938,7 @@ private:
 	void processNextReadyStep();
 	void resizeToWindow();
 
+	base::Timer _keepActiveTimer;
 	base::unique_qptr<QWindow> _window;
 	HWND _handle = nullptr;
 	winrt::com_ptr<IUnknown> _ownedHandler;
@@ -918,7 +957,12 @@ private:
 };
 
 Instance::Instance(Config &&config)
-: _window(MakeFramelessWindow())
+: _keepActiveTimer([=] {
+	if (_handler) {
+		KeepProcessesActive(_handler->environment());
+	}
+})
+, _window(MakeFramelessWindow())
 , _handle(HWND(_window->winId()))
 , _hidden(config.mode == WindowMode::Hidden) {
 	if (!_hidden) {
@@ -936,6 +980,7 @@ Instance::Instance(Config &&config)
 }
 
 Instance::~Instance() {
+	_keepActiveTimer.cancel();
 	if (_originalWndProc && _handle) {
 		SetWindowLongPtrW(
 			_handle,
@@ -963,6 +1008,9 @@ void Instance::start(Config &&config) {
 		: L"--disable-features=ElasticOverscroll,msSmartScreenProtection "
 			L"--force-webrtc-ip-handling-policy=disable_non_proxied_udp "
 			L"--mute-audio");
+	if (_hidden && !config.restrictedOrigin.empty()) {
+		_keepActiveTimer.callEach(kKeepActiveInterval);
+	}
 
 	auto handler = (Handler*)nullptr;
 	const auto ready = [=] {

@@ -788,6 +788,14 @@ Instance::Instance(Config config) {
 		configuration.allowsAirPlayForMediaPlayback = NO;
 		DisableRestrictedEngineFeatures(configuration);
 	}
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
+	if (restricted && config.mode == WindowMode::Hidden) {
+		if (@available(macOS 14.0, *)) {
+			configuration.preferences.inactiveSchedulingPolicy
+				= WKInactiveSchedulingPolicyNone;
+		}
+	}
+#endif // __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 	DisableClipboardReading(configuration.preferences);
 	const auto updateStates = [=] {
 		updateHistoryStates();
