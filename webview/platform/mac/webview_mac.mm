@@ -129,14 +129,20 @@ using TaskPointer = id<WKURLSchemeTask>;
 	return nil;
 }
 
-// The private WKPreferences keys reach -[WKPreferences _setPeerConnectionEnabled:]
-// and _setMediaDevicesEnabled: (WKPreferencesPrivate, macOS 10.13.4+) through
-// KVC's _set<Key>: lookup, exactly like developerExtrasEnabled above; the JS
-// lock script stays as the fallback if a future OS drops the keys. Lockdown
-// mode (public API, macOS 13+) additionally disables JIT, WebAssembly, WebGL
-// and a long list of legacy engine features for the whole page.
+// The private WKPreferences keys reach -[WKPreferences _setPeerConnectionEnabled:],
+// _setMediaDevicesEnabled: (WKPreferencesPrivate, macOS 10.13.4+) and
+// _setAllowsPictureInPictureMediaPlayback: through KVC's _set<Key>: lookup,
+// exactly like developerExtrasEnabled above; the JS lock script stays as the
+// fallback for the media keys if a future OS drops them. Picture-in-picture is
+// the one media presentation a windowless WKWebView could still surface on
+// screen, since element fullscreen stays off by default. Lockdown mode
+// (public API, macOS 13+) additionally disables JIT, WebAssembly, WebGL and
+// a long list of legacy engine features for the whole page.
 void DisableRestrictedEngineFeatures(WKWebViewConfiguration *configuration) {
-	for (NSString *key in @[@"peerConnectionEnabled", @"mediaDevicesEnabled"]) {
+	for (NSString *key in @[
+			@"peerConnectionEnabled",
+			@"mediaDevicesEnabled",
+			@"allowsPictureInPictureMediaPlayback"]) {
 		@try {
 			[configuration.preferences setValue:@NO forKey:key];
 		} @catch (NSException *exception) {
