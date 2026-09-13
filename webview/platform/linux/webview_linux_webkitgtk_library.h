@@ -87,6 +87,7 @@ typedef struct _GdkVisual GdkVisual;
 typedef struct _GdkWindow GdkWindow;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkNative GtkNative;
+typedef struct _GtkSettings GtkSettings;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkPlug GtkPlug;
@@ -270,6 +271,9 @@ inline void (*gtk_widget_set_visual)(
 	GtkWidget *widget,
 	GdkVisual *visual);
 inline gint (*gtk_widget_get_scale_factor)(GtkWidget *widget);
+inline void (*gtk_widget_queue_resize)(GtkWidget *widget);
+inline GtkSettings *(*gtk_settings_get_default)(void);
+inline gdouble (*gdk_screen_get_resolution)(GdkScreen *screen);
 inline gboolean (*gdk_display_is_composited)(GdkDisplay *display);
 inline gboolean (*gdk_screen_is_composited)(GdkScreen *screen);
 inline GdkVisual *(*gdk_screen_get_rgba_visual)(GdkScreen *screen);

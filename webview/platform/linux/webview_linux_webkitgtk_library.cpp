@@ -41,6 +41,8 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_provider_for_display)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_provider_for_screen))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_style_provider_get_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_settings_get_default)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_queue_resize)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_string)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_css_provider_load_from_data))
@@ -179,6 +181,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
 		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_announce_csd);
 		LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_size);
+		LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_resolution);
 	}
 	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
 		switch (platform) {

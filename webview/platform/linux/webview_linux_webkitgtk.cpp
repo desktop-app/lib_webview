@@ -590,6 +590,24 @@ void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
 	}
 }
 
+// WebKit zooms the page by the font DPI on its own, so a CSS pixel is
+// larger than a GTK logical one, see refreshInternalScaling() in WebKit.
+[[nodiscard]] double PageScale(GtkWidget *window) {
+	auto dpi = 0.;
+	if (!gdk_screen_get_resolution || !gtk_widget_get_screen) {
+		auto value = gint();
+		g_object_get(
+			gtk_settings_get_default(),
+			"gtk-xft-dpi",
+			&value,
+			nullptr);
+		dpi = value / 1024.;
+	} else if (const auto screen = gtk_widget_get_screen(window)) {
+		dpi = gdk_screen_get_resolution(screen);
+	}
+	return (dpi > 0.) ? (dpi / 96.) : 1.;
+}
+
 class Instance final : public Interface, public ::base::has_weak_ptr {
 public:
 	Instance(
@@ -719,6 +737,7 @@ private:
 	bool _fullscreen = false;
 	GdkToplevel *_frameExtentsToplevel = nullptr;
 	gulong _frameExtentsComputeSizeHandler = 0;
+	gulong _xftDpiChangedHandler = 0;
 
 	bool _debug = false;
 	std::function<void(Message)> _messageHandler;
@@ -769,6 +788,11 @@ Instance::~Instance() {
 	}
 	if (_backgroundProvider) {
 		g_object_unref(_backgroundProvider);
+	}
+	if (_xftDpiChangedHandler) {
+		g_signal_handler_disconnect(
+			gtk_settings_get_default(),
+			_xftDpiChangedHandler);
 	}
 	if (_window) {
 		if (_frameExtentsToplevel && _frameExtentsComputeSizeHandler) {
@@ -968,10 +992,11 @@ bool Instance::create(Config config) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
 		}
 		if (config.initialSize.width() > 0 && config.initialSize.height() > 0) {
+			const auto size = config.initialSize * PageScale(_window);
 			gtk_window_set_default_size(
 				GTK_WINDOW(_window),
-				config.initialSize.width(),
-				config.initialSize.height());
+				size.width(),
+				size.height());
 		}
 		const auto windowType = G_OBJECT_TYPE(_window);
 		if (g_signal_lookup("close-request", windowType)) {
@@ -1150,6 +1175,17 @@ bool Instance::create(Config config) {
 		G_CALLBACK(+[](Instance *instance) {
 			instance->announceCustomWindowFrame();
 			instance->updateWindowFrameExtents();
+		}),
+		this);
+	_xftDpiChangedHandler = g_signal_connect_swapped(
+		gtk_settings_get_default(),
+		"notify::gtk-xft-dpi",
+		G_CALLBACK(+[](Instance *instance) {
+			// GTK 4 takes the shadow width only in compute-size.
+			instance->updateWindowFrameExtents();
+			if (instance->_window) {
+				gtk_widget_queue_resize(instance->_window);
+			}
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1552,7 +1588,7 @@ void Instance::announceCustomWindowFrame() {
 
 QMargins Instance::windowFrameExtents() const {
 	return (!_fullscreen && customWindowFrame() && _windowSupportsAlpha)
-		? _windowMargins
+		? _windowMargins * PageScale(_window)
 		: QMargins();
 }
 
