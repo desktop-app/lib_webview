@@ -170,6 +170,10 @@ struct ProxySettings {
 	std::string port;
 	std::string username;
 	std::string password;
+
+	friend inline bool operator==(
+		const ProxySettings &,
+		const ProxySettings &) = default;
 };
 
 // QUrl percent-encodes userinfo and brackets IPv6 hosts for us.
