@@ -20,6 +20,7 @@
 #include <QtCore/QMargins>
 #include <QtCore/QRect>
 #include <QtCore/QSize>
+#include <QtCore/QUrl>
 #include <QtGui/QColor>
 
 // Inspired by https://github.com/webview/webview.
@@ -170,6 +171,23 @@ struct ProxySettings {
 	std::string username;
 	std::string password;
 };
+
+// QUrl percent-encodes userinfo and brackets IPv6 hosts for us.
+[[nodiscard]] inline std::optional<std::string> ProxyUri(
+		const ProxySettings &proxy) {
+	auto url = QUrl();
+	url.setScheme(QString("socks5"));
+	url.setHost(QString::fromStdString(proxy.host));
+	url.setPort(QString::fromStdString(proxy.port).toInt());
+	if (!proxy.username.empty()) {
+		url.setUserName(QString::fromStdString(proxy.username));
+		url.setPassword(QString::fromStdString(proxy.password));
+	}
+	if (!url.isValid() || url.host().isEmpty() || url.port() <= 0) {
+		return std::nullopt;
+	}
+	return url.toEncoded().toStdString();
+}
 
 struct Config {
 	QWidget *parent = nullptr;

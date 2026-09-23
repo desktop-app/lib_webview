@@ -11,6 +11,7 @@
 #include "webview/platform/win/webview_windows_data_stream.h"
 #include "base/algorithm.h"
 #include "base/basic_types.h"
+#include "base/debug_log.h"
 #include "base/event_filter.h"
 #include "base/flat_map.h"
 #include "base/invoke_queued.h"
@@ -1009,17 +1010,15 @@ void Instance::start(Config &&config) {
 			L"--mute-audio");
 	if (config.proxySettings
 		&& config.proxySettings->type == ProxyType::SOCKS5) {
-		const auto &proxy = *config.proxySettings;
-		arguments += L" --proxy-server=socks5://";
-		if (!proxy.username.empty()) {
-			arguments += ToWide(proxy.username);
-			arguments += L":";
-			arguments += ToWide(proxy.password);
-			arguments += L"@";
+		// Chromium SOCKS5 supports no auth, credentials break the rule.
+		const auto uri = config.proxySettings->username.empty()
+			? ProxyUri(*config.proxySettings)
+			: std::nullopt;
+		if (!uri) {
+			LOG(("WebView Error: Unsupported webview proxy settings."));
+			return;
 		}
-		arguments += ToWide(proxy.host);
-		arguments += L":";
-		arguments += ToWide(proxy.port);
+		arguments += L" --proxy-server=" + ToWide(*uri);
 	}
 	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
 		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
