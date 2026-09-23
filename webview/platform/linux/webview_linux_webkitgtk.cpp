@@ -906,6 +906,19 @@ bool Instance::create(Config config) {
 		const auto restrictedOrigin = _restrictedOrigin;
 		const auto restrictedContentSecurityPolicy
 			= _restrictedContentSecurityPolicy;
+		const auto proxyEnabled = config.proxySettings.has_value();
+		const auto proxyHost = proxyEnabled
+			? config.proxySettings->host
+			: std::string();
+		const auto proxyPort = proxyEnabled
+			? config.proxySettings->port
+			: std::string();
+		const auto proxyUsername = proxyEnabled
+			? config.proxySettings->username
+			: std::string();
+		const auto proxyPassword = proxyEnabled
+			? config.proxySettings->password
+			: std::string();
 		_helper.call_create(
 			debug,
 			r,
@@ -925,6 +938,11 @@ bool Instance::create(Config config) {
 			allowThirdPartyCookies,
 			restrictedOrigin,
 			restrictedContentSecurityPolicy,
+			proxyEnabled,
+			proxyHost,
+			proxyPort,
+			proxyUsername,
+			proxyPassword,
 			crl::guard(&guard, [&](
 					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
@@ -3238,7 +3256,12 @@ void Instance::registerHelperMethodHandlers() {
 			int initialHeight,
 			bool allowThirdPartyCookies,
 			const std::string &restrictedOrigin,
-			const std::string &restrictedContentSecurityPolicy) {
+			const std::string &restrictedContentSecurityPolicy,
+			bool proxyEnabled,
+			const std::string &proxyHost,
+			const std::string &proxyPort,
+			const std::string &proxyUsername,
+			const std::string &proxyPassword) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
@@ -3256,6 +3279,15 @@ void Instance::registerHelperMethodHandlers() {
 			.restrictedOrigin = restrictedOrigin,
 			.restrictedContentSecurityPolicy
 				= restrictedContentSecurityPolicy,
+			.proxySettings = proxyEnabled
+				? std::optional<ProxySettings>(ProxySettings{
+					.type = ProxyType::SOCKS5,
+					.host = proxyHost,
+					.port = proxyPort,
+					.username = proxyUsername,
+					.password = proxyPassword,
+				})
+				: std::nullopt,
 		})) {
 			_helper.complete_create(invocation);
 		} else {

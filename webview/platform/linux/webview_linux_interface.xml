@@ -58,6 +58,11 @@
 			<arg type='b' name='allowThirdPartyCookies' direction='in'/>
 			<arg type='s' name='restrictedOrigin' direction='in'/>
 			<arg type='s' name='restrictedContentSecurityPolicy' direction='in'/>
+			<arg type='b' name='proxyEnabled' direction='in'/>
+			<arg type='s' name='proxyHost' direction='in'/>
+			<arg type='s' name='proxyPort' direction='in'/>
+			<arg type='s' name='proxyUsername' direction='in'/>
+			<arg type='s' name='proxyPassword' direction='in'/>
 		</method>
 		<method name='Reload'/>
 		<method name='Resolve'>
