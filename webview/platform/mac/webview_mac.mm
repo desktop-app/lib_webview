@@ -820,27 +820,32 @@ Instance::Instance(Config config) {
 				[configuration setWebsiteDataStore:[WKWebsiteDataStore dataStoreForIdentifier:uuid]];
 				[uuid release];
 			}
-			if (config.proxySettings
-				&& config.proxySettings->type == ProxyType::SOCKS5) {
-				const auto &proxy = *config.proxySettings;
-				auto store = configuration.websiteDataStore;
-				if (!store) {
-					store = [WKWebsiteDataStore defaultDataStore];
-					[configuration setWebsiteDataStore:store];
-				}
-				nw_endpoint_t endpoint = nw_endpoint_create_host(
-					proxy.host.c_str(),
-					proxy.port.c_str());
-				nw_proxy_config_t proxyConfig
-					= nw_proxy_config_create_socksv5(endpoint);
-				if (!proxy.username.empty()) {
-					nw_proxy_config_set_username_and_password(
-						proxyConfig,
-						proxy.username.c_str(),
-						proxy.password.c_str());
-				}
-				store.proxyConfigurations = @[ (id)proxyConfig ];
+		}
+	}
+	if (config.proxySettings
+		&& config.proxySettings->type == ProxyType::SOCKS5) {
+		const auto &proxy = *config.proxySettings;
+		if (@available(macOS 14, *)) {
+			auto store = configuration.websiteDataStore;
+			if (!store) {
+				store = [WKWebsiteDataStore defaultDataStore];
+				[configuration setWebsiteDataStore:store];
 			}
+			nw_endpoint_t endpoint = nw_endpoint_create_host(
+				proxy.host.c_str(),
+				proxy.port.c_str());
+			nw_proxy_config_t proxyConfig
+				= nw_proxy_config_create_socksv5(endpoint);
+			if (!proxy.username.empty()) {
+				nw_proxy_config_set_username_and_password(
+					proxyConfig,
+					proxy.username.c_str(),
+					proxy.password.c_str());
+			}
+			store.proxyConfigurations = @[ (id)proxyConfig ];
+		} else {
+			// Older macOS cannot apply proxy settings, fail instead of leaking.
+			return;
 		}
 	}
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
