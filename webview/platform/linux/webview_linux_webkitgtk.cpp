@@ -100,6 +100,19 @@ std::string SocketPath;
 	return result;
 }
 
+// WebKit rejects unbracketed IPv6 hosts and reserved chars in userinfo.
+[[nodiscard]] std::string ProxyUri(const ProxySettings &proxy) {
+	auto url = QUrl();
+	url.setScheme(QString("socks5"));
+	url.setHost(QString::fromStdString(proxy.host));
+	url.setPort(QString::fromStdString(proxy.port).toInt());
+	if (!proxy.username.empty()) {
+		url.setUserName(QString::fromStdString(proxy.username));
+		url.setPassword(QString::fromStdString(proxy.password));
+	}
+	return url.toEncoded().toStdString();
+}
+
 [[nodiscard]] bool SetCookiePolicy(
 		WebKitCookieManager *manager,
 		WebKitCookieAcceptPolicy policy) {
@@ -1081,20 +1094,13 @@ bool Instance::create(Config config) {
 			|| config.proxySettings->type != ProxyType::SOCKS5) {
 			return nullptr;
 		}
-		const auto &proxy = *config.proxySettings;
-		const auto uri = proxy.username.empty()
-			? std::format(
-				"socks5://{}:{}",
-				proxy.host,
-				proxy.port)
-			: std::format(
-				"socks5://{}:{}@{}:{}",
-				proxy.username,
-				proxy.password,
-				proxy.host,
-				proxy.port);
+		const auto uri = ProxyUri(*config.proxySettings);
 		return webkit_network_proxy_settings_new(uri.c_str(), nullptr);
 	}();
+	if (config.proxySettings && !proxySettings) {
+		LOG(("WebView Error: Could not apply proxy settings."));
+		return false;
+	}
 	const auto proxyGuard = gsl::finally([&] {
 		if (proxySettings) {
 			webkit_network_proxy_settings_free(proxySettings);
@@ -1111,7 +1117,12 @@ bool Instance::create(Config config) {
 		if (!session) {
 			return false;
 		}
-		if (proxySettings && webkit_network_session_set_proxy_settings) {
+		if (proxySettings) {
+			if (!webkit_network_session_set_proxy_settings) {
+				g_critical("Proxy settings API is unavailable.");
+				g_object_unref(session);
+				return false;
+			}
 			webkit_network_session_set_proxy_settings(
 				session,
 				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
@@ -1162,8 +1173,12 @@ bool Instance::create(Config config) {
 		if (!data) {
 			return false;
 		}
-		if (proxySettings
-			&& webkit_website_data_manager_set_network_proxy_settings) {
+		if (proxySettings) {
+			if (!webkit_website_data_manager_set_network_proxy_settings) {
+				g_critical("Proxy settings API is unavailable.");
+				g_object_unref(data);
+				return false;
+			}
 			webkit_website_data_manager_set_network_proxy_settings(
 				data,
 				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
