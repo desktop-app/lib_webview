@@ -133,6 +133,7 @@ typedef struct _WebKitWebContext WebKitWebContext;
 typedef struct _WebKitNetworkSession WebKitNetworkSession;
 typedef struct _WebKitCookieManager WebKitCookieManager;
 typedef struct _WebKitDownload WebKitDownload;
+typedef struct _WebKitNetworkProxySettings WebKitNetworkProxySettings;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
 typedef struct _WebKitPermissionRequest WebKitPermissionRequest;
@@ -219,6 +220,12 @@ typedef enum {
 	WEBKIT_COOKIE_POLICY_ACCEPT_NEVER,
 	WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY,
 } WebKitCookieAcceptPolicy;
+
+typedef enum {
+    WEBKIT_NETWORK_PROXY_MODE_DEFAULT,
+    WEBKIT_NETWORK_PROXY_MODE_NO_PROXY,
+    WEBKIT_NETWORK_PROXY_MODE_CUSTOM
+} WebKitNetworkProxyMode;
 
 namespace Webview::WebKitGTK::Library {
 
@@ -550,6 +557,10 @@ inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new)(
 	const gchar *first_option_name,
 	...);
 inline WebKitWebsiteDataManager *(*webkit_website_data_manager_new_ephemeral)(void);
+inline void (*webkit_website_data_manager_set_network_proxy_settings)(
+	WebKitWebsiteDataManager *manager,
+	WebKitNetworkProxyMode proxy_mode,
+	WebKitNetworkProxySettings *proxy_settings);
 inline WebKitWebContext *(*webkit_web_context_new_with_website_data_manager)(
 	WebKitWebsiteDataManager* manager);
 inline void (*webkit_web_context_set_sandbox_enabled)(
@@ -570,6 +581,15 @@ inline void (*webkit_download_cancel)(WebKitDownload *download);
 inline void (*webkit_settings_set_media_playback_requires_user_gesture)(
 	WebKitSettings *settings,
 	gboolean enabled);
+inline void (*webkit_network_session_set_proxy_settings)(
+	WebKitNetworkSession *session,
+	WebKitNetworkProxyMode proxy_mode,
+	WebKitNetworkProxySettings *proxy_settings);
+inline WebKitNetworkProxySettings *(*webkit_network_proxy_settings_new)(
+	const gchar* default_proxy_uri,
+	const gchar* const* ignore_hosts);
+inline void (*webkit_network_proxy_settings_free)(
+		WebKitNetworkProxySettings *proxy_settings);
 inline void (*webkit_authentication_request_authenticate)(
 	WebKitAuthenticationRequest *request,
 	WebKitCredential *credential);

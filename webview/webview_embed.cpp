@@ -179,6 +179,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.restrictedOrigin = config.restrictedOrigin.toStdString(),
 		.restrictedContentSecurityPolicy
 			= restrictedContent.policy.toStdString(),
+		.proxySettings = config.proxySettings,
 	});
 	if (_webview && restricted) {
 		_webview->initAllFrames(restrictedContent.script.toStdString());

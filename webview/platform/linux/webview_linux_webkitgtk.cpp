@@ -21,6 +21,7 @@
 #include "base/weak_ptr.h"
 #include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
+#include "webview/webview_interface.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
@@ -905,6 +906,19 @@ bool Instance::create(Config config) {
 		const auto restrictedOrigin = _restrictedOrigin;
 		const auto restrictedContentSecurityPolicy
 			= _restrictedContentSecurityPolicy;
+		const auto proxyEnabled = config.proxySettings.has_value();
+		const auto proxyHost = proxyEnabled
+			? config.proxySettings->host
+			: std::string();
+		const auto proxyPort = proxyEnabled
+			? config.proxySettings->port
+			: std::string();
+		const auto proxyUsername = proxyEnabled
+			? config.proxySettings->username
+			: std::string();
+		const auto proxyPassword = proxyEnabled
+			? config.proxySettings->password
+			: std::string();
 		_helper.call_create(
 			debug,
 			r,
@@ -924,6 +938,11 @@ bool Instance::create(Config config) {
 			allowThirdPartyCookies,
 			restrictedOrigin,
 			restrictedContentSecurityPolicy,
+			proxyEnabled,
+			proxyHost,
+			proxyPort,
+			proxyUsername,
+			proxyPassword,
 			crl::guard(&guard, [&](
 					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
@@ -1057,6 +1076,25 @@ bool Instance::create(Config config) {
 		&& !webkit_web_view_get_default_content_security_policy) {
 		return false;
 	}
+	const auto proxySettings = [&]() -> WebKitNetworkProxySettings* {
+		if (!config.proxySettings
+			|| config.proxySettings->type != ProxyType::SOCKS5) {
+			return nullptr;
+		}
+		const auto uri = ProxyUri(*config.proxySettings);
+		return uri
+			? webkit_network_proxy_settings_new(uri->c_str(), nullptr)
+			: nullptr;
+	}();
+	if (config.proxySettings && !proxySettings) {
+		LOG(("WebView Error: Could not apply proxy settings."));
+		return false;
+	}
+	const auto proxyGuard = gsl::finally([&] {
+		if (proxySettings) {
+			webkit_network_proxy_settings_free(proxySettings);
+		}
+	});
 	if (webkit_network_session_new) {
 		const auto session = restricted
 			? (webkit_network_session_new_ephemeral
@@ -1067,6 +1105,17 @@ bool Instance::create(Config config) {
 				baseCache.c_str());
 		if (!session) {
 			return false;
+		}
+		if (proxySettings) {
+			if (!webkit_network_session_set_proxy_settings) {
+				g_critical("Proxy settings API is unavailable.");
+				g_object_unref(session);
+				return false;
+			}
+			webkit_network_session_set_proxy_settings(
+				session,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
 		}
 		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_network_session_get_cookie_manager
@@ -1112,6 +1161,17 @@ bool Instance::create(Config config) {
 				nullptr);
 		if (!data) {
 			return false;
+		}
+		if (proxySettings) {
+			if (!webkit_website_data_manager_set_network_proxy_settings) {
+				g_critical("Proxy settings API is unavailable.");
+				g_object_unref(data);
+				return false;
+			}
+			webkit_website_data_manager_set_network_proxy_settings(
+				data,
+				WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+				proxySettings);
 		}
 		if (restricted || config.allowThirdPartyCookies) {
 			const auto manager = webkit_website_data_manager_get_cookie_manager
@@ -3200,7 +3260,12 @@ void Instance::registerHelperMethodHandlers() {
 			int initialHeight,
 			bool allowThirdPartyCookies,
 			const std::string &restrictedOrigin,
-			const std::string &restrictedContentSecurityPolicy) {
+			const std::string &restrictedContentSecurityPolicy,
+			bool proxyEnabled,
+			const std::string &proxyHost,
+			const std::string &proxyPort,
+			const std::string &proxyUsername,
+			const std::string &proxyPassword) {
 		if (create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
@@ -3218,6 +3283,15 @@ void Instance::registerHelperMethodHandlers() {
 			.restrictedOrigin = restrictedOrigin,
 			.restrictedContentSecurityPolicy
 				= restrictedContentSecurityPolicy,
+			.proxySettings = proxyEnabled
+				? std::optional<ProxySettings>(ProxySettings{
+					.type = ProxyType::SOCKS5,
+					.host = proxyHost,
+					.port = proxyPort,
+					.username = proxyUsername,
+					.password = proxyPassword,
+				})
+				: std::nullopt,
 		})) {
 			_helper.complete_create(invocation);
 		} else {
