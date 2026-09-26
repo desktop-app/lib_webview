@@ -243,6 +243,8 @@ inline void (*gtk_window_set_default_size)(
 	GtkWindow *window,
 	gint width,
 	gint height);
+inline void (*gtk_window_set_startup_id)(GtkWindow *window, const char *startup_id);
+inline void (*gtk_window_present)(GtkWindow *window);
 inline void (*gtk_window_fullscreen)(GtkWindow *window);
 inline void (*gtk_window_unfullscreen)(GtkWindow *window);
 inline GtkWidget *(*gtk_scrolled_window_new)(
@@ -332,6 +334,7 @@ inline GType (*gdk_wayland_toplevel_get_type)(void);
 inline GType (*gdk_wayland_window_get_type)(void);
 inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *surface);
 inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
+inline guint32 (*gdk_x11_get_server_time)(void *window); // GdkWindow on GTK3, GdkSurface on GTK4
 inline void (*gdk_window_set_shadow_width)(
 	GdkWindow *window,
 	gint left,

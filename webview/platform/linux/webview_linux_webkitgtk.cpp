@@ -15,6 +15,7 @@
 #include "base/algorithm.h"
 #include "base/debug_log.h"
 #include "base/integration.h"
+#include "base/invoke_queued.h"
 #include "base/random.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
@@ -738,6 +739,7 @@ private:
 	GdkToplevel *_frameExtentsToplevel = nullptr;
 	gulong _frameExtentsComputeSizeHandler = 0;
 	gulong _xftDpiChangedHandler = 0;
+	std::string _xdgActivationToken;
 
 	bool _debug = false;
 	std::function<void(Message)> _messageHandler;
@@ -2169,9 +2171,56 @@ void Instance::scheduleQueuedEvals() {
 }
 
 void Instance::focus() {
-	if (const auto widget = _widget.get()) {
-		widget->activateWindow();
+	if (_mode != WindowMode::External) {
+		if (const auto widget = _widget.get()) {
+			widget->activateWindow();
+		}
+		return;
 	}
+
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		// Give Wayland QPA time to process focus window change
+		// in case we're called by a click on unfocused window
+		InvokeQueued(qApp, crl::guard(this, [=] {
+			::base::Platform::RunWithXdgActivationToken(crl::guard(
+				this,
+				[=](const QString &token) {
+					_helper.call_focus(token.toStdString(), nullptr);
+				}));
+		}));
+		return;
+	}
+
+	const auto window = GTK_WINDOW(_window);
+	const auto startupId = [&] {
+		if (!_xdgActivationToken.empty()) {
+			return ::base::take(_xdgActivationToken);
+		} else if (gtk_native_get_surface) {
+			if (const auto surface = GtkNativeSurface(_window)) {
+				if (IsGdkX11Surface(surface) && gdk_x11_get_server_time) {
+					return std::string("_TIME")
+						+ std::to_string(gdk_x11_get_server_time(surface));
+				}
+			}
+		} else if (gtk_widget_get_window) {
+			if (const auto gdkWindow = gtk_widget_get_window(_window)) {
+				if (IsGdkX11Window(gdkWindow) && gdk_x11_get_server_time) {
+					return std::string("_TIME")
+						+ std::to_string(gdk_x11_get_server_time(gdkWindow));
+				}
+			}
+		}
+		return std::string();
+	}();
+
+	if (!startupId.empty()) {
+		gtk_window_set_startup_id(window, startupId.c_str());
+	}
+	gtk_window_present(window);
 }
 
 void Instance::setInteractionHandler(Fn<void()> handler) {
@@ -3254,6 +3303,16 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &js) {
 		eval(js);
 		_helper.complete_eval(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_focus().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			std::string token) {
+		_xdgActivationToken = token;
+		focus();
+		_helper.complete_focus(invocation);
 		return true;
 	});
 

@@ -28,6 +28,8 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_title)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_default_size)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_startup_id)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_present)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
@@ -159,6 +161,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_get_server_time);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_window_set_shadow_width);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);

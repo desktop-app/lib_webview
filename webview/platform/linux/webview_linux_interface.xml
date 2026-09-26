@@ -86,6 +86,9 @@
 		<method name='Eval'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>
+		<method name='Focus'>
+			<arg type='s' name='token' direction='in'/>
+		</method>
 		<method name='SetOpaqueBg'>
 			<arg type='i' name='r' direction='in'/>
 			<arg type='i' name='g' direction='in'/>
