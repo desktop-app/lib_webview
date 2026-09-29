@@ -1083,7 +1083,7 @@ bool Instance::create(Config config) {
 				return false;
 			}
 		}
-		if (restricted && !BlockDownloads(G_OBJECT(session))) {
+		if (!BlockDownloads(G_OBJECT(session)) && restricted) {
 			g_object_unref(session);
 			return false;
 		}
@@ -1134,7 +1134,7 @@ bool Instance::create(Config config) {
 		if (restricted && webkit_web_context_set_sandbox_enabled) {
 			webkit_web_context_set_sandbox_enabled(context, true);
 		}
-		if (restricted && !BlockDownloads(G_OBJECT(context))) {
+		if (!BlockDownloads(G_OBJECT(context)) && restricted) {
 			g_object_unref(context);
 			return false;
 		}

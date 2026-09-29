@@ -413,20 +413,18 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	_webview->add_ScriptDialogOpening(this, &token);
 	_webview->add_WebResourceRequested(this, &token);
 	const auto downloads = _webview.try_as<ICoreWebView2_4>();
+	const auto downloadsBlocked = downloads
+		&& (downloads->add_DownloadStarting(this, &token) == S_OK);
 	if (!_restrictedOrigin.empty()) {
-		if (!downloads) {
+		if (!downloadsBlocked) {
 			return E_NOINTERFACE;
-		}
-		auto result = downloads->add_DownloadStarting(this, &token);
-		if (result != S_OK) {
-			return result;
 		}
 		const auto authentication = _webview.try_as<ICoreWebView2_10>();
 		const auto certificates = _webview.try_as<ICoreWebView2_5>();
 		if (!authentication || !certificates) {
 			return E_NOINTERFACE;
 		}
-		result = authentication->add_BasicAuthenticationRequested(
+		auto result = authentication->add_BasicAuthenticationRequested(
 			this,
 			&token);
 		if (result != S_OK) {
@@ -829,10 +827,8 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		ICoreWebView2 *sender,
 		ICoreWebView2DownloadStartingEventArgs *args) {
-	if (!_restrictedOrigin.empty()) {
-		args->put_Cancel(TRUE);
-		args->put_Handled(TRUE);
-	}
+	args->put_Cancel(TRUE);
+	args->put_Handled(TRUE);
 	return S_OK;
 }
 
