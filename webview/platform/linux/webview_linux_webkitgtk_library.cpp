@@ -56,6 +56,19 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
+		&& ((LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_current_event_time)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_set_propagation_phase)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_reset)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_set_state)
+				&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_get_device))
+			|| (LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_move_drag_for_device)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_resize_drag_for_device)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_event_type)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_button)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_coords)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_root_coords)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_device)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_time)))
 		&& LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_navigation_action)
@@ -145,8 +158,6 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_move_drag);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_window_begin_resize_drag);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);

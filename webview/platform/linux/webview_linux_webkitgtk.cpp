@@ -214,8 +214,7 @@ inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 
 enum class ShellControlAction {
 	None,
-	BeginMove,
-	BeginResize,
+	SetDragRegions,
 };
 
 enum class ShellControlParseStatus {
@@ -231,15 +230,6 @@ struct ShellControlMessage {
 	QJsonObject arguments;
 };
 
-[[nodiscard]] std::optional<double> JsonNumber(
-		const QJsonObject &arguments,
-		const char *key) {
-	const auto value = arguments.value(QString::fromLatin1(key));
-	return value.isDouble()
-		? std::make_optional(value.toDouble())
-		: std::nullopt;
-}
-
 [[nodiscard]] std::string JavascriptMessageText(void *message) {
 	const auto value = jsc_value_to_string(
 		!webkit_javascript_result_get_js_value
@@ -254,12 +244,9 @@ struct ShellControlMessage {
 
 [[nodiscard]] ShellControlAction ShellControlActionFromCommand(
 		const QString &command) {
-	if (command == "shell_begin_move") {
-		return ShellControlAction::BeginMove;
-	} else if (command == "shell_begin_resize") {
-		return ShellControlAction::BeginResize;
-	}
-	return ShellControlAction::None;
+	return (command == "shell_set_drag_regions")
+		? ShellControlAction::SetDragRegions
+		: ShellControlAction::None;
 }
 
 [[nodiscard]] bool IsExternalShellOrigin(const QString &origin) {
@@ -322,82 +309,30 @@ struct ShellControlMessage {
 	};
 }
 
-[[nodiscard]] int ShellControlButton(const QJsonObject &arguments) {
-	if (const auto button = JsonNumber(arguments, "gdkButton")) {
-		return static_cast<int>(*button);
-	} else if (const auto button = JsonNumber(arguments, "button")) {
-		const auto value = static_cast<int>(*button);
-		return (value >= 0 && value <= 2) ? (value + 1) : value;
+[[nodiscard]] std::optional<std::vector<QRectF>> ShellRegions(
+		const QJsonObject &arguments,
+		const char *key) {
+	const auto value = arguments.value(QString::fromLatin1(key));
+	if (!value.isArray()) {
+		return std::nullopt;
 	}
-	return 1;
-}
-
-[[nodiscard]] guint32 ShellControlTimestamp(const QJsonObject &arguments) {
-	if (const auto timestamp = JsonNumber(arguments, "timestamp")) {
-		return static_cast<guint32>(*timestamp);
-	} else if (const auto timestamp = JsonNumber(arguments, "timeStamp")) {
-		return static_cast<guint32>(*timestamp);
-	} else if (const auto timestamp = JsonNumber(arguments, "time")) {
-		return static_cast<guint32>(*timestamp);
+	const auto isNumber = [](const QJsonValue &number) {
+		return number.isDouble();
+	};
+	auto result = std::vector<QRectF>();
+	for (const auto &entry : value.toArray()) {
+		const auto values = entry.toArray();
+		if (values.size() != 4
+			|| !std::all_of(values.begin(), values.end(), isNumber)) {
+			return std::nullopt;
+		}
+		result.emplace_back(
+			values[0].toDouble(),
+			values[1].toDouble(),
+			values[2].toDouble(),
+			values[3].toDouble());
 	}
-	return 0;
-}
-
-[[nodiscard]] std::pair<double, double> ShellControlSurfacePosition(
-		const QJsonObject &arguments) {
-	const auto x = JsonNumber(arguments, "x").value_or(
-		JsonNumber(arguments, "clientX").value_or(0.));
-	const auto y = JsonNumber(arguments, "y").value_or(
-		JsonNumber(arguments, "clientY").value_or(0.));
-	return { x, y };
-}
-
-[[nodiscard]] std::optional<std::pair<int, int>> ShellControlRootPosition(
-		const QJsonObject &arguments) {
-	const auto x = JsonNumber(arguments, "rootX").value_or(
-		JsonNumber(arguments, "screenX").value_or(-1.));
-	const auto y = JsonNumber(arguments, "rootY").value_or(
-		JsonNumber(arguments, "screenY").value_or(-1.));
-	return (x >= 0.) && (y >= 0.)
-		? std::make_optional(std::pair<int, int>{
-			static_cast<int>(x),
-			static_cast<int>(y),
-		})
-		: std::nullopt;
-}
-
-[[nodiscard]] std::optional<int> ShellControlResizeEdge(
-		const QJsonObject &arguments) {
-	const auto value = arguments.value("edge");
-	if (value.isDouble()) {
-		const auto edge = static_cast<int>(value.toDouble(-1));
-		return (edge >= 0) && (edge <= 7)
-			? std::make_optional(edge)
-			: std::nullopt;
-	}
-	const auto edge = value.toString();
-	if (edge == "north_west" || edge == "north-west"
-		|| edge == "top_left" || edge == "top-left") {
-		return 0;
-	} else if (edge == "north" || edge == "top") {
-		return 1;
-	} else if (edge == "north_east" || edge == "north-east"
-		|| edge == "top_right" || edge == "top-right") {
-		return 2;
-	} else if (edge == "west" || edge == "left") {
-		return 3;
-	} else if (edge == "east" || edge == "right") {
-		return 4;
-	} else if (edge == "south_west" || edge == "south-west"
-		|| edge == "bottom_left" || edge == "bottom-left") {
-		return 5;
-	} else if (edge == "south" || edge == "bottom") {
-		return 6;
-	} else if (edge == "south_east" || edge == "south-east"
-		|| edge == "bottom_right" || edge == "bottom-right") {
-		return 7;
-	}
-	return std::nullopt;
+	return result;
 }
 
 [[nodiscard]] bool ValidPopupAnchorSize(int width, int height) {
@@ -653,8 +588,13 @@ private:
 		std::string js,
 		WebKitUserContentInjectedFrames frames);
 	bool handleShellControlMessage(const std::string &message);
-	void beginShellMove(const QJsonObject &arguments);
-	void beginShellResize(const QJsonObject &arguments);
+	void setShellDragRegions(const QJsonObject &arguments);
+	[[nodiscard]] std::optional<GdkSurfaceEdge> shellResizeEdge(
+		QPointF point,
+		QSizeF size) const;
+	[[nodiscard]] bool shellMoveArea(QPointF point) const;
+	void pressed(GtkGesture *gesture, double x, double y);
+	[[nodiscard]] bool pressed(GdkEvent *event);
 	[[nodiscard]] bool notifyExternalWindowClosed();
 	[[nodiscard]] bool customWindowFrame() const;
 	[[nodiscard]] bool transparentWindowBackground() const;
@@ -734,6 +674,8 @@ private:
 	bool _waylandPopupAnchorExportAllowed = false;
 	bool _waylandPopupAnchorExportPending = false;
 	QMargins _windowMargins;
+	std::vector<QRectF> _shellDragRegions;
+	std::vector<QRectF> _shellNoDragRegions;
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
 	GdkToplevel *_frameExtentsToplevel = nullptr;
@@ -1315,23 +1257,24 @@ bool Instance::create(Config config) {
 		&& gtk_gesture_click_new
 		&& gtk_event_controller_key_new
 		&& gtk_event_controller_get_type) {
+		// Ahead of WebKit's own gestures, so the page doesn't get the press.
 		const auto click = gtk_gesture_click_new();
+		gtk_event_controller_set_propagation_phase(
+			GTK_EVENT_CONTROLLER(click),
+			GTK_PHASE_CAPTURE);
 		g_signal_connect_swapped(
 			click,
 			"pressed",
 			G_CALLBACK(+[](
 				Instance *instance,
 				int,
-				double,
-				double) {
-				if (instance->_master) {
-					instance->_master.call_user_interaction(nullptr);
-				}
+				double x,
+				double y,
+				GtkGesture *gesture) {
+				instance->pressed(gesture, x, y);
 			}),
 			this);
-		gtk_widget_add_controller(
-			GTK_WIDGET(_webview),
-			GTK_EVENT_CONTROLLER(click));
+		gtk_widget_add_controller(_window, GTK_EVENT_CONTROLLER(click));
 		const auto key = gtk_event_controller_key_new();
 		g_signal_connect_swapped(
 			key,
@@ -1351,18 +1294,17 @@ bool Instance::create(Config config) {
 			GTK_WIDGET(_webview),
 			key);
 	} else {
-		g_signal_connect_swapped(
-			_webview,
-			"button-press-event",
-			G_CALLBACK(+[](
-				Instance *instance,
-				GdkEventButton*) -> gboolean {
-				if (instance->_master) {
-					instance->_master.call_user_interaction(nullptr);
-				}
-				return FALSE;
-			}),
-			this);
+		for (const auto signal : { "button-press-event", "touch-event" }) {
+			g_signal_connect_swapped(
+				_webview,
+				signal,
+				G_CALLBACK(+[](
+					Instance *instance,
+					GdkEvent *event) -> gboolean {
+					return instance->pressed(event);
+				}),
+				this);
+		}
 		g_signal_connect_swapped(
 			_webview,
 			"key-press-event",
@@ -1476,11 +1418,8 @@ bool Instance::handleShellControlMessage(const std::string &message) {
 		return true;
 	}
 	switch (parsed.action) {
-	case ShellControlAction::BeginMove:
-		beginShellMove(parsed.arguments);
-		return true;
-	case ShellControlAction::BeginResize:
-		beginShellResize(parsed.arguments);
+	case ShellControlAction::SetDragRegions:
+		setShellDragRegions(parsed.arguments);
 		return true;
 	case ShellControlAction::None:
 		return false;
@@ -1488,64 +1427,159 @@ bool Instance::handleShellControlMessage(const std::string &message) {
 	return false;
 }
 
-void Instance::beginShellMove(const QJsonObject &arguments) {
-	if (gdk_toplevel_begin_move && gtk_native_get_surface) {
-		if (const auto toplevel = GdkToplevelFromSurface(
-				GtkNativeSurface(_window))) {
-			const auto [x, y] = ShellControlSurfacePosition(arguments);
-			gdk_toplevel_begin_move(
-				toplevel,
-				nullptr,
-				ShellControlButton(arguments),
-				x,
-				y,
-				ShellControlTimestamp(arguments));
-			return;
-		}
-	}
-	if (gtk_window_begin_move_drag) {
-		if (const auto position = ShellControlRootPosition(arguments)) {
-			gtk_window_begin_move_drag(
-				GTK_WINDOW(_window),
-				ShellControlButton(arguments),
-				position->first,
-				position->second,
-				ShellControlTimestamp(arguments));
-		}
-	}
-}
-
-void Instance::beginShellResize(const QJsonObject &arguments) {
-	const auto edge = ShellControlResizeEdge(arguments);
-	if (!edge) {
+void Instance::setShellDragRegions(const QJsonObject &arguments) {
+	auto drag = ShellRegions(arguments, "drag");
+	auto noDrag = ShellRegions(arguments, "noDrag");
+	if (!drag || !noDrag) {
 		return;
 	}
-	if (gdk_toplevel_begin_resize && gtk_native_get_surface) {
-		if (const auto toplevel = GdkToplevelFromSurface(
-				GtkNativeSurface(_window))) {
-			const auto [x, y] = ShellControlSurfacePosition(arguments);
-			gdk_toplevel_begin_resize(
-				toplevel,
-				static_cast<GdkSurfaceEdge>(*edge),
-				nullptr,
-				ShellControlButton(arguments),
-				x,
-				y,
-				ShellControlTimestamp(arguments));
-			return;
-		}
+	_shellDragRegions = std::move(*drag);
+	_shellNoDragRegions = std::move(*noDrag);
+}
+
+std::optional<GdkSurfaceEdge> Instance::shellResizeEdge(
+		QPointF point,
+		QSizeF size) const {
+	if (_fullscreen) {
+		return std::nullopt;
 	}
-	if (gtk_window_begin_resize_drag) {
-		if (const auto position = ShellControlRootPosition(arguments)) {
-			gtk_window_begin_resize_drag(
-				GTK_WINDOW(_window),
-				static_cast<GdkWindowEdge>(*edge),
-				ShellControlButton(arguments),
-				position->first,
-				position->second,
-				ShellControlTimestamp(arguments));
-		}
+	const auto margins = QMarginsF(_windowMargins) * PageScale(_window);
+	const auto left = (point.x() < margins.left());
+	const auto right = (point.x() >= size.width() - margins.right());
+	if (point.y() < margins.top()) {
+		return left
+			? GDK_SURFACE_EDGE_NORTH_WEST
+			: right
+			? GDK_SURFACE_EDGE_NORTH_EAST
+			: GDK_SURFACE_EDGE_NORTH;
+	} else if (point.y() >= size.height() - margins.bottom()) {
+		return left
+			? GDK_SURFACE_EDGE_SOUTH_WEST
+			: right
+			? GDK_SURFACE_EDGE_SOUTH_EAST
+			: GDK_SURFACE_EDGE_SOUTH;
+	} else if (left) {
+		return GDK_SURFACE_EDGE_WEST;
+	} else if (right) {
+		return GDK_SURFACE_EDGE_EAST;
 	}
+	return std::nullopt;
+}
+
+bool Instance::shellMoveArea(QPointF point) const {
+	if (_fullscreen) {
+		return false;
+	}
+	const auto css = point / PageScale(_window);
+	const auto inside = [&](const std::vector<QRectF> &regions) {
+		return std::any_of(regions.begin(), regions.end(), [&](
+				const QRectF &region) {
+			return region.contains(css);
+		});
+	};
+	return inside(_shellDragRegions) && !inside(_shellNoDragRegions);
+}
+
+void Instance::pressed(GtkGesture *gesture, double x, double y) {
+	if (_master) {
+		_master.call_user_interaction(nullptr);
+	}
+	if (!customWindowFrame()
+		|| !gdk_surface_get_width
+		|| !gdk_surface_get_height
+		|| !gdk_toplevel_begin_move
+		|| !gdk_toplevel_begin_resize) {
+		return;
+	}
+	const auto surface = GtkNativeSurface(_window);
+	const auto toplevel = GdkToplevelFromSurface(surface);
+	if (!toplevel) {
+		return;
+	}
+	const auto point = QPointF(x, y);
+	const auto size = QSizeF(
+		gdk_surface_get_width(surface),
+		gdk_surface_get_height(surface));
+	const auto edge = shellResizeEdge(point, size);
+	if (!edge && !shellMoveArea(point)) {
+		return;
+	}
+	const auto controller = GTK_EVENT_CONTROLLER(gesture);
+	const auto device = gtk_gesture_get_device(gesture);
+	const auto time = gtk_event_controller_get_current_event_time(controller);
+	gtk_gesture_set_state(gesture, GTK_EVENT_SEQUENCE_CLAIMED);
+	if (edge) {
+		gdk_toplevel_begin_resize(
+			toplevel,
+			*edge,
+			device,
+			GDK_BUTTON_PRIMARY,
+			x,
+			y,
+			time);
+	} else {
+		gdk_toplevel_begin_move(
+			toplevel,
+			device,
+			GDK_BUTTON_PRIMARY,
+			x,
+			y,
+			time);
+	}
+	gtk_event_controller_reset(controller);
+}
+
+bool Instance::pressed(GdkEvent *event) {
+	auto button = guint();
+	const auto touch = (gdk_event_get_event_type(event) == GDK_TOUCH_BEGIN);
+	if (!touch && !gdk_event_get_button(event, &button)) {
+		return false;
+	}
+	if (_master) {
+		_master.call_user_interaction(nullptr);
+	}
+	auto x = 0.;
+	auto y = 0.;
+	auto rootX = 0.;
+	auto rootY = 0.;
+	if (!customWindowFrame()
+		|| !gtk_widget_get_window
+		|| !gtk_window_get_size
+		|| (!touch && button != GDK_BUTTON_PRIMARY)
+		|| !gdk_event_get_coords(event, &x, &y)
+		|| !gdk_event_get_root_coords(event, &rootX, &rootY)) {
+		return false;
+	}
+	auto width = gint();
+	auto height = gint();
+	gtk_window_get_size(GTK_WINDOW(_window), &width, &height);
+	const auto point = QPointF(x, y);
+	const auto edge = shellResizeEdge(point, QSizeF(width, height));
+	if (!edge && !shellMoveArea(point)) {
+		return false;
+	}
+	const auto window = gtk_widget_get_window(_window);
+	const auto device = gdk_event_get_device(event);
+	const auto time = gdk_event_get_time(event);
+	if (edge) {
+		gdk_window_begin_resize_drag_for_device(
+			window,
+			static_cast<GdkWindowEdge>(*edge),
+			device,
+			GDK_BUTTON_PRIMARY,
+			int(rootX),
+			int(rootY),
+			time);
+	} else {
+		gdk_window_begin_move_drag_for_device(
+			window,
+			device,
+			GDK_BUTTON_PRIMARY,
+			int(rootX),
+			int(rootY),
+			time);
+	}
+	return true;
 }
 
 bool Instance::customWindowFrame() const {
