@@ -161,6 +161,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.navigationStartHandler = navigationStartHandler(),
 		.navigationDoneHandler = navigationDoneHandler(),
 		.externalWindowCloseHandler = externalWindowCloseHandler(),
+		.fullscreenChangedHandler = fullscreenChangedHandler(),
 		.dialogHandler = dialogHandler(),
 		.asyncDialogHandler = asyncDialogHandler(),
 		.dataRequestHandler = dataRequestHandler(),
@@ -406,6 +407,10 @@ void Window::setExternalWindowCloseHandler(Fn<void()> handler) {
 	_externalWindowCloseHandler = std::move(handler);
 }
 
+void Window::setFullscreenChangedHandler(Fn<void(bool)> handler) {
+	_fullscreenChangedHandler = std::move(handler);
+}
+
 void Window::setDialogHandler(Fn<DialogResult(DialogArgs)> handler) {
 	_dialogHandler = handler ? handler : DefaultDialogHandler;
 }
@@ -454,6 +459,16 @@ Fn<void()> Window::externalWindowCloseHandler() const {
 		if (_externalWindowCloseHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
 				_externalWindowCloseHandler();
+			});
+		}
+	};
+}
+
+Fn<void(bool)> Window::fullscreenChangedHandler() const {
+	return [=](bool fullscreen) {
+		if (_fullscreenChangedHandler) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				_fullscreenChangedHandler(fullscreen);
 			});
 		}
 	};

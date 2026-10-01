@@ -596,6 +596,7 @@ private:
 	void pressed(GtkGesture *gesture, double x, double y);
 	[[nodiscard]] bool pressed(GdkEvent *event);
 	[[nodiscard]] bool notifyExternalWindowClosed();
+	void fullscreenChanged(bool fullscreen);
 	[[nodiscard]] bool customWindowFrame() const;
 	[[nodiscard]] bool transparentWindowBackground() const;
 	void announceCustomWindowFrame();
@@ -688,6 +689,7 @@ private:
 	std::function<bool(std::string,bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<void()> _externalWindowCloseHandler;
+	std::function<void(bool)> _fullscreenChangedHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	AsyncDialogHandler _asyncDialogHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
@@ -817,6 +819,7 @@ bool Instance::create(Config config) {
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_externalWindowCloseHandler = std::move(config.externalWindowCloseHandler);
+	_fullscreenChangedHandler = std::move(config.fullscreenChangedHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_asyncDialogHandler = std::move(config.asyncDialogHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
@@ -957,6 +960,29 @@ bool Instance::create(Config config) {
 				"delete-event",
 				G_CALLBACK(+[](Instance *instance, GdkEvent*) -> gboolean {
 					return instance->notifyExternalWindowClosed();
+				}),
+				this);
+		}
+		if (gtk_window_is_fullscreen) {
+			g_signal_connect_swapped(
+				_window,
+				"notify::fullscreened",
+				G_CALLBACK(+[](Instance *instance) {
+					instance->fullscreenChanged(gtk_window_is_fullscreen(
+						GTK_WINDOW(instance->_window)));
+				}),
+				this);
+		} else if (gdk_window_get_state && gtk_widget_get_window) {
+			g_signal_connect_swapped(
+				_window,
+				"window-state-event",
+				G_CALLBACK(+[](Instance *instance, GdkEvent*) -> gboolean {
+					const auto window = gtk_widget_get_window(
+						instance->_window);
+					instance->fullscreenChanged(window
+						&& (gdk_window_get_state(window)
+							& GDK_WINDOW_STATE_FULLSCREEN));
+					return FALSE;
 				}),
 				this);
 		}
@@ -2555,6 +2581,17 @@ bool Instance::notifyExternalWindowClosed() {
 	return true;
 }
 
+void Instance::fullscreenChanged(bool fullscreen) {
+	if (_fullscreen == fullscreen) {
+		return;
+	}
+	_fullscreen = fullscreen;
+	updateWindowFrameExtents();
+	if (_master) {
+		_master.call_fullscreen_changed(fullscreen, nullptr);
+	}
+}
+
 PopupAnchor Instance::popupAnchor() {
 	if (_remoting) {
 		if (!_helper) {
@@ -2695,8 +2732,6 @@ void Instance::setFullscreen(bool fullscreen) {
 	} else {
 		gtk_window_unfullscreen(GTK_WINDOW(_window));
 	}
-	_fullscreen = fullscreen;
-	updateWindowFrameExtents();
 }
 
 void Instance::startProcess() {
@@ -2981,6 +3016,17 @@ void Instance::registerMasterMethodHandlers() {
 			_externalWindowCloseHandler();
 		}
 		_master.complete_external_window_closed(invocation);
+		return true;
+	});
+
+	_master.signal_handle_fullscreen_changed().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			bool fullscreen) {
+		if (_fullscreenChangedHandler) {
+			_fullscreenChangedHandler(fullscreen);
+		}
+		_master.complete_fullscreen_changed(invocation);
 		return true;
 	});
 

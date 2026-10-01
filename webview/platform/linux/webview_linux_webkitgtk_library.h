@@ -179,6 +179,10 @@ typedef enum {
 } GdkEventType;
 
 typedef enum {
+	GDK_WINDOW_STATE_FULLSCREEN = 1 << 4,
+} GdkWindowState;
+
+typedef enum {
 	GTK_PHASE_NONE,
 	GTK_PHASE_CAPTURE,
 	GTK_PHASE_BUBBLE,
@@ -266,6 +270,7 @@ inline void (*gtk_window_set_startup_id)(GtkWindow *window, const char *startup_
 inline void (*gtk_window_present)(GtkWindow *window);
 inline void (*gtk_window_fullscreen)(GtkWindow *window);
 inline void (*gtk_window_unfullscreen)(GtkWindow *window);
+inline gboolean (*gtk_window_is_fullscreen)(GtkWindow *window);
 inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *hadjustment,
 	GtkAdjustment *vadjustment);
@@ -383,6 +388,7 @@ inline void (*gdk_window_set_shadow_width)(
 	gint right,
 	gint top,
 	gint bottom);
+inline GdkWindowState (*gdk_window_get_state)(GdkWindow *window);
 inline void (*gdk_toplevel_begin_move)(
 	GdkToplevel *toplevel,
 	GdkDevice *device,

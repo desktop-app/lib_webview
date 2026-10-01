@@ -160,6 +160,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_is_fullscreen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_get_type);
@@ -173,6 +174,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_get_server_time);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_window_set_shadow_width);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_state);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_shadow_width);
