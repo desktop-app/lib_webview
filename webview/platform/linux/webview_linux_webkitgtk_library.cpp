@@ -101,7 +101,6 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
-	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_app_paintable);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);

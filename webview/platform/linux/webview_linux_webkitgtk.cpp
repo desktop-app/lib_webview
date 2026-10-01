@@ -1019,20 +1019,13 @@ bool Instance::create(Config config) {
 				this);
 		}
 	}
-	const auto customPainting = (_mode == WindowMode::Embedded)
-		|| customWindowFrame();
-	if (customPainting && gtk_widget_set_app_paintable) {
-		gtk_widget_set_app_paintable(_window, TRUE);
-	}
-	_windowSupportsAlpha = customPainting ? SetupWindowAlpha(_window) : false;
-	if (customPainting) {
-		if (gtk_widget_add_css_class) {
-			gtk_widget_add_css_class(_window, "webviewWindow");
-		} else {
-			gtk_style_context_add_class(
-				gtk_widget_get_style_context(_window),
-				"webviewWindow");
-		}
+	_windowSupportsAlpha = customWindowFrame() ? SetupWindowAlpha(_window) : false;
+	if (gtk_widget_add_css_class) {
+		gtk_widget_add_css_class(_window, "webviewWindow");
+	} else {
+		gtk_style_context_add_class(
+			gtk_widget_get_style_context(_window),
+			"webviewWindow");
 	}
 	_backgroundProvider = gtk_css_provider_new();
 	if (gtk_style_context_add_provider_for_display) {
@@ -1390,16 +1383,7 @@ bool Instance::create(Config config) {
 	init(std::string("window.TelegramDesktopWindowAlphaSupported = ")
 		+ (_windowSupportsAlpha ? "true" : "false")
 		+ ";");
-	const auto fallback = customWindowFrame() && !_windowSupportsAlpha;
-	const GdkRGBA rgba = fallback
-		? GdkRGBA{ 238.f / 255.f, 238.f / 255.f, 238.f / 255.f, 1.f }
-		: transparentWindowBackground()
-		? GdkRGBA{ 0.f, 0.f, 0.f, 0.f }
-		: GdkRGBA{
-			float(config.opaqueBg.redF()),
-			float(config.opaqueBg.greenF()),
-			float(config.opaqueBg.blueF()),
-			float(config.opaqueBg.alphaF()) };
+	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
 	webkit_web_view_set_background_color(_webview, &rgba);
 	const auto settings = webkit_web_view_get_settings(_webview);
 	if (_debug) {
@@ -2616,31 +2600,13 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 		return;
 	}
 
-	auto background = std::format(R"(
-		.webviewWindow,
-		window.webviewWindow,
-		window.webviewWindow.background {{
-			background: {};
-			box-shadow: none;
-		}}
-	)",
+	const auto background = std::format(
+		".webviewWindow {{background: {};}}",
 		transparentWindowBackground()
 			? "transparent"
 			: customWindowFrame()
 			? kExternalShellFallbackBackground
 			: opaqueBg.name().toStdString());
-
-	if (customWindowFrame()) {
-		background += R"(
-		window.webviewWindow.csd,
-		window.webviewWindow.solid-csd,
-		window.webviewWindow.ssd,
-		window.webviewWindow decoration {
-			box-shadow: none;
-			margin: 0;
-		}
-	)";
-	}
 
 	if (gtk_css_provider_load_from_string) {
 		gtk_css_provider_load_from_string(
@@ -2653,7 +2619,6 @@ void Instance::setOpaqueBg(QColor opaqueBg) {
 			-1,
 			nullptr);
 	}
-	updateWindowFrameExtents();
 }
 
 void Instance::resize(int w, int h) {

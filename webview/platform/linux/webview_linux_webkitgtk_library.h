@@ -261,9 +261,6 @@ inline void (*gtk_widget_set_size_request)(
 	gint width,
 	gint height);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
-inline void (*gtk_widget_set_app_paintable)(
-	GtkWidget *widget,
-	gboolean app_paintable);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);
