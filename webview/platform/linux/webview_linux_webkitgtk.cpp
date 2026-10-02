@@ -1291,9 +1291,11 @@ bool Instance::create(Config config) {
 		manager,
 		"external",
 		nullptr);
-	init(std::string("window.TelegramDesktopWindowAlphaSupported = ")
-		+ (_windowSupportsAlpha ? "true" : "false")
-		+ ";");
+	if (customWindowFrame()) {
+		init(std::string("window.TelegramDesktopWindowAlphaSupported = ")
+			+ (_windowSupportsAlpha ? "true" : "false")
+			+ ";");
+	}
 	const GdkRGBA rgba{ 0.f, 0.f, 0.f, 0.f, };
 	webkit_web_view_set_background_color(_webview, &rgba);
 	const auto settings = webkit_web_view_get_settings(_webview);
