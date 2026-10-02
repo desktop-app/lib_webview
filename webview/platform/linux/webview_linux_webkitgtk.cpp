@@ -141,18 +141,19 @@ std::string SocketPath;
 		"run-color-chooser",
 		"print",
 	}) {
-		if (g_signal_lookup(signal, type)) {
-			g_signal_connect(
-				webview,
-				signal,
-				G_CALLBACK(+[](
-						WebKitWebView*,
-						gpointer,
-						gpointer) -> gboolean {
-					return true;
-				}),
-				nullptr);
+		if (!g_signal_lookup(signal, type)) {
+			continue;
 		}
+		g_signal_connect(
+			webview,
+			signal,
+			G_CALLBACK(+[](
+					WebKitWebView*,
+					gpointer,
+					gpointer) -> gboolean {
+				return true;
+			}),
+			nullptr);
 	}
 	return true;
 }
@@ -454,20 +455,6 @@ struct ShellControlMessage {
 	return true;
 }
 
-void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
-	if (gdk_window_set_shadow_width) {
-		if (const auto gdkWindow = gtk_widget_get_window(window)) {
-			gdk_window_set_shadow_width(
-				gdkWindow,
-				std::max(margins.left(), 0),
-				std::max(margins.right(), 0),
-				std::max(margins.top(), 0),
-				std::max(margins.bottom(), 0));
-			return;
-		}
-	}
-}
-
 // WebKit zooms the page by the font DPI on its own, so a CSS pixel is
 // larger than a GTK logical one, see refreshInternalScaling() in WebKit.
 [[nodiscard]] double PageScale(GtkWidget *window) {
@@ -653,19 +640,20 @@ private:
 Instance::Instance(bool remoting, WindowMode mode)
 : _remoting(remoting)
 , _mode(mode) {
-	if (_remoting) {
-		_platform = ::Platform::IsX11()
-			? Platform::X11
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-			: (_mode == WindowMode::Embedded
-				? Platform::Wayland
-				: Platform::Any);
-#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-			: Platform::Any;
-#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-		_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
-		startProcess();
+	if (!_remoting) {
+		return;
 	}
+	_platform = ::Platform::IsX11()
+		? Platform::X11
+#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+		: (_mode == WindowMode::Embedded
+			? Platform::Wayland
+			: Platform::Any);
+#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+		: Platform::Any;
+#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+	_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
+	startProcess();
 }
 
 Instance::~Instance() {
@@ -1548,10 +1536,11 @@ void Instance::announceCustomWindowFrame() {
 	if (!customWindowFrame() || !gdk_wayland_window_announce_csd) {
 		return;
 	}
-	if (const auto gdkWindow = gtk_widget_get_window(_window);
-		IsGdkWaylandWindow(gdkWindow)) {
-		gdk_wayland_window_announce_csd(gdkWindow);
+	const auto gdkWindow = gtk_widget_get_window(_window);
+	if (!IsGdkWaylandWindow(gdkWindow)) {
+		return;
 	}
+	gdk_wayland_window_announce_csd(gdkWindow);
 }
 
 QMargins Instance::windowFrameExtents() const {
@@ -1583,10 +1572,20 @@ void Instance::setupToplevelFrameExtents() {
 }
 
 void Instance::updateWindowFrameExtents() {
-	if (!customWindowFrame() || !_window) {
+	if (!customWindowFrame() || !_window || !gdk_window_set_shadow_width) {
 		return;
 	}
-	SetFrameExtents(_window, windowFrameExtents());
+	const auto gdkWindow = gtk_widget_get_window(_window);
+	if (!gdkWindow) {
+		return;
+	}
+	const auto margins = windowFrameExtents();
+	gdk_window_set_shadow_width(
+		gdkWindow,
+		std::max(margins.left(), 0),
+		std::max(margins.right(), 0),
+		std::max(margins.top(), 0),
+		std::max(margins.bottom(), 0));
 }
 
 bool Instance::loadFailed(
@@ -1659,10 +1658,8 @@ bool Instance::decidePolicy(
 		webkit_policy_decision_ignore(decision);
 	}
 	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-		if (!webkit_web_view_is_loading(_webview)) {
-			if (_master) {
-				_master.call_navigation_done(!_loadFailed, nullptr);
-			}
+		if (!webkit_web_view_is_loading(_webview) && _master) {
+			_master.call_navigation_done(!_loadFailed, nullptr);
 		}
 	}));
 	return !result;
@@ -2152,17 +2149,15 @@ void Instance::focus() {
 		if (!_xdgActivationToken.empty()) {
 			return ::base::take(_xdgActivationToken);
 		} else if (gtk_native_get_surface) {
-			if (const auto surface = GtkNativeSurface(_window)) {
-				if (IsGdkX11Surface(surface)) {
-					return std::string("_TIME")
-						+ std::to_string(gdk_x11_get_server_time(surface));
-				}
-			}
-		} else if (const auto gdkWindow = gtk_widget_get_window(_window)) {
-			if (IsGdkX11Window(gdkWindow)) {
+			const auto surface = GtkNativeSurface(_window);
+			if (IsGdkX11Surface(surface)) {
 				return std::string("_TIME")
-					+ std::to_string(gdk_x11_get_server_time(gdkWindow));
+					+ std::to_string(gdk_x11_get_server_time(surface));
 			}
+		} else if (const auto gdkWindow = gtk_widget_get_window(_window);
+			IsGdkX11Window(gdkWindow)) {
+			return std::string("_TIME")
+				+ std::to_string(gdk_x11_get_server_time(gdkWindow));
 		}
 		return std::string();
 	}();
@@ -2463,21 +2458,23 @@ bool Instance::notifyExternalWindowClosed() {
 	_master.call_external_window_closed([=](
 			GObjectCpp::Object,
 			Gio::AsyncResult res) {
-		if (const auto instance = weak.get()) {
-			instance->_externalWindowClosePending = false;
-			if (instance->_master) {
-				instance->_master.call_external_window_closed_finish(res);
-			}
-			const auto window = instance->_window;
-			if (!window) {
-				return;
-			}
-			instance->_externalWindowCloseAllowed = true;
-			if (gtk_window_destroy) {
-				gtk_window_destroy(GTK_WINDOW(window));
-			} else {
-				gtk_widget_destroy(window);
-			}
+		const auto instance = weak.get();
+		if (!instance) {
+			return;
+		}
+		instance->_externalWindowClosePending = false;
+		if (instance->_master) {
+			instance->_master.call_external_window_closed_finish(res);
+		}
+		const auto window = instance->_window;
+		if (!window) {
+			return;
+		}
+		instance->_externalWindowCloseAllowed = true;
+		if (gtk_window_destroy) {
+			gtk_window_destroy(GTK_WINDOW(window));
+		} else {
+			gtk_widget_destroy(window);
 		}
 	});
 	return true;
