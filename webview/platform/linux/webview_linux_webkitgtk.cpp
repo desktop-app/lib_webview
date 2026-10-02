@@ -1542,6 +1542,27 @@ void Instance::setupToplevelFrameExtents() {
 				margins.right(),
 				margins.top(),
 				margins.bottom());
+
+			// GTK fits the shadow into the bounds too, give it back.
+			auto width = gint();
+			auto height = gint();
+			gtk_window_get_default_size(
+				GTK_WINDOW(instance->_window),
+				&width,
+				&height);
+			auto boundsWidth = 0;
+			auto boundsHeight = 0;
+			gdk_toplevel_size_get_bounds(size, &boundsWidth, &boundsHeight);
+			if (width < boundsWidth && height < boundsHeight) {
+				return;
+			}
+			const auto fit = [](int value, int bounds, int shadow) {
+				return (value < bounds) ? value : std::max(value, bounds + shadow);
+			};
+			gdk_toplevel_size_set_size(
+				size,
+				fit(width, boundsWidth, margins.left() + margins.right()),
+				fit(height, boundsHeight, margins.top() + margins.bottom()));
 		}),
 		this);
 }

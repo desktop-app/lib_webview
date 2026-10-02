@@ -248,6 +248,10 @@ inline void (*gtk_window_set_title)(
 inline void (*gtk_window_set_decorated)(
 	GtkWindow *window,
 	gboolean setting);
+inline void (*gtk_window_get_default_size)(
+	GtkWindow *window,
+	gint *width,
+	gint *height);
 inline void (*gtk_window_set_default_size)(
 	GtkWindow *window,
 	gint width,
@@ -384,6 +388,14 @@ inline void (*gdk_toplevel_begin_resize)(
 	double x,
 	double y,
 	guint32 timestamp);
+inline void (*gdk_toplevel_size_get_bounds)(
+	GdkToplevelSize *size,
+	int *bounds_width,
+	int *bounds_height);
+inline void (*gdk_toplevel_size_set_size)(
+	GdkToplevelSize *size,
+	int width,
+	int height);
 inline void (*gdk_toplevel_size_set_shadow_width)(
 	GdkToplevelSize *size,
 	int left,

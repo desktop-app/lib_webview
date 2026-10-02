@@ -28,6 +28,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_title)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_default_size)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_default_size)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_startup_id)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_present)
@@ -165,6 +166,8 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_coords);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_root_coords);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_get_bounds);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_size);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_set_sandbox_enabled);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_default_content_security_policy);
