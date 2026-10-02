@@ -1538,10 +1538,10 @@ void Instance::setupToplevelFrameExtents() {
 			const auto margins = instance->windowFrameExtents();
 			gdk_toplevel_size_set_shadow_width(
 				size,
-				std::max(margins.left(), 0),
-				std::max(margins.right(), 0),
-				std::max(margins.top(), 0),
-				std::max(margins.bottom(), 0));
+				margins.left(),
+				margins.right(),
+				margins.top(),
+				margins.bottom());
 		}),
 		this);
 }
@@ -1557,10 +1557,10 @@ void Instance::updateWindowFrameExtents() {
 	const auto margins = windowFrameExtents();
 	gdk_window_set_shadow_width(
 		gdkWindow,
-		std::max(margins.left(), 0),
-		std::max(margins.right(), 0),
-		std::max(margins.top(), 0),
-		std::max(margins.bottom(), 0));
+		margins.left(),
+		margins.right(),
+		margins.top(),
+		margins.bottom());
 }
 
 bool Instance::loadFailed(
