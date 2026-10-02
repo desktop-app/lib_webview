@@ -564,17 +564,7 @@ private:
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
-	void scheduleWaylandPopupAnchorExport();
-	void ensureWaylandPopupAnchorExport();
-	void clearWaylandPopupAnchorExport();
-	void setWaylandPopupAnchorFromToplevel(
-		std::uint64_t generation,
-		GdkToplevel *toplevel,
-		QString handle);
-	void setWaylandPopupAnchorFromWindow(
-		std::uint64_t generation,
-		GdkWindow *window,
-		QString handle);
+	void exportWaylandPopupAnchor();
 	[[nodiscard]] void *winId();
 	[[nodiscard]] PopupAnchor popupAnchorSnapshot();
 
@@ -598,10 +588,6 @@ private:
 	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
 	QString _waylandPopupAnchorHandle;
-	std::uint64_t _waylandPopupAnchorGeneration = 0;
-	bool _waylandPopupAnchorExportScheduled = false;
-	bool _waylandPopupAnchorExportAllowed = false;
-	bool _waylandPopupAnchorExportPending = false;
 	QMargins _windowMargins;
 	std::vector<QRectF> _shellDragRegions;
 	std::vector<QRectF> _shellNoDragRegions;
@@ -668,7 +654,6 @@ Instance::~Instance() {
 			_xftDpiChangedHandler);
 	}
 	if (_window) {
-		clearWaylandPopupAnchorExport();
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(_window));
 		} else {
@@ -1043,7 +1028,6 @@ bool Instance::create(Config config) {
 		_window,
 		"destroy",
 		G_CALLBACK(+[](Instance *instance) {
-			instance->clearWaylandPopupAnchorExport();
 			instance->_window = nullptr;
 			Gio::Application::get_default().quit();
 		}),
@@ -1082,15 +1066,7 @@ bool Instance::create(Config config) {
 		_window,
 		"map",
 		G_CALLBACK(+[](Instance *instance) {
-			instance->scheduleWaylandPopupAnchorExport();
-		}),
-		this);
-	g_signal_connect_swapped(
-		_window,
-		"unmap",
-		G_CALLBACK(+[](Instance *instance) {
-			instance->_waylandPopupAnchorExportAllowed = false;
-			instance->clearWaylandPopupAnchorExport();
+			instance->exportWaylandPopupAnchor();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -2175,178 +2151,53 @@ QWidget *Instance::widget() {
 	return _widget.get();
 }
 
-void Instance::scheduleWaylandPopupAnchorExport() {
-	if (!_window
-		|| _waylandPopupAnchorExportAllowed
-		|| _waylandPopupAnchorExportScheduled
-		|| _waylandPopupAnchorExportPending
-		|| !_waylandPopupAnchorHandle.isEmpty()) {
+void Instance::exportWaylandPopupAnchor() {
+	using Weak = ::base::weak_ptr<Instance>;
+	const auto destroyWeak = +[](gpointer userData) {
+		delete static_cast<Weak*>(userData);
+	};
+	if (_mode != WindowMode::External) {
 		return;
 	}
-	_waylandPopupAnchorExportScheduled = true;
-	GLib::idle_add_once(crl::guard(this, [=] {
-		if (!_waylandPopupAnchorExportScheduled) {
+	auto weak = std::make_unique<Weak>(this);
+	if (gtk_native_get_surface) {
+		const auto toplevel = GdkWaylandToplevelFromSurface(
+			GtkNativeSurface(_window));
+		if (!toplevel) {
 			return;
 		}
-		_waylandPopupAnchorExportScheduled = false;
-		_waylandPopupAnchorExportAllowed = true;
-		ensureWaylandPopupAnchorExport();
-	}));
-}
-
-void Instance::ensureWaylandPopupAnchorExport() {
-	struct WaylandPopupAnchorRequest {
-		::base::weak_ptr<Instance> instance;
-		std::uint64_t generation = 0;
-	};
-	const auto destroyRequest = +[](gpointer userData) {
-		delete static_cast<WaylandPopupAnchorRequest*>(userData);
-	};
-	if (!_window
-		|| !_waylandPopupAnchorExportAllowed
-		|| _waylandPopupAnchorExportPending
-		|| !_waylandPopupAnchorHandle.isEmpty()) {
-		return;
-	}
-	if (gtk_native_get_surface) {
-		if (const auto toplevel = GdkWaylandToplevelFromSurface(
-				GtkNativeSurface(_window))) {
-			const auto generation = ++_waylandPopupAnchorGeneration;
-			auto request = std::make_unique<WaylandPopupAnchorRequest>(
-				WaylandPopupAnchorRequest{
-					.instance = this,
-					.generation = generation,
-				});
-			_waylandPopupAnchorExportPending = true;
-			const auto exported = gdk_wayland_toplevel_export_handle(
-				toplevel,
-				+[](
-						GdkToplevel *toplevel,
-						const char *handle,
-						gpointer userData) {
-					const auto request = static_cast<WaylandPopupAnchorRequest*>(
-						userData);
-					if (const auto instance = request->instance.get()) {
-						instance->setWaylandPopupAnchorFromToplevel(
-							request->generation,
-							toplevel,
-							handle ? QString::fromUtf8(handle) : QString());
-					}
-				},
-				request.get(),
-				destroyRequest);
-			if (exported) {
-				request.release();
-			} else {
-				_waylandPopupAnchorExportPending = false;
-			}
-		}
-	} else {
-		if (const auto gdkWindow = gtk_widget_get_window(_window);
-			IsGdkWaylandWindow(gdkWindow)) {
-			const auto generation = ++_waylandPopupAnchorGeneration;
-			auto request = std::make_unique<WaylandPopupAnchorRequest>(
-				WaylandPopupAnchorRequest{
-					.instance = this,
-					.generation = generation,
-				});
-			_waylandPopupAnchorExportPending = true;
-			const auto exported = gdk_wayland_window_export_handle(
-				gdkWindow,
-				+[](
-						GdkWindow *window,
-						const char *handle,
-						gpointer userData) {
-					const auto request = static_cast<WaylandPopupAnchorRequest*>(
-						userData);
-					if (const auto instance = request->instance.get()) {
-						instance->setWaylandPopupAnchorFromWindow(
-							request->generation,
-							window,
-							handle ? QString::fromUtf8(handle) : QString());
-					}
-				},
-				request.get(),
-				destroyRequest);
-			if (exported) {
-				request.release();
-			} else {
-				_waylandPopupAnchorExportPending = false;
-			}
-		}
-	}
-}
-
-void Instance::clearWaylandPopupAnchorExport() {
-	const auto hadExport = _waylandPopupAnchorExportPending
-		|| !_waylandPopupAnchorHandle.isEmpty();
-	_waylandPopupAnchorExportScheduled = false;
-	const auto handle = _waylandPopupAnchorHandle;
-	_waylandPopupAnchorExportPending = false;
-	_waylandPopupAnchorHandle = QString();
-	if (!hadExport) {
-		return;
-	}
-	++_waylandPopupAnchorGeneration;
-	if (!_window) {
-		return;
-	}
-	if (gtk_native_get_surface) {
-		if (const auto toplevel = GdkWaylandToplevelFromSurface(
-				GtkNativeSurface(_window))) {
-			if (!handle.isEmpty()) {
-				if (gdk_wayland_toplevel_drop_exported_handle) {
-					const auto data = handle.toUtf8();
-					gdk_wayland_toplevel_drop_exported_handle(
-						toplevel,
-						data.constData());
-				} else {
-					gdk_wayland_toplevel_unexport_handle(toplevel);
+		const auto exported = gdk_wayland_toplevel_export_handle(
+			toplevel,
+			+[](GdkToplevel*, const char *handle, gpointer userData) {
+				if (const auto instance = static_cast<Weak*>(userData)->get()) {
+					instance->_waylandPopupAnchorHandle = QString::fromUtf8(
+						handle);
 				}
-			}
+			},
+			weak.get(),
+			destroyWeak);
+		if (exported) {
+			weak.release();
 		}
 	} else {
-		if (const auto gdkWindow = gtk_widget_get_window(_window);
-			IsGdkWaylandWindow(gdkWindow)
-			&& !handle.isEmpty()) {
-			gdk_wayland_window_unexport_handle(gdkWindow);
+		const auto gdkWindow = gtk_widget_get_window(_window);
+		if (!IsGdkWaylandWindow(gdkWindow)) {
+			return;
+		}
+		const auto exported = gdk_wayland_window_export_handle(
+			gdkWindow,
+			+[](GdkWindow*, const char *handle, gpointer userData) {
+				if (const auto instance = static_cast<Weak*>(userData)->get()) {
+					instance->_waylandPopupAnchorHandle = QString::fromUtf8(
+						handle);
+				}
+			},
+			weak.get(),
+			destroyWeak);
+		if (exported) {
+			weak.release();
 		}
 	}
-}
-
-void Instance::setWaylandPopupAnchorFromToplevel(
-		std::uint64_t generation,
-		GdkToplevel *toplevel,
-		QString handle) {
-	if (generation != _waylandPopupAnchorGeneration) {
-		if (!handle.isEmpty()) {
-			if (gdk_wayland_toplevel_drop_exported_handle) {
-				const auto data = handle.toUtf8();
-				gdk_wayland_toplevel_drop_exported_handle(
-					toplevel,
-					data.constData());
-			} else {
-				gdk_wayland_toplevel_unexport_handle(toplevel);
-			}
-		}
-		return;
-	}
-	_waylandPopupAnchorExportPending = false;
-	_waylandPopupAnchorHandle = std::move(handle);
-}
-
-void Instance::setWaylandPopupAnchorFromWindow(
-		std::uint64_t generation,
-		GdkWindow *window,
-		QString handle) {
-	if (generation != _waylandPopupAnchorGeneration) {
-		if (!handle.isEmpty()) {
-			gdk_wayland_window_unexport_handle(window);
-		}
-		return;
-	}
-	_waylandPopupAnchorExportPending = false;
-	_waylandPopupAnchorHandle = std::move(handle);
 }
 
 void *Instance::winId() {
@@ -2384,56 +2235,30 @@ PopupAnchor Instance::popupAnchorSnapshot() {
 	if (!_window) {
 		return result;
 	}
+	auto width = gint(0);
+	auto height = gint(0);
 	if (gtk_native_get_surface) {
 		if (const auto surface = GtkNativeSurface(_window)) {
-			const auto width = gdk_surface_get_width(surface);
-			const auto height = gdk_surface_get_height(surface);
-			if (width > 0 && height > 0) {
-				result.outerSize = QSize(width, height);
-			}
+			width = gdk_surface_get_width(surface);
+			height = gdk_surface_get_height(surface);
 		}
 	} else {
-		auto width = gint(0);
-		auto height = gint(0);
 		gtk_window_get_size(GTK_WINDOW(_window), &width, &height);
-		if (width > 0 && height > 0) {
-			result.outerSize = QSize(width, height);
-		}
+	}
+	if (width > 0 && height > 0) {
+		result.outerSize = QSize(width, height);
 	}
 	if (const auto nativeId = X11WindowId(_window)) {
-		clearWaylandPopupAnchorExport();
 		result.transientParent = {
 			.type = Ui::Platform::ForeignParent::Type::X11,
 			.x11 = nativeId,
 		};
-		return result;
+	} else if (!_waylandPopupAnchorHandle.isEmpty()) {
+		result.transientParent = {
+			.type = Ui::Platform::ForeignParent::Type::Wayland,
+			.wayland = _waylandPopupAnchorHandle,
+		};
 	}
-	if (gtk_native_get_surface) {
-		if (GdkWaylandToplevelFromSurface(GtkNativeSurface(_window))) {
-			ensureWaylandPopupAnchorExport();
-			if (!_waylandPopupAnchorHandle.isEmpty()) {
-				result.transientParent = {
-					.type = Ui::Platform::ForeignParent::Type::Wayland,
-					.wayland = _waylandPopupAnchorHandle,
-				};
-			}
-			return result;
-		}
-	}
-	if (gtk_widget_get_window) {
-		if (const auto gdkWindow = gtk_widget_get_window(_window);
-			IsGdkWaylandWindow(gdkWindow)) {
-			ensureWaylandPopupAnchorExport();
-			if (!_waylandPopupAnchorHandle.isEmpty()) {
-				result.transientParent = {
-					.type = Ui::Platform::ForeignParent::Type::Wayland,
-					.wayland = _waylandPopupAnchorHandle,
-				};
-			}
-			return result;
-		}
-	}
-	clearWaylandPopupAnchorExport();
 	return result;
 }
 

@@ -395,17 +395,11 @@ inline gboolean (*gdk_wayland_toplevel_export_handle)(
 	GdkWaylandToplevelExported callback,
 	gpointer user_data,
 	GDestroyNotify destroy_func);
-inline void (*gdk_wayland_toplevel_drop_exported_handle)(
-	GdkToplevel *toplevel,
-	const char *handle);
-inline void (*gdk_wayland_toplevel_unexport_handle)(
-	GdkToplevel *toplevel);
 inline gboolean (*gdk_wayland_window_export_handle)(
 	GdkWindow *window,
 	GdkWaylandWindowExported callback,
 	gpointer user_data,
 	GDestroyNotify destroy_func);
-inline void (*gdk_wayland_window_unexport_handle)(GdkWindow *window);
 inline void (*gdk_wayland_window_announce_csd)(GdkWindow *window);
 inline gint (*gdk_surface_get_width)(GdkSurface *surface);
 inline gint (*gdk_surface_get_height)(GdkSurface *surface);

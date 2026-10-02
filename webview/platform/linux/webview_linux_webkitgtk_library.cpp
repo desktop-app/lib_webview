@@ -181,10 +181,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_get_server_time);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_drop_exported_handle);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_unexport_handle);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_announce_csd);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_graphics_offload_new);
 
