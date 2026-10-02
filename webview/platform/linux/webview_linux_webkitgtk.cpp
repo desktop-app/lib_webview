@@ -102,7 +102,7 @@ std::string SocketPath;
 [[nodiscard]] bool SetCookiePolicy(
 		WebKitCookieManager *manager,
 		WebKitCookieAcceptPolicy policy) {
-	if (!manager || !webkit_cookie_manager_set_accept_policy) {
+	if (!manager) {
 		return false;
 	}
 	webkit_cookie_manager_set_accept_policy(manager, policy);
@@ -115,7 +115,6 @@ std::string SocketPath;
 
 [[nodiscard]] bool BlockDownloads(::GObject *owner) {
 	if (!owner
-		|| !webkit_download_cancel
 		|| !g_signal_lookup("download-started", G_OBJECT_TYPE(owner))) {
 		return false;
 	}
@@ -159,21 +158,7 @@ std::string SocketPath;
 }
 
 [[nodiscard]] bool ApplyRestrictedSettings(WebKitSettings *settings) {
-	if (!settings
-		|| !webkit_settings_set_auto_load_images
-		|| !webkit_settings_set_enable_dns_prefetching
-		|| !webkit_settings_set_enable_fullscreen
-		|| !webkit_settings_set_enable_html5_database
-		|| !webkit_settings_set_enable_html5_local_storage
-		|| !webkit_settings_set_enable_hyperlink_auditing
-		|| !webkit_settings_set_enable_media
-		|| !webkit_settings_set_enable_offline_web_application_cache
-		|| !webkit_settings_set_enable_page_cache
-		|| !webkit_settings_set_enable_webaudio
-		|| !webkit_settings_set_enable_webgl
-		|| !webkit_settings_set_javascript_can_access_clipboard
-		|| !webkit_settings_set_javascript_can_open_windows_automatically
-		|| !webkit_settings_set_media_playback_requires_user_gesture) {
+	if (!settings) {
 		return false;
 	}
 	webkit_settings_set_auto_load_images(settings, false);
@@ -195,9 +180,7 @@ std::string SocketPath;
 	if (webkit_settings_set_enable_webrtc) {
 		webkit_settings_set_enable_webrtc(settings, false);
 	}
-	if (webkit_settings_set_enable_media_stream) {
-		webkit_settings_set_enable_media_stream(settings, false);
-	}
+	webkit_settings_set_enable_media_stream(settings, false);
 	return true;
 }
 
@@ -391,18 +374,6 @@ struct ShellControlMessage {
 		: std::nullopt;
 }
 
-[[nodiscard]] bool IsGdkX11Display(GdkDisplay *display) {
-	return display
-		&& gdk_x11_display_get_type
-		&& GDK_IS_X11_DISPLAY(display);
-}
-
-[[nodiscard]] bool IsGdkX11Screen(GdkScreen *screen) {
-	return screen
-		&& gdk_x11_screen_get_type
-		&& GDK_IS_X11_SCREEN(screen);
-}
-
 [[nodiscard]] bool IsGdkX11Surface(GdkSurface *surface) {
 	return surface
 		&& gdk_x11_surface_get_type
@@ -424,16 +395,13 @@ struct ShellControlMessage {
 [[nodiscard]] GdkSurface *GtkNativeSurface(GtkWidget *window) {
 	return window
 		&& gtk_native_get_surface
-		&& gtk_native_get_type
 		&& GTK_IS_NATIVE(window)
 		? gtk_native_get_surface(GTK_NATIVE(window))
 		: nullptr;
 }
 
 [[nodiscard]] GdkToplevel *GdkToplevelFromSurface(GdkSurface *surface) {
-	return surface
-		&& gdk_toplevel_get_type
-		&& GDK_IS_TOPLEVEL(surface)
+	return surface && GDK_IS_TOPLEVEL(surface)
 		? GDK_TOPLEVEL(surface)
 		: nullptr;
 }
@@ -450,70 +418,44 @@ struct ShellControlMessage {
 [[nodiscard]] unsigned long X11WindowId(GtkWidget *window) {
 	if (!window) {
 		return 0;
+	} else if (gtk_native_get_surface) {
+		const auto surface = GtkNativeSurface(window);
+		return IsGdkX11Surface(surface)
+			? gdk_x11_surface_get_xid(surface)
+			: 0;
 	}
-	const auto isX11Window = [&] {
-		if (gtk_widget_get_display) {
-			if (const auto display = gtk_widget_get_display(window)) {
-				return IsGdkX11Display(display);
-			}
-		}
-		return gtk_widget_get_screen
-			&& IsGdkX11Screen(gtk_widget_get_screen(window));
-	}();
-	if (!isX11Window) {
-		return 0;
-	}
-	if (gtk_native_get_surface && gdk_x11_surface_get_xid) {
-		if (const auto surface = GtkNativeSurface(window)) {
-			if (IsGdkX11Surface(surface)) {
-				if (const auto xid = gdk_x11_surface_get_xid(surface)) {
-					return xid;
-				}
-			}
-		}
-	}
-	if (gtk_widget_get_window && gdk_x11_window_get_xid) {
-		if (const auto gdkWindow = gtk_widget_get_window(window)) {
-			if (IsGdkX11Window(gdkWindow)) {
-				return gdk_x11_window_get_xid(gdkWindow);
-			}
-		}
-	}
-	return 0;
+	const auto gdkWindow = gtk_widget_get_window(window);
+	return IsGdkX11Window(gdkWindow)
+		? gdk_x11_window_get_xid(gdkWindow)
+		: 0;
 }
 
 [[nodiscard]] bool SetupWindowAlpha(GtkWidget *window) {
 	if (!window) {
 		return false;
 	}
-	if (gtk_widget_set_visual
-		&& gtk_widget_get_screen
-		&& gdk_screen_get_rgba_visual) {
-		const auto screen = gtk_widget_get_screen(window);
-		if (!screen) {
-			return false;
-		}
-		const auto composited = !gdk_screen_is_composited
-			|| gdk_screen_is_composited(screen);
-		const auto visual = composited
-			? gdk_screen_get_rgba_visual(screen)
-			: nullptr;
-		if (!visual) {
-			return false;
-		}
-		gtk_widget_set_visual(window, visual);
-		return true;
-	}
-	if (gdk_display_is_composited && gtk_widget_get_display) {
+	if (gdk_display_is_composited) {
 		if (const auto display = gtk_widget_get_display(window)) {
 			return gdk_display_is_composited(display);
 		}
+		return true;
 	}
+	const auto screen = gtk_widget_get_screen(window);
+	if (!screen) {
+		return false;
+	}
+	const auto visual = gdk_screen_is_composited(screen)
+		? gdk_screen_get_rgba_visual(screen)
+		: nullptr;
+	if (!visual) {
+		return false;
+	}
+	gtk_widget_set_visual(window, visual);
 	return true;
 }
 
 void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
-	if (gdk_window_set_shadow_width && gtk_widget_get_window) {
+	if (gdk_window_set_shadow_width) {
 		if (const auto gdkWindow = gtk_widget_get_window(window)) {
 			gdk_window_set_shadow_width(
 				gdkWindow,
@@ -530,7 +472,7 @@ void SetFrameExtents(GtkWidget *window, const QMargins &margins) {
 // larger than a GTK logical one, see refreshInternalScaling() in WebKit.
 [[nodiscard]] double PageScale(GtkWidget *window) {
 	auto dpi = 0.;
-	if (!gdk_screen_get_resolution || !gtk_widget_get_screen) {
+	if (!gdk_screen_get_resolution) {
 		auto value = gint();
 		g_object_get(
 			gtk_settings_get_default(),
@@ -972,7 +914,7 @@ bool Instance::create(Config config) {
 						GTK_WINDOW(instance->_window)));
 				}),
 				this);
-		} else if (gdk_window_get_state && gtk_widget_get_window) {
+		} else {
 			g_signal_connect_swapped(
 				_window,
 				"window-state-event",
@@ -1020,9 +962,7 @@ bool Instance::create(Config config) {
 	}
 	if (webkit_network_session_new) {
 		const auto session = restricted
-			? (webkit_network_session_new_ephemeral
-				? webkit_network_session_new_ephemeral()
-				: nullptr)
+			? webkit_network_session_new_ephemeral()
 			: webkit_network_session_new(
 				baseData.c_str(),
 				baseCache.c_str());
@@ -1030,9 +970,8 @@ bool Instance::create(Config config) {
 			return false;
 		}
 		if (restricted || config.allowThirdPartyCookies) {
-			const auto manager = webkit_network_session_get_cookie_manager
-				? webkit_network_session_get_cookie_manager(session)
-				: nullptr;
+			const auto manager = webkit_network_session_get_cookie_manager(
+				session);
 			const auto policySet = restricted
 				? SetCookiePolicy(
 					manager,
@@ -1064,9 +1003,7 @@ bool Instance::create(Config config) {
 		g_object_unref(session);
 	} else {
 		const auto data = restricted
-			? (webkit_website_data_manager_new_ephemeral
-				? webkit_website_data_manager_new_ephemeral()
-				: nullptr)
+			? webkit_website_data_manager_new_ephemeral()
 			: webkit_website_data_manager_new(
 				"base-cache-directory", baseCache.c_str(),
 				"base-data-directory", baseData.c_str(),
@@ -1075,9 +1012,8 @@ bool Instance::create(Config config) {
 			return false;
 		}
 		if (restricted || config.allowThirdPartyCookies) {
-			const auto manager = webkit_website_data_manager_get_cookie_manager
-				? webkit_website_data_manager_get_cookie_manager(data)
-				: nullptr;
+			const auto manager = webkit_website_data_manager_get_cookie_manager(
+				data);
 			const auto policySet = restricted
 				? SetCookiePolicy(
 					manager,
@@ -1092,7 +1028,7 @@ bool Instance::create(Config config) {
 		const auto context
 			= webkit_web_context_new_with_website_data_manager(data);
 		g_object_unref(data);
-		if (restricted && webkit_web_context_set_sandbox_enabled) {
+		if (restricted) {
 			webkit_web_context_set_sandbox_enabled(context, true);
 		}
 		if (!BlockDownloads(G_OBJECT(context)) && restricted) {
@@ -1279,10 +1215,7 @@ bool Instance::create(Config config) {
 			return instance->permissionRequest(request);
 		}),
 		this);
-	if (gtk_widget_add_controller
-		&& gtk_gesture_click_new
-		&& gtk_event_controller_key_new
-		&& gtk_event_controller_get_type) {
+	if (gtk_widget_add_controller) {
 		// Ahead of WebKit's own gestures, so the page doesn't get the press.
 		const auto click = gtk_gesture_click_new();
 		gtk_event_controller_set_propagation_phase(
@@ -1358,10 +1291,7 @@ bool Instance::create(Config config) {
 		webkit_settings_set_enable_developer_extras(settings, true);
 	}
 	if (restricted) {
-		if (!ApplyRestrictedSettings(settings)
-			|| !webkit_web_view_set_is_muted
-			|| !webkit_permission_request_deny
-			|| !webkit_authentication_request_cancel) {
+		if (!ApplyRestrictedSettings(settings)) {
 			return false;
 		}
 		webkit_web_view_set_is_muted(_webview, true);
@@ -1376,11 +1306,7 @@ bool Instance::create(Config config) {
 		}
 	} else if (gtk_plug_get_type && GTK_IS_PLUG(_window)) {
 		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
-		if (gtk_scrolled_window_set_shadow_type) {
-			gtk_scrolled_window_set_shadow_type(
-				x11SizeFix,
-				GTK_SHADOW_NONE);
-		}
+		gtk_scrolled_window_set_shadow_type(x11SizeFix, GTK_SHADOW_NONE);
 		gtk_container_add(GTK_CONTAINER(x11SizeFix), GTK_WIDGET(_webview));
 		gtk_container_add(GTK_CONTAINER(_window), x11SizeFix);
 	} else {
@@ -1510,11 +1436,7 @@ void Instance::pressed(GtkGesture *gesture, double x, double y) {
 	if (_master) {
 		_master.call_user_interaction(nullptr);
 	}
-	if (!customWindowFrame()
-		|| !gdk_surface_get_width
-		|| !gdk_surface_get_height
-		|| !gdk_toplevel_begin_move
-		|| !gdk_toplevel_begin_resize) {
+	if (!customWindowFrame()) {
 		return;
 	}
 	const auto surface = GtkNativeSurface(_window);
@@ -1569,8 +1491,6 @@ bool Instance::pressed(GdkEvent *event) {
 	auto rootX = 0.;
 	auto rootY = 0.;
 	if (!customWindowFrame()
-		|| !gtk_widget_get_window
-		|| !gtk_window_get_size
 		|| (!touch && button != GDK_BUTTON_PRIMARY)
 		|| !gdk_event_get_coords(event, &x, &y)
 		|| !gdk_event_get_root_coords(event, &rootX, &rootY)) {
@@ -1621,9 +1541,7 @@ bool Instance::transparentWindowBackground() const {
 }
 
 void Instance::announceCustomWindowFrame() {
-	if (!customWindowFrame()
-		|| !gtk_widget_get_window
-		|| !gdk_wayland_window_announce_csd) {
+	if (!customWindowFrame() || !gdk_wayland_window_announce_csd) {
 		return;
 	}
 	if (const auto gdkWindow = gtk_widget_get_window(_window);
@@ -1639,9 +1557,7 @@ QMargins Instance::windowFrameExtents() const {
 }
 
 void Instance::ensureToplevelFrameExtents() {
-	if (!gdk_toplevel_size_set_shadow_width
-		|| !gtk_native_get_surface
-		|| !_window) {
+	if (!gtk_native_get_surface || !_window) {
 		return;
 	}
 	const auto toplevel = GdkToplevelFromSurface(GtkNativeSurface(_window));
@@ -1862,7 +1778,7 @@ bool Instance::authenticate(WebKitAuthenticationRequest *request) {
 }
 
 bool Instance::permissionRequest(WebKitPermissionRequest *request) {
-	if (!_restrictedOrigin.empty() && webkit_permission_request_deny) {
+	if (!_restrictedOrigin.empty()) {
 		webkit_permission_request_deny(request);
 		return true;
 	}
@@ -1872,7 +1788,6 @@ bool Instance::permissionRequest(WebKitPermissionRequest *request) {
 	//
 	// WebKitGTK denies unhandled requests by default, we make it explicit.
 	if (webkit_clipboard_permission_request_get_type
-		&& webkit_permission_request_deny
 		&& WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(request)) {
 		webkit_permission_request_deny(request);
 		return true;
@@ -2245,17 +2160,15 @@ void Instance::focus() {
 			return ::base::take(_xdgActivationToken);
 		} else if (gtk_native_get_surface) {
 			if (const auto surface = GtkNativeSurface(_window)) {
-				if (IsGdkX11Surface(surface) && gdk_x11_get_server_time) {
+				if (IsGdkX11Surface(surface)) {
 					return std::string("_TIME")
 						+ std::to_string(gdk_x11_get_server_time(surface));
 				}
 			}
-		} else if (gtk_widget_get_window) {
-			if (const auto gdkWindow = gtk_widget_get_window(_window)) {
-				if (IsGdkX11Window(gdkWindow) && gdk_x11_get_server_time) {
-					return std::string("_TIME")
-						+ std::to_string(gdk_x11_get_server_time(gdkWindow));
-				}
+		} else if (const auto gdkWindow = gtk_widget_get_window(_window)) {
+			if (IsGdkX11Window(gdkWindow)) {
+				return std::string("_TIME")
+					+ std::to_string(gdk_x11_get_server_time(gdkWindow));
 			}
 		}
 		return std::string();
@@ -2308,7 +2221,7 @@ void Instance::ensureWaylandPopupAnchorExport() {
 		|| !_waylandPopupAnchorHandle.isEmpty()) {
 		return;
 	}
-	if (gtk_native_get_surface && gdk_wayland_toplevel_export_handle) {
+	if (gtk_native_get_surface) {
 		if (const auto toplevel = GdkWaylandToplevelFromSurface(
 				GtkNativeSurface(_window))) {
 			const auto generation = ++_waylandPopupAnchorGeneration;
@@ -2340,10 +2253,8 @@ void Instance::ensureWaylandPopupAnchorExport() {
 			} else {
 				_waylandPopupAnchorExportPending = false;
 			}
-			return;
 		}
-	}
-	if (gtk_widget_get_window && gdk_wayland_window_export_handle) {
+	} else {
 		if (const auto gdkWindow = gtk_widget_get_window(_window);
 			IsGdkWaylandWindow(gdkWindow)) {
 			const auto generation = ++_waylandPopupAnchorGeneration;
@@ -2402,14 +2313,12 @@ void Instance::clearWaylandPopupAnchorExport() {
 					gdk_wayland_toplevel_drop_exported_handle(
 						toplevel,
 						data.constData());
-				} else if (gdk_wayland_toplevel_unexport_handle) {
+				} else {
 					gdk_wayland_toplevel_unexport_handle(toplevel);
 				}
 			}
-			return;
 		}
-	}
-	if (gtk_widget_get_window && gdk_wayland_window_unexport_handle) {
+	} else {
 		if (const auto gdkWindow = gtk_widget_get_window(_window);
 			IsGdkWaylandWindow(gdkWindow)
 			&& !handle.isEmpty()) {
@@ -2429,7 +2338,7 @@ void Instance::setWaylandPopupAnchorFromToplevel(
 				gdk_wayland_toplevel_drop_exported_handle(
 					toplevel,
 					data.constData());
-			} else if (gdk_wayland_toplevel_unexport_handle) {
+			} else {
 				gdk_wayland_toplevel_unexport_handle(toplevel);
 			}
 		}
@@ -2444,7 +2353,7 @@ void Instance::setWaylandPopupAnchorFromWindow(
 		GdkWindow *window,
 		QString handle) {
 	if (generation != _waylandPopupAnchorGeneration) {
-		if (!handle.isEmpty() && gdk_wayland_window_unexport_handle) {
+		if (!handle.isEmpty()) {
 			gdk_wayland_window_unexport_handle(window);
 		}
 		return;
@@ -2493,7 +2402,7 @@ PopupAnchor Instance::popupAnchorSnapshot() {
 	if (!_window) {
 		return result;
 	}
-	if (gtk_native_get_surface && gdk_surface_get_width && gdk_surface_get_height) {
+	if (gtk_native_get_surface) {
 		if (const auto surface = GtkNativeSurface(_window)) {
 			const auto width = gdk_surface_get_width(surface);
 			const auto height = gdk_surface_get_height(surface);
@@ -2501,7 +2410,7 @@ PopupAnchor Instance::popupAnchorSnapshot() {
 				result.outerSize = QSize(width, height);
 			}
 		}
-	} else if (gtk_window_get_size) {
+	} else {
 		auto width = gint(0);
 		auto height = gint(0);
 		gtk_window_get_size(GTK_WINDOW(_window), &width, &height);
@@ -2724,8 +2633,6 @@ void Instance::setFullscreen(bool fullscreen) {
 		return;
 	}
 	if (!_window) {
-		return;
-	} else if (!gtk_window_fullscreen || !gtk_window_unfullscreen) {
 		return;
 	} else if (fullscreen) {
 		gtk_window_fullscreen(GTK_WINDOW(_window));

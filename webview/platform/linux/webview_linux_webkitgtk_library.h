@@ -41,12 +41,6 @@
 #define GDK_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_CAST ((object), GDK_TYPE_TOPLEVEL, GdkToplevel))
 #define GDK_IS_TOPLEVEL(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_TOPLEVEL))
 
-#define GDK_TYPE_X11_DISPLAY (gdk_x11_display_get_type ())
-#define GDK_IS_X11_DISPLAY(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_DISPLAY))
-
-#define GDK_TYPE_X11_SCREEN (gdk_x11_screen_get_type ())
-#define GDK_IS_X11_SCREEN(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_SCREEN))
-
 #define GDK_TYPE_X11_SURFACE (gdk_x11_surface_get_type ())
 #define GDK_IS_X11_SURFACE(object) (G_TYPE_CHECK_INSTANCE_TYPE ((object), GDK_TYPE_X11_SURFACE))
 
@@ -173,7 +167,7 @@ typedef enum {
 	GTK_SHADOW_ETCHED_OUT,
 } GtkShadowType;
 
-// GTK 3 values, gdk_event_get_event_type is only loaded there.
+// GTK 3 values, only used there.
 typedef enum {
 	GDK_TOUCH_BEGIN = 37,
 } GdkEventType;
@@ -293,7 +287,6 @@ inline GdkScreen *(*gtk_widget_get_screen)(GtkWidget *widget);
 inline void (*gtk_widget_set_visual)(
 	GtkWidget *widget,
 	GdkVisual *visual);
-inline gint (*gtk_widget_get_scale_factor)(GtkWidget *widget);
 inline void (*gtk_widget_queue_resize)(GtkWidget *widget);
 inline GtkSettings *(*gtk_settings_get_default)(void);
 inline gdouble (*gdk_screen_get_resolution)(GdkScreen *screen);
@@ -373,8 +366,6 @@ inline void (*gdk_window_begin_resize_drag_for_device)(
 inline GdkSurface *(*gtk_native_get_surface)(GtkNative *self);
 inline GType (*gtk_native_get_type)(void);
 inline GType (*gdk_toplevel_get_type)(void);
-inline GType (*gdk_x11_display_get_type)(void);
-inline GType (*gdk_x11_screen_get_type)(void);
 inline GType (*gdk_x11_surface_get_type)(void);
 inline GType (*gdk_x11_window_get_type)(void);
 inline GType (*gdk_wayland_toplevel_get_type)(void);

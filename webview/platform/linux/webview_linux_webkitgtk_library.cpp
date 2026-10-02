@@ -20,6 +20,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
 	const auto result = lib
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_init_check)
+		&& LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_type)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_child)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_container_get_type)
@@ -30,6 +31,10 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_default_size)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_startup_id)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_present)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen)
+		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_is_fullscreen)
+			|| LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_state))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
@@ -37,6 +42,13 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
+		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface)
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window))
+		&& ((LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_width)
+				&& LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_height))
+			|| LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_size))
+		&& (LOAD_LIBRARY_SYMBOL(lib, gdk_display_is_composited)
+			|| LOAD_LIBRARY_SYMBOL(lib, gdk_screen_is_composited))
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_css_class)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_style_context)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_style_context_add_class)))
@@ -56,19 +68,20 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
-		&& ((LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_current_event_time)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_set_propagation_phase)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_reset)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_set_state)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_get_device))
-			|| (LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_move_drag_for_device)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_resize_drag_for_device)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_event_type)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_button)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_coords)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_root_coords)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_device)
-				&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_time)))
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_set_propagation_phase)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_reset)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_set_state)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_get_device)
+		&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_event_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_device)
+		&& LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_time)
+		&& (LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move)
+			|| LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_move_drag_for_device))
+		&& (LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize)
+			|| LOAD_LIBRARY_SYMBOL(lib, gdk_window_begin_resize_drag_for_device))
+		&& (LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_shadow_width)
+			|| LOAD_LIBRARY_SYMBOL(lib, gdk_window_set_shadow_width))
 		&& LOAD_LIBRARY_SYMBOL(lib, jsc_value_to_string)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_navigation_policy_decision_get_navigation_action)
@@ -93,6 +106,22 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_content_manager_register_script_message_handler)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_settings)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_developer_extras)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_auto_load_images)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_dns_prefetching)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_fullscreen)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_html5_database)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_html5_local_storage)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_hyperlink_auditing)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_media)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_media_stream)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_offline_web_application_cache)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_page_cache)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_webaudio)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_webgl)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_javascript_can_access_clipboard)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_javascript_can_open_windows_automatically)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_media_playback_requires_user_gesture)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_is_muted)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_is_loading)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_uri)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_alternate_html)
@@ -106,6 +135,14 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 			|| (LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_new_with_context)
 				&& LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new)
 				&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager)))
+		&& (LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_new_ephemeral)
+			|| LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new_ephemeral))
+		&& (LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_get_cookie_manager)
+			|| LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_get_cookie_manager))
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_cookie_manager_set_accept_policy)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_download_cancel)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_permission_request_deny)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_cancel)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_authenticate)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_get_host)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_get_port)
@@ -115,57 +152,28 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		return ResolveResult::NoLibrary;
 	}
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visual);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_scale_factor);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_display_is_composited);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_is_composited);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_current_event_time);
+	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_rgba_visual);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_resolution);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_button);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_coords);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_root_coords);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new_ephemeral);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_set_sandbox_enabled);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_new_ephemeral);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_get_cookie_manager);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_get_cookie_manager);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_cookie_manager_set_accept_policy);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_default_content_security_policy);
 	LOAD_LIBRARY_SYMBOL(
 		lib,
 		webkit_response_policy_decision_is_main_frame_main_resource);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_download_cancel);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_auto_load_images);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_dns_prefetching);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_fullscreen);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_html5_database);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_html5_local_storage);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_hyperlink_auditing);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_media);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_offline_web_application_cache);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_page_cache);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_webaudio);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_webgl);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_webrtc);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_enable_media_stream);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_javascript_can_access_clipboard);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_javascript_can_open_windows_automatically);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_media_playback_requires_user_gesture);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_is_muted);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_cancel);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_add_controller);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_window_fullscreen);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_window_is_fullscreen);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_type);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_get_type);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_display_get_type);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_screen_get_type);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_clipboard_permission_request_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_get_type);
@@ -173,40 +181,21 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_get_server_time);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_window_set_shadow_width);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_state);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_move);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_begin_resize);
-	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_shadow_width);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_drop_exported_handle);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_unexport_handle);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_announce_csd);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_graphics_offload_new);
 
-	// Since 2.42, before that clipboard reads were denied outright.
-	LOAD_LIBRARY_SYMBOL(lib, webkit_clipboard_permission_request_get_type);
-	LOAD_LIBRARY_SYMBOL(lib, webkit_permission_request_deny);
-
-	if (gtk_native_get_surface) {
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_drop_exported_handle);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_unexport_handle);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_width);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_height);
-	} else if (gtk_widget_get_window) {
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_unexport_handle);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_announce_csd);
-		LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_size);
-		LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_resolution);
-	}
-	if (LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)) {
-		switch (platform) {
-		case Platform::Wayland:
-			gdk_set_allowed_backends("wayland");
-			break;
-		case Platform::X11:
-			gdk_set_allowed_backends("x11");
-			break;
-		}
+	switch (platform) {
+	case Platform::Wayland:
+		gdk_set_allowed_backends("wayland");
+		break;
+	case Platform::X11:
+		gdk_set_allowed_backends("x11");
+		break;
 	}
 	return gtk_init_check(0, 0)
 		? ResolveResult::Success
