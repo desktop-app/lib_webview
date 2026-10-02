@@ -21,6 +21,7 @@
 #include "base/weak_ptr.h"
 #include "base/event_filter.h"
 #include "ui/gl/gl_detection.h"
+#include "ui/style/style_core_scale.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
@@ -806,7 +807,7 @@ bool Instance::create(Config config) {
 				if (e->type() == QEvent::Resize) {
 					const auto size = static_cast<QResizeEvent*>(
 						e.get()
-					)->size();
+					)->size() * 100. / style::Scale();
 					resize(size.width(), size.height());
 				}
 				return ::base::EventFilterResult::Continue;
@@ -2442,10 +2443,14 @@ void Instance::resize(int w, int h) {
 		return;
 	}
 
+	const auto size = QSize(w, h) * PageScale(_window);
 	if (!gtk_window_resize) {
-		gtk_window_set_default_size(GTK_WINDOW(_window), w, h);
+		gtk_window_set_default_size(
+			GTK_WINDOW(_window),
+			size.width(),
+			size.height());
 	} else {
-		gtk_window_resize(GTK_WINDOW(_window), w, h);
+		gtk_window_resize(GTK_WINDOW(_window), size.width(), size.height());
 	}
 }
 
