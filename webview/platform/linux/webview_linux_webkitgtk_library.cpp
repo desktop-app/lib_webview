@@ -159,7 +159,6 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gtk_gesture_click_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_key_new);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_current_event_time);
-	LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_set_shadow_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_rgba_visual);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_screen_get_resolution);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_event_get_button);

@@ -159,14 +159,6 @@ typedef enum {
 	GDK_SURFACE_EDGE_SOUTH_EAST,
 } GdkSurfaceEdge;
 
-typedef enum {
-	GTK_SHADOW_NONE,
-	GTK_SHADOW_IN,
-	GTK_SHADOW_OUT,
-	GTK_SHADOW_ETCHED_IN,
-	GTK_SHADOW_ETCHED_OUT,
-} GtkShadowType;
-
 // GTK 3 values, only used there.
 typedef enum {
 	GDK_TOUCH_BEGIN = 37,
@@ -268,9 +260,6 @@ inline gboolean (*gtk_window_is_fullscreen)(GtkWindow *window);
 inline GtkWidget *(*gtk_scrolled_window_new)(
 	GtkAdjustment *hadjustment,
 	GtkAdjustment *vadjustment);
-inline void (*gtk_scrolled_window_set_shadow_type)(
-	GtkWidget *scrolled_window,
-	GtkShadowType type);
 inline GtkWidget *(*gtk_graphics_offload_new)(GtkWidget *child);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
