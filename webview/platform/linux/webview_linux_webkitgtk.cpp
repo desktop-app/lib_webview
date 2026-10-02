@@ -1076,6 +1076,16 @@ bool Instance::create(Config config) {
 			instance->updateWindowFrameExtents();
 		}),
 		this);
+	if (!gtk_native_get_surface) {
+		// GTK 3 does it on each allocation, one call grows Wayland windows.
+		g_signal_connect_swapped(
+			_window,
+			"size-allocate",
+			G_CALLBACK(+[](Instance *instance) {
+				instance->updateWindowFrameExtents();
+			}),
+			this);
+	}
 	_xftDpiChangedHandler = g_signal_connect_swapped(
 		gtk_settings_get_default(),
 		"notify::gtk-xft-dpi",
@@ -1318,7 +1328,6 @@ bool Instance::create(Config config) {
 			gtk_widget_show_all(_window);
 		}
 	}
-	updateWindowFrameExtents();
 	init(std::string(R"(
 if (window === window.top) {
 	const messageToken = ')") + _messageToken + R"(';
