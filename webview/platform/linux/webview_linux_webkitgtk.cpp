@@ -543,7 +543,7 @@ private:
 	[[nodiscard]] bool transparentWindowBackground() const;
 	void announceCustomWindowFrame();
 	[[nodiscard]] QMargins windowFrameExtents() const;
-	void ensureToplevelFrameExtents();
+	void setupToplevelFrameExtents();
 	void updateWindowFrameExtents();
 
 	bool loadFailed(
@@ -621,8 +621,6 @@ private:
 	std::vector<QRectF> _shellNoDragRegions;
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
-	GdkToplevel *_frameExtentsToplevel = nullptr;
-	gulong _frameExtentsComputeSizeHandler = 0;
 	gulong _xftDpiChangedHandler = 0;
 	std::string _xdgActivationToken;
 
@@ -683,11 +681,6 @@ Instance::~Instance() {
 			_xftDpiChangedHandler);
 	}
 	if (_window) {
-		if (_frameExtentsToplevel && _frameExtentsComputeSizeHandler) {
-			g_signal_handler_disconnect(
-				_frameExtentsToplevel,
-				_frameExtentsComputeSizeHandler);
-		}
 		clearWaylandPopupAnchorExport();
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(_window));
@@ -1073,6 +1066,7 @@ bool Instance::create(Config config) {
 		"realize",
 		G_CALLBACK(+[](Instance *instance) {
 			instance->announceCustomWindowFrame();
+			instance->setupToplevelFrameExtents();
 			instance->updateWindowFrameExtents();
 		}),
 		this);
@@ -1566,22 +1560,12 @@ QMargins Instance::windowFrameExtents() const {
 		: QMargins();
 }
 
-void Instance::ensureToplevelFrameExtents() {
-	if (!gtk_native_get_surface || !_window) {
+void Instance::setupToplevelFrameExtents() {
+	if (!customWindowFrame() || !gtk_native_get_surface) {
 		return;
 	}
-	const auto toplevel = GdkToplevelFromSurface(GtkNativeSurface(_window));
-	if (!toplevel || toplevel == _frameExtentsToplevel) {
-		return;
-	}
-	if (_frameExtentsToplevel && _frameExtentsComputeSizeHandler) {
-		g_signal_handler_disconnect(
-			_frameExtentsToplevel,
-			_frameExtentsComputeSizeHandler);
-	}
-	_frameExtentsToplevel = toplevel;
-	_frameExtentsComputeSizeHandler = g_signal_connect_after(
-		toplevel,
+	g_signal_connect_after(
+		GtkNativeSurface(_window),
 		"compute-size",
 		G_CALLBACK(+[](
 				GdkToplevel*,
@@ -1602,7 +1586,6 @@ void Instance::updateWindowFrameExtents() {
 	if (!customWindowFrame() || !_window) {
 		return;
 	}
-	ensureToplevelFrameExtents();
 	SetFrameExtents(_window, windowFrameExtents());
 }
 
