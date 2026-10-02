@@ -811,6 +811,7 @@ bool Instance::create(Config config) {
 				}
 				return ::base::EventFilterResult::Continue;
 			});
+			_widget->show();
 			break;
 		case Platform::X11:
 			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
