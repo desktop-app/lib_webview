@@ -64,7 +64,6 @@ public:
 
 	// May be nullptr or destroyed any time (in case webview crashed).
 	[[nodiscard]] QWidget *widget() const;
-	[[nodiscard]] void *winId() const;
 	[[nodiscard]] PopupAnchor popupAnchor() const;
 
 	void updateTheme(
@@ -91,7 +90,6 @@ public:
 	void eval(const QByteArray &js);
 
 	void focus();
-	void resize(QSize size);
 	void setFullscreen(bool fullscreen);
 	void setInteractionHandler(Fn<void()> handler);
 

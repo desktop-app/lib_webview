@@ -191,10 +191,6 @@ QWidget *Window::widget() const {
 	return _webview ? _webview->widget() : nullptr;
 }
 
-void *Window::winId() const {
-	return _webview ? _webview->winId() : nullptr;
-}
-
 PopupAnchor Window::popupAnchor() const {
 	return _webview ? _webview->popupAnchor() : PopupAnchor();
 }
@@ -292,12 +288,6 @@ void Window::focus() {
 	Expects(_webview != nullptr);
 
 	_webview->focus();
-}
-
-void Window::resize(QSize size) {
-	Expects(_webview != nullptr);
-
-	_webview->resize(size.width(), size.height());
 }
 
 void Window::setFullscreen(bool fullscreen) {

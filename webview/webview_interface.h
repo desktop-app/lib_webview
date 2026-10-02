@@ -89,15 +89,10 @@ public:
 	}
 
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
-	virtual void resize(int width, int height) {
-	}
 	virtual void setFullscreen(bool fullscreen) {
 	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
-	[[nodiscard]] virtual void *winId() {
-		return nullptr;
-	}
 	[[nodiscard]] virtual PopupAnchor popupAnchor() {
 		return {};
 	}

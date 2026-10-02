@@ -484,8 +484,6 @@ public:
 	ResolveResult resolve();
 	bool startDataServer();
 
-	void resize(int w, int h) override;
-
 	void navigate(std::string url) override;
 	void navigateToData(std::string id) override;
 	void loadHtml(std::string html, std::string baseUrl) override;
@@ -500,7 +498,6 @@ public:
 	void setFullscreen(bool fullscreen) override;
 
 	QWidget *widget() override;
-	void *winId() override;
 	PopupAnchor popupAnchor() override;
 
 	void refreshNavigationHistoryState() override;
@@ -560,6 +557,7 @@ private:
 		bool headersWritten,
 		const std::shared_ptr<HttpServer::Guard> &guard);
 
+	void resize(int w, int h);
 	void startProcess();
 	void stopProcess();
 	void updateHistoryStates();
@@ -577,6 +575,7 @@ private:
 		std::uint64_t generation,
 		GdkWindow *window,
 		QString handle);
+	[[nodiscard]] void *winId();
 	[[nodiscard]] PopupAnchor popupAnchorSnapshot();
 
 	bool _remoting = false;
@@ -2375,11 +2374,6 @@ void *Instance::winId() {
 		return ret.value_or(nullptr);
 	}
 
-	if (_mode == WindowMode::External) {
-		const auto xid = X11WindowId(_window);
-		return xid ? reinterpret_cast<void*>(xid) : nullptr;
-	}
-
 	return (_mode == WindowMode::Embedded && _platform == Platform::X11)
 		? reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)))
 		: nullptr;
@@ -2601,10 +2595,6 @@ void Instance::resize(int w, int h) {
 		return;
 	}
 
-	if (_mode == WindowMode::External) {
-		gtk_window_set_default_size(GTK_WINDOW(_window), w, h);
-		return;
-	}
 	gtk_widget_set_size_request(_window, w, h);
 	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
 		if (_window) {
