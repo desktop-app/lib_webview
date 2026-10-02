@@ -1838,7 +1838,7 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 			dialog,
 			accepted ? result.c_str() : nullptr);
 	} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
-		webkit_script_dialog_confirm_set_confirmed(dialog, false);
+		webkit_script_dialog_confirm_set_confirmed(dialog, accepted);
 	}
 	return true;
 }
