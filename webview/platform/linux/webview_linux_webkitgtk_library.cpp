@@ -39,7 +39,6 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
-		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_size_request)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
@@ -152,6 +151,7 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	if (!result) {
 		return ResolveResult::NoLibrary;
 	}
+	LOAD_LIBRARY_SYMBOL(lib, gtk_window_resize);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visual);
