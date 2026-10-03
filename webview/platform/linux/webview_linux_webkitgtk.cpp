@@ -1586,7 +1586,7 @@ bool Instance::customWindowFrame() const {
 bool Instance::transparentWindowBackground() const {
 	return _windowSupportsAlpha
 		&& (customWindowFrame()
-			|| (_mode != WindowMode::External
+			|| (_mode == WindowMode::Embedded
 				&& _platform == Platform::Wayland));
 }
 
@@ -2631,7 +2631,7 @@ void Instance::startProcess() {
 		Gio::SubprocessFlags::NONE_);
 
 	if (_platform == Platform::Wayland
-			&& _mode != WindowMode::External
+			&& _mode == WindowMode::Embedded
 			&& _glBackend == Ui::GL::Backend::Raster) {
 		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
 		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
@@ -2687,7 +2687,7 @@ void Instance::startProcess() {
 
 	Gio::File::new_for_path(socketPath).delete_();
 
-	if (_platform == Platform::Wayland && _mode != WindowMode::External) {
+	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
 		_compositor.emplace(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(socketPath + "-wayland")));
