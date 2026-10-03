@@ -39,6 +39,7 @@ ResolveResult Resolve(Platform platform) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
+		&& LOAD_LIBRARY_SYMBOL(lib, gdk_display_sync)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_surface)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_window))
 		&& ((LOAD_LIBRARY_SYMBOL(lib, gdk_surface_get_width)

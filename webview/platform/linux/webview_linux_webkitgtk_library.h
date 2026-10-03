@@ -268,6 +268,7 @@ inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);
+inline void (*gdk_display_sync)(GdkDisplay *display);
 inline GdkWindow *(*gtk_widget_get_window)(GtkWidget *widget);
 inline GdkScreen *(*gtk_widget_get_screen)(GtkWidget *widget);
 inline void (*gtk_widget_set_visual)(

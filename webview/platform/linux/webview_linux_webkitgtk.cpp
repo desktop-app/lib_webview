@@ -766,11 +766,6 @@ bool Instance::create(Config config) {
 			}
 			widget->setClearColor(config.opaqueBg);
 			widget->show();
-			const auto since = crl::now();
-			while (crl::now() - since < 1000) {
-				_compositor->processWaylandEvents();
-				GLib::MainContext::default_().iteration(false);
-			}
 		}
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (_compositor) {
@@ -915,6 +910,11 @@ bool Instance::create(Config config) {
 	}
 
 	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
+		// GTK takes the scale on creation: bind the new output, get its scale.
+		gdk_display_sync(gtk_widget_get_display(_window));
+		gdk_display_sync(gtk_widget_get_display(_window));
+	}
 	if (_mode == WindowMode::External) {
 		if (customWindowFrame()) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
