@@ -40,14 +40,13 @@ bool InBlockingPopup/* = false*/;
 bool InBlockingPopupLoop/* = false*/;
 int PopupsShownQuickly/* = 0*/;
 crl::time PopupLastShown/* = 0*/;
-QPointer<Ui::SeparatePanel> CurrentBlockingPopup;
-bool CloseBlockingPopupRequested/* = false*/;
 std::vector<Fn<void()>> BlockingPopupFinishCallbacks;
 
 struct AsyncPopupState {
 	PopupResult result;
 	Fn<void(PopupResult)> done;
 	base::unique_qptr<Ui::SeparatePanel> widget;
+	bool closeRequested = false;
 	bool finished = false;
 };
 
@@ -118,7 +117,6 @@ struct AsyncPopupState {
 	}
 	raw->setTitleHeight(titleHeight);
 	auto layout = base::make_unique_q<Ui::VerticalLayout>(raw);
-	CurrentBlockingPopup = raw;
 	const auto skip = st::boxDividerHeight;
 	const auto container = layout.get();
 	const auto addedRightPadding = args.title.isEmpty()
@@ -275,8 +273,6 @@ void FinishAsyncPopup(
 		widget->deleteLater();
 	}
 	InBlockingPopup = false;
-	CurrentBlockingPopup = nullptr;
-	CloseBlockingPopupRequested = false;
 	PopupLastShown = crl::now();
 	if (state->done) {
 		state->done(std::move(result));
@@ -284,17 +280,6 @@ void FinishAsyncPopup(
 }
 
 } // namespace
-
-bool CloseBlockingPopup() {
-	if (CurrentBlockingPopup) {
-		CurrentBlockingPopup->hideGetDuration();
-		return true;
-	} else if (InBlockingPopup) {
-		CloseBlockingPopupRequested = true;
-		return true;
-	}
-	return false;
-}
 
 bool InsideBlockingPopup() {
 	return InBlockingPopupLoop;
@@ -317,8 +302,6 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	InBlockingPopup = InBlockingPopupLoop = true;
 	const auto guard = gsl::finally([] {
 		InBlockingPopup = InBlockingPopupLoop = false;
-		CurrentBlockingPopup = nullptr;
-		CloseBlockingPopupRequested = false;
 		FlushBlockingPopupFinishCallbacks();
 	});
 
@@ -349,9 +332,6 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 		};
 		QObject::connect(raw, &QObject::destroyed, finish);
 		raw->closeEvents() | rpl::on_next(finish, raw->lifetime());
-		if (CloseBlockingPopupRequested) {
-			raw->hideGetDuration();
-		}
 	});
 	loop.exec(QEventLoop::DialogExec);
 	widget = nullptr;
@@ -363,7 +343,7 @@ DialogResult DefaultDialogHandler(DialogArgs &&args) {
 	return DialogResultFromPopup(ShowBlockingPopup(DialogPopupArgs(args)));
 }
 
-void ShowPopupAsync(
+Fn<void()> ShowPopupAsync(
 		PopupArgs &&popup,
 		Fn<void(PopupResult)> done,
 		bool modal) {
@@ -371,17 +351,16 @@ void ShowPopupAsync(
 		if (done) {
 			done({});
 		}
-		return;
+		return nullptr;
 	}
 	InBlockingPopup = true;
 
 	if (!popup.ignoreFloodCheck && PopupsShownTooQuickly()) {
 		InBlockingPopup = false;
-		CloseBlockingPopupRequested = false;
 		if (done) {
 			done({});
 		}
-		return;
+		return nullptr;
 	}
 
 	const auto state = std::make_shared<AsyncPopupState>();
@@ -389,7 +368,7 @@ void ShowPopupAsync(
 	const auto context = QCoreApplication::instance();
 	if (!context) {
 		FinishAsyncPopup(state, false);
-		return;
+		return nullptr;
 	}
 	const auto parent = QPointer<QWidget>(popup.parent);
 	const auto parentRequired = (popup.parent != nullptr);
@@ -417,17 +396,26 @@ void ShowPopupAsync(
 		) | rpl::on_next([state] {
 			FinishAsyncPopup(state, true);
 		}, raw->lifetime());
-		if (CloseBlockingPopupRequested) {
+		if (state->closeRequested) {
 			raw->hideGetDuration();
 		}
 	});
+	return [weak = std::weak_ptr(state)] {
+		if (const auto state = weak.lock()) {
+			if (state->widget) {
+				state->widget->hideGetDuration();
+			} else {
+				state->closeRequested = true;
+			}
+		}
+	};
 }
 
-void DefaultDialogHandlerAsync(
+Fn<void()> DefaultDialogHandlerAsync(
 		DialogArgs &&args,
 		Fn<void(DialogResult)> done,
 		bool modal) {
-	ShowPopupAsync(DialogPopupArgs(args), [=](PopupResult result) {
+	return ShowPopupAsync(DialogPopupArgs(args), [=](PopupResult result) {
 		if (done) {
 			done(DialogResultFromPopup(std::move(result)));
 		}

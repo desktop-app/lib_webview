@@ -47,11 +47,12 @@ struct PopupResult {
 	std::optional<QString> value;
 };
 [[nodiscard]] PopupResult ShowBlockingPopup(PopupArgs &&args);
-void ShowPopupAsync(
+
+// Returns a function closing this popup, or nullptr if it wasn't shown.
+Fn<void()> ShowPopupAsync(
 	PopupArgs &&args,
 	Fn<void(PopupResult)> done,
 	bool modal = true);
-bool CloseBlockingPopup();
 
 // True while the nested event loop of a blocking popup is running.
 // Destroying a webview or its owner in that state is unsafe: the popup
@@ -68,7 +69,7 @@ struct DialogArgs;
 struct DialogResult;
 
 [[nodiscard]] DialogResult DefaultDialogHandler(DialogArgs &&args);
-void DefaultDialogHandlerAsync(
+Fn<void()> DefaultDialogHandlerAsync(
 	DialogArgs &&args,
 	Fn<void(DialogResult)> done,
 	bool modal = true);
