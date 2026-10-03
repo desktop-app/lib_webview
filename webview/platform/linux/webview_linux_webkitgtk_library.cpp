@@ -17,11 +17,13 @@ ResolveResult Resolve(Platform platform) {
 	const auto result = lib
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_init_check)
 		&& LOAD_LIBRARY_SYMBOL(lib, gdk_set_allowed_backends)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_application_new)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_type)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_child)
 			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_container_get_type)
 			&& LOAD_LIBRARY_SYMBOL(lib, gtk_container_add)))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_new)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_application)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_title)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_set_decorated)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_default_size)

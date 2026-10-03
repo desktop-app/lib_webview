@@ -635,6 +635,7 @@ private:
 	bool _connected = false;
 	Master _master;
 	Helper _helper;
+	GLib::MainLoop _mainLoop;
 	Gio::DBusServer _dbusServer;
 	Gio::DBusObjectManagerServer _dbusObjectManager;
 	Gio::Subprocess _serviceProcess;
@@ -646,6 +647,7 @@ private:
 	::base::unique_qptr<Compositor> _compositor;
 	std::optional<HttpServer> _dataServer;
 
+	GtkApplication *_application = nullptr;
 	GtkWidget *_window = nullptr;
 	WebKitWebView *_webview = nullptr;
 	GtkCssProvider *_backgroundProvider = nullptr;
@@ -657,6 +659,7 @@ private:
 	bool _fullscreen = false;
 	gulong _xftDpiChangedHandler = 0;
 	gulong _x11EventHandler = 0;
+	std::string _applicationId;
 	std::string _xdgActivationToken;
 
 	bool _debug = false;
@@ -727,6 +730,9 @@ Instance::~Instance() {
 		} else {
 			gtk_widget_destroy(_window);
 		}
+	}
+	if (_application) {
+		g_object_unref(_application);
 	}
 }
 
@@ -916,6 +922,17 @@ bool Instance::create(Config config) {
 		gdk_display_sync(gtk_widget_get_display(_window));
 	}
 	if (_mode == WindowMode::External) {
+		if (!_applicationId.empty()) {
+			// GTK gives windows an application id only from GtkApplication.
+			_application = gtk_application_new(
+				_applicationId.c_str(),
+				G_APPLICATION_NON_UNIQUE);
+			g_application_register(
+				G_APPLICATION(_application),
+				nullptr,
+				nullptr);
+			gtk_window_set_application(GTK_WINDOW(_window), _application);
+		}
 		if (customWindowFrame()) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
 		}
@@ -1103,7 +1120,7 @@ bool Instance::create(Config config) {
 		"destroy",
 		G_CALLBACK(+[](Instance *instance) {
 			instance->_window = nullptr;
-			Gio::Application::get_default().quit();
+			instance->_mainLoop.quit();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1150,7 +1167,7 @@ bool Instance::create(Config config) {
 				Instance *instance,
 				WebKitWebProcessTerminationReason reason) {
 			g_critical("Web process terminated: %d.", reason);
-			Gio::Application::get_default().quit();
+			instance->_mainLoop.quit();
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1162,7 +1179,7 @@ bool Instance::create(Config config) {
 			if (!webkit_web_view_get_is_web_process_responsive(
 					instance->_webview)) {
 				g_critical("Web process became unresponsive.");
-				Gio::Application::get_default().quit();
+				instance->_mainLoop.quit();
 			}
 		}),
 		this);
@@ -3005,18 +3022,7 @@ void Instance::registerMasterMethodHandlers() {
 }
 
 int Instance::exec() {
-	auto app = Gio::Application::new_(
-		Gio::ApplicationFlags::NON_UNIQUE_);
-
-	app.signal_startup().connect([=](Gio::Application) {
-		_helper.emit_started();
-	});
-
-	app.signal_activate().connect([](Gio::Application) {});
-
-	app.hold();
-
-	auto loop = GLib::MainLoop::new_();
+	_mainLoop = GLib::MainLoop::new_();
 
 	std::uint8_t dummy{};
 #if __has_include(<giounix/giounix.hpp>)
@@ -3057,10 +3063,17 @@ int Instance::exec() {
 			if (!master) {
 				error = true;
 				g_critical("%s", master.error().message_().c_str());
-				loop.quit();
+				_mainLoop.quit();
 				return;
 			}
 			_master = *master;
+			_master.signal_data_server_started().connect([=](
+					Master,
+					std::uint16_t port,
+					const std::string &password) {
+				_dataPort = port;
+				_dataPassword = password;
+			});
 			_master.call_get_start_data([&](
 					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
@@ -3069,7 +3082,7 @@ int Instance::exec() {
 				if (!settings) {
 					error = true;
 					g_critical("%s", settings.error().message_().c_str());
-					loop.quit();
+					_mainLoop.quit();
 					return;
 				}
 				_platform = Platform(std::get<1>(*settings));
@@ -3080,9 +3093,9 @@ int Instance::exec() {
 				}
 				if (const auto appId = std::get<4>(*settings)
 						; !appId.empty()) {
-					app.set_application_id(appId);
+					_applicationId = appId;
 				}
-				loop.quit();
+				_helper.emit_started();
 			});
 		});
 
@@ -3090,24 +3103,11 @@ int Instance::exec() {
 			Gio::DBusConnection,
 			bool remotePeerVanished,
 			GLib::Error_Ref error) {
-		app.quit();
+		_mainLoop.quit();
 	});
 
-	loop.run();
-
-	if (error) {
-		return 1;
-	}
-
-	_master.signal_data_server_started().connect([=](
-			Master,
-			std::uint16_t port,
-			const std::string &password) {
-		_dataPort = port;
-		_dataPassword = password;
-	});
-
-	return app.run({});
+	_mainLoop.run();
+	return error;
 }
 
 void Instance::registerHelperMethodHandlers() {

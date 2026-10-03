@@ -76,6 +76,7 @@ typedef struct _GdkRGBA GdkRGBA;
 typedef struct _GdkSurface GdkSurface;
 typedef struct _GdkVisual GdkVisual;
 typedef struct _GdkWindow GdkWindow;
+typedef struct _GtkApplication GtkApplication;
 typedef struct _GtkContainer GtkContainer;
 typedef struct _GtkNative GtkNative;
 typedef struct _GtkSettings GtkSettings;
@@ -227,6 +228,9 @@ namespace Webview::WebKitGTK::Library {
 
 inline gboolean (*gtk_init_check)(int *argc, char ***argv);
 inline void (*gdk_set_allowed_backends)(const gchar *backends);
+inline GtkApplication *(*gtk_application_new)(
+	const gchar *application_id,
+	GApplicationFlags flags);
 inline GType (*gtk_widget_get_type)(void);
 inline GType (*gtk_container_get_type)(void);
 inline void (*gtk_container_add)(
@@ -236,6 +240,9 @@ inline void (*gtk_window_set_child)(
 	GtkWindow *window,
 	GtkWidget *child);
 inline GtkWidget *(*gtk_window_new)(GtkWindowType type);
+inline void (*gtk_window_set_application)(
+	GtkWindow *window,
+	GtkApplication *application);
 inline void (*gtk_window_set_title)(
 	GtkWindow *window,
 	const gchar *title);
