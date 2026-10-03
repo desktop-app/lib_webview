@@ -146,16 +146,45 @@ Compositor::Chrome::Chrome(
 	xdgSurface->setProperty("window", QVariant::fromValue(window));
 
 	base::install_event_filter(this, window, [=](not_null<QEvent*> e) {
-		if (e->type() != QEvent::Close) {
-			return base::EventFilterResult::Continue;
+		if (e->type() == QEvent::Close) {
+			e->ignore();
+			if (const auto toplevel = xdgSurface->toplevel()) {
+				toplevel->sendClose();
+			} else if (const auto popup = xdgSurface->popup()) {
+				popup->sendPopupDone();
+			}
+			return base::EventFilterResult::Cancel;
+		} else if (e->isPointerEvent()) {
+			const auto pe = static_cast<QPointerEvent*>(e.get());
+			if (!xdgSurface->popup() || !pe->isBeginEvent()) {
+				return base::EventFilterResult::Continue;
+			}
+			const auto point = pe->points().first();
+			const auto position = point.globalPosition().toPoint();
+			for (QWindow *popup = window
+					; popup && popup->type() == Qt::Popup
+					; popup = popup->transientParent()) {
+				if (popup->geometry().contains(position)) {
+					return base::EventFilterResult::Continue;
+				}
+			}
+			for (QWindow *popup = window
+					; popup && popup->type() == Qt::Popup
+					; popup = popup->transientParent()) {
+				const auto surface = qobject_cast<QWaylandXdgSurface*>(
+					static_cast<QObject*>(popup)->parent());
+				const auto xdgPopup = surface
+					? surface->popup()
+					: nullptr;
+				if (!xdgPopup) {
+					continue;
+				}
+				xdgPopup->sendPopupDone();
+			}
+			e->ignore();
+			return base::EventFilterResult::Cancel;
 		}
-		e->ignore();
-		if (const auto toplevel = xdgSurface->toplevel()) {
-			toplevel->sendClose();
-		} else if (const auto popup = xdgSurface->popup()) {
-			popup->sendPopupDone();
-		}
-		return base::EventFilterResult::Cancel;
+		return base::EventFilterResult::Continue;
 	});
 
 	rpl::single(rpl::empty) | rpl::then(
