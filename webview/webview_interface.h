@@ -42,7 +42,6 @@ struct NavigationHistoryState {
 };
 
 struct PopupAnchor {
-	std::optional<QRect> geometry;
 	std::optional<QSize> outerSize;
 	Ui::Platform::ForeignParent transientParent;
 };
@@ -114,7 +113,6 @@ enum class DialogType {
 
 struct DialogArgs {
 	QWidget *parent = nullptr;
-	std::optional<QRect> anchorGeometry;
 	Ui::Platform::ForeignParent transientParent;
 	DialogType type = DialogType::Alert;
 	std::string value;

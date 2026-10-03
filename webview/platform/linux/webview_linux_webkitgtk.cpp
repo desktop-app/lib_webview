@@ -357,17 +357,6 @@ struct ShellControlMessage {
 	return {};
 }
 
-[[nodiscard]] std::optional<QRect> PopupAnchorGeometry(
-		bool hasGeometry,
-		int x,
-		int y,
-		int width,
-		int height) {
-	return (hasGeometry && ValidPopupAnchorSize(width, height))
-		? std::make_optional(QRect(x, y, width, height))
-		: std::nullopt;
-}
-
 [[nodiscard]] std::optional<QSize> PopupAnchorOuterSize(
 		bool hasOuterSize,
 		int width,
@@ -2521,18 +2510,10 @@ PopupAnchor Instance::popupAnchor() {
 						std::get<3>(*reply))) {
 					result.transientParent = parent;
 				}
-				if (const auto geometry = PopupAnchorGeometry(
+				if (const auto outerSize = PopupAnchorOuterSize(
 						std::get<4>(*reply),
 						std::get<5>(*reply),
-						std::get<6>(*reply),
-						std::get<7>(*reply),
-						std::get<8>(*reply))) {
-					result.geometry = *geometry;
-				}
-				if (const auto outerSize = PopupAnchorOuterSize(
-						std::get<9>(*reply),
-						std::get<10>(*reply),
-						std::get<11>(*reply))) {
+						std::get<6>(*reply))) {
 					result.outerSize = *outerSize;
 				}
 			}
@@ -3276,18 +3257,12 @@ void Instance::registerHelperMethodHandlers() {
 			Helper,
 			Gio::DBusMethodInvocation invocation) {
 		const auto anchor = popupAnchorSnapshot();
-		const auto geometry = anchor.geometry.value_or(QRect());
 		const auto outerSize = anchor.outerSize.value_or(QSize());
 		_helper.complete_get_window_anchor(
 			invocation,
 			int(anchor.transientParent.type),
 			uint64(anchor.transientParent.x11),
 			anchor.transientParent.wayland.toStdString(),
-			anchor.geometry.has_value(),
-			geometry.x(),
-			geometry.y(),
-			geometry.width(),
-			geometry.height(),
 			anchor.outerSize.has_value(),
 			outerSize.width(),
 			outerSize.height());

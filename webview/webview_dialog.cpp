@@ -65,7 +65,6 @@ struct AsyncPopupState {
 	}
 	return {
 		.parent = args.parent,
-		.anchorGeometry = args.anchorGeometry,
 		.transientParent = args.transientParent,
 		.title = QUrl(QString::fromStdString(args.url)).host(),
 		.text = QString::fromStdString(args.text),
@@ -102,7 +101,6 @@ struct AsyncPopupState {
 	auto separatePanelArgs = Ui::SeparatePanelArgs{
 		.parent = parent,
 	};
-	separatePanelArgs.anchorGeometry = args.anchorGeometry;
 	separatePanelArgs.transientParent = args.transientParent;
 	auto panel = base::make_unique_q<Ui::SeparatePanel>(
 		std::move(separatePanelArgs));

@@ -35,7 +35,6 @@ struct PopupArgs {
 	};
 
 	QWidget *parent = nullptr;
-	std::optional<QRect> anchorGeometry;
 	Ui::Platform::ForeignParent transientParent;
 	QString title;
 	QString text;
