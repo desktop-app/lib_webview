@@ -11,6 +11,7 @@
 #include "webview/platform/linux/webview_linux_http_server.h"
 #include "webview/webview_data_stream.h"
 #include "base/platform/base_platform_info.h"
+#include "base/platform/linux/base_linux_xcb_utilities.h"
 #include "base/platform/linux/base_linux_xdg_activation_token.h"
 #include "base/algorithm.h"
 #include "base/debug_log.h"
@@ -432,6 +433,62 @@ struct ShellControlMessage {
 		: 0;
 }
 
+// XMapEvent from Xlib.h, which we avoid to include.
+struct X11MapEvent {
+	int type = 0;
+	unsigned long serial = 0;
+	int sendEvent = 0;
+	void *display = nullptr;
+	unsigned long event = 0;
+	unsigned long window = 0;
+};
+
+constexpr auto kX11MapNotify = 19;
+
+// XSetWindowAttributes from Xlib.h, which we avoid to include.
+struct X11WindowAttributes {
+	unsigned long backgroundPixmap = 0;
+	unsigned long backgroundPixel = 0;
+	unsigned long borderPixmap = 0;
+	unsigned long borderPixel = 0;
+	int bitGravity = 0;
+	int winGravity = 0;
+	int backingStore = 0;
+	unsigned long backingPlanes = 0;
+	unsigned long backingPixel = 0;
+	int saveUnder = 0;
+	long eventMask = 0;
+	long doNotPropagateMask = 0;
+	int overrideRedirect = 0;
+	unsigned long colormap = 0;
+	unsigned long cursor = 0;
+};
+
+constexpr auto kX11CWOverrideRedirect = 1UL << 9;
+constexpr auto kX11RevertToParent = 2;
+
+void FocusX11Window(WId window) {
+	using namespace ::base::Platform::XCB::Library;
+	static const auto xcb_set_input_focus_checked = LoadSymbol<
+		xcb_void_cookie_t(
+			xcb_connection_t*,
+			uint8_t,
+			xcb_window_t,
+			xcb_timestamp_t)>("xcb_set_input_focus_checked");
+	const ::base::Platform::XCB::Connection connection;
+	if (!connection || xcb_connection_has_error(connection)) {
+		return;
+	}
+	free(
+		xcb_request_check(
+			connection,
+			xcb_set_input_focus_checked(
+				connection,
+				XCB_INPUT_FOCUS_PARENT,
+				window,
+				XCB_CURRENT_TIME)));
+}
+
 [[nodiscard]] bool SetupWindowAlpha(GtkWidget *window) {
 	if (!window) {
 		return false;
@@ -522,6 +579,7 @@ private:
 	[[nodiscard]] bool shellMoveArea(QPointF point) const;
 	void pressed(GtkGesture *gesture, double x, double y);
 	[[nodiscard]] bool pressed(GdkEvent *event);
+	void takeX11InputFocus(guint32 time);
 	[[nodiscard]] bool notifyExternalWindowClosed();
 	void fullscreenChanged(bool fullscreen);
 	[[nodiscard]] bool customWindowFrame() const;
@@ -530,6 +588,8 @@ private:
 	[[nodiscard]] QMargins windowFrameExtents() const;
 	void setupToplevelFrameExtents();
 	void updateWindowFrameExtents();
+	void showWindow();
+	void setupX11Embedding();
 
 	bool loadFailed(
 		WebKitLoadEvent loadEvent,
@@ -582,6 +642,7 @@ private:
 	Platform _platform = Platform::Any;
 	Ui::GL::Backend _glBackend;
 	::base::unique_qptr<QWidget> _widget;
+	::base::unique_qptr<QObject> _x11FocusReturnFilter;
 	::base::unique_qptr<Compositor> _compositor;
 	std::optional<HttpServer> _dataServer;
 
@@ -595,6 +656,7 @@ private:
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
 	gulong _xftDpiChangedHandler = 0;
+	gulong _x11EventHandler = 0;
 	std::string _xdgActivationToken;
 
 	bool _debug = false;
@@ -653,6 +715,11 @@ Instance::~Instance() {
 		g_signal_handler_disconnect(
 			gtk_settings_get_default(),
 			_xftDpiChangedHandler);
+	}
+	if (_x11EventHandler) {
+		g_signal_handler_disconnect(
+			gtk_widget_get_display(_window),
+			_x11EventHandler);
 	}
 	if (_window) {
 		if (gtk_window_destroy) {
@@ -815,23 +882,31 @@ bool Instance::create(Config config) {
 			_widget->show();
 			break;
 		case Platform::X11:
-			const auto window = QPointer(QWindow::fromWinId(WId(winId())));
-			::base::install_event_filter(window, [=](
-					not_null<QEvent*> e) {
-				if (e->type() == QEvent::Show) {
-					GLib::timeout_add_seconds_once(1, crl::guard(window, [=] {
-						const auto size = window->size();
-						window->resize(0, 0);
-						window->resize(size);
-					}));
-				}
-				return ::base::EventFilterResult::Continue;
-			});
 			_widget.reset(
 				QWidget::createWindowContainer(
-					window,
+					QWindow::fromWinId(WId(winId())),
 					config.parent,
 					Qt::FramelessWindowHint));
+			::base::install_event_filter(_widget, [=](
+					not_null<QEvent*> e) {
+				const auto window = (e->type() == QEvent::Show)
+					? _widget->window()->windowHandle()
+					: nullptr;
+				if (!window) {
+					return ::base::EventFilterResult::Continue;
+				}
+				// KWin ignores activation of the active window, so take the focus back.
+				_x11FocusReturnFilter.reset(::base::install_event_filter(
+					window,
+					[=](not_null<QEvent*> event) {
+						if (event->type() == QEvent::MouseButtonPress
+							&& !QGuiApplication::focusWindow()) {
+							FocusX11Window(window->winId());
+						}
+						return ::base::EventFilterResult::Continue;
+					}).get());
+				return ::base::EventFilterResult::Continue;
+			});
 			_widget->show();
 			break;
 		}
@@ -839,10 +914,7 @@ bool Instance::create(Config config) {
 		return true;
 	}
 
-	_window = (_platform == Platform::X11)
-		&& (_mode == WindowMode::Embedded)
-		? gtk_plug_new(0)
-		: gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	if (_mode == WindowMode::External) {
 		if (customWindowFrame()) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
@@ -1275,19 +1347,13 @@ bool Instance::create(Config config) {
 		} else {
 			gtk_window_set_child(GTK_WINDOW(_window), GTK_WIDGET(_webview));
 		}
-	} else if (gtk_plug_get_type && GTK_IS_PLUG(_window)) {
-		const auto x11SizeFix = gtk_scrolled_window_new(nullptr, nullptr);
-		gtk_container_add(GTK_CONTAINER(x11SizeFix), GTK_WIDGET(_webview));
-		gtk_container_add(GTK_CONTAINER(_window), x11SizeFix);
 	} else {
 		gtk_container_add(GTK_CONTAINER(_window), GTK_WIDGET(_webview));
 	}
-	if (_mode != WindowMode::Hidden) {
-		if (!gtk_widget_show_all) {
-			gtk_widget_set_visible(_window, true);
-		} else {
-			gtk_widget_show_all(_window);
-		}
+	if (_platform == Platform::X11 && _mode == WindowMode::Embedded) {
+		setupX11Embedding();
+	} else if (_mode != WindowMode::Hidden) {
+		showWindow();
 	}
 	init(std::string(R"(
 if (window === window.top) {
@@ -1405,6 +1471,8 @@ void Instance::pressed(GtkGesture *gesture, double x, double y) {
 	if (_master) {
 		_master.call_user_interaction(nullptr);
 	}
+	takeX11InputFocus(gtk_event_controller_get_current_event_time(
+		GTK_EVENT_CONTROLLER(gesture)));
 	if (!customWindowFrame()) {
 		return;
 	}
@@ -1455,6 +1523,7 @@ bool Instance::pressed(GdkEvent *event) {
 	if (_master) {
 		_master.call_user_interaction(nullptr);
 	}
+	takeX11InputFocus(gdk_event_get_time(event));
 	auto x = 0.;
 	auto y = 0.;
 	auto rootX = 0.;
@@ -1495,6 +1564,18 @@ bool Instance::pressed(GdkEvent *event) {
 			time);
 	}
 	return true;
+}
+
+void Instance::takeX11InputFocus(guint32 time) {
+	if (_platform != Platform::X11 || _mode != WindowMode::Embedded) {
+		return;
+	}
+	// Qt keeps the focus on its window, so keys go here only under pointer.
+	XSetInputFocus(
+		gdk_x11_display_get_xdisplay(gtk_widget_get_display(_window)),
+		X11WindowId(_window),
+		kX11RevertToParent,
+		time);
 }
 
 bool Instance::customWindowFrame() const {
@@ -1584,6 +1665,79 @@ void Instance::updateWindowFrameExtents() {
 		margins.right(),
 		margins.top(),
 		margins.bottom());
+}
+
+void Instance::showWindow() {
+	if (!gtk_widget_show_all) {
+		gtk_widget_set_visible(_window, true);
+	} else {
+		gtk_widget_show_all(_window);
+	}
+}
+
+void Instance::setupX11Embedding() {
+	// Qt maps the window after reparenting, so no window manager sees it.
+	gtk_widget_realize(_window);
+	// The window manager would apply GDK's initial size after reparenting.
+	auto attributes = X11WindowAttributes{ .overrideRedirect = true };
+	XChangeWindowAttributes(
+		gdk_x11_display_get_xdisplay(gtk_widget_get_display(_window)),
+		X11WindowId(_window),
+		kX11CWOverrideRedirect,
+		&attributes);
+	if (gtk_native_get_surface) {
+		gdk_x11_surface_set_frame_sync_enabled(
+			GtkNativeSurface(_window),
+			false);
+		// GDK 4 doesn't track the window mapped by someone else.
+		_x11EventHandler = g_signal_connect_swapped(
+			gtk_widget_get_display(_window),
+			"xevent",
+			G_CALLBACK(+[](
+					Instance *instance,
+					const X11MapEvent *event) -> gboolean {
+				if (event->type != kX11MapNotify
+						|| event->window != X11WindowId(instance->_window)) {
+					return false;
+				}
+				g_signal_handler_disconnect(
+					gtk_widget_get_display(instance->_window),
+					instance->_x11EventHandler);
+				instance->_x11EventHandler = 0;
+				GLib::idle_add_once(crl::guard(instance, [=] {
+					instance->showWindow();
+				}));
+				return false;
+			}),
+			this);
+		return;
+	}
+	gdk_x11_window_set_frame_sync_enabled(
+		gtk_widget_get_window(_window),
+		false);
+	// GTK 3 would bring back its own size, while the embedder owns it.
+	g_signal_connect(
+		_window,
+		"configure-event",
+		G_CALLBACK(+[](GtkWidget *window) -> gboolean {
+			const auto gdkWindow = gtk_widget_get_window(window);
+			gtk_window_resize(
+				GTK_WINDOW(window),
+				gdk_window_get_width(gdkWindow),
+				gdk_window_get_height(gdkWindow));
+			return false;
+		}),
+		nullptr);
+	g_signal_connect_swapped(
+		_window,
+		"map-event",
+		G_CALLBACK(+[](Instance *instance) -> gboolean {
+			if (!gtk_widget_get_visible(instance->_window)) {
+				instance->showWindow();
+			}
+			return false;
+		}),
+		this);
 }
 
 bool Instance::loadFailed(
@@ -1975,7 +2129,7 @@ ResolveResult Instance::resolve() {
 		return result.value_or(ResolveResult::IPCFailure);
 	}
 
-	return Resolve(_platform, _mode);
+	return Resolve(_platform);
 }
 
 void Instance::navigate(std::string url) {
@@ -2248,9 +2402,7 @@ void *Instance::winId() {
 		return ret.value_or(nullptr);
 	}
 
-	return (_mode == WindowMode::Embedded && _platform == Platform::X11)
-		? reinterpret_cast<void*>(gtk_plug_get_id(GTK_PLUG(_window)))
-		: nullptr;
+	return reinterpret_cast<void*>(X11WindowId(_window));
 }
 
 PopupAnchor Instance::popupAnchorSnapshot() {

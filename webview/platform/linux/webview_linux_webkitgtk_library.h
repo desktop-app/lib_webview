@@ -29,10 +29,6 @@
 #define GTK_TYPE_EVENT_CONTROLLER (gtk_event_controller_get_type ())
 #define GTK_EVENT_CONTROLLER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_EVENT_CONTROLLER, GtkEventController))
 
-#define GTK_TYPE_PLUG (gtk_plug_get_type ())
-#define GTK_PLUG(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_PLUG, GtkPlug))
-#define GTK_IS_PLUG(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GTK_TYPE_PLUG))
-
 #define GTK_TYPE_STYLE_PROVIDER (gtk_style_provider_get_type ())
 #define GTK_STYLE_PROVIDER(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GTK_TYPE_STYLE_PROVIDER, GtkStyleProvider))
 #define GTK_STYLE_PROVIDER_PRIORITY_APPLICATION 600
@@ -85,8 +81,6 @@ typedef struct _GtkNative GtkNative;
 typedef struct _GtkSettings GtkSettings;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
-typedef struct _GtkPlug GtkPlug;
-typedef struct _GtkAdjustment GtkAdjustment;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkStyleProvider GtkStyleProvider;
 typedef struct _GtkCssProvider GtkCssProvider;
@@ -261,9 +255,6 @@ inline void (*gtk_window_present)(GtkWindow *window);
 inline void (*gtk_window_fullscreen)(GtkWindow *window);
 inline void (*gtk_window_unfullscreen)(GtkWindow *window);
 inline gboolean (*gtk_window_is_fullscreen)(GtkWindow *window);
-inline GtkWidget *(*gtk_scrolled_window_new)(
-	GtkAdjustment *hadjustment,
-	GtkAdjustment *vadjustment);
 inline GtkWidget *(*gtk_graphics_offload_new)(GtkWidget *child);
 inline void (*gtk_window_destroy)(GtkWindow *widget);
 inline void (*gtk_widget_destroy)(GtkWidget *widget);
@@ -271,6 +262,8 @@ inline void (*gtk_window_resize)(
 	GtkWindow *window,
 	gint width,
 	gint height);
+inline void (*gtk_widget_realize)(GtkWidget *widget);
+inline gboolean (*gtk_widget_get_visible)(GtkWidget *widget);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
@@ -363,9 +356,30 @@ inline GType (*gdk_x11_surface_get_type)(void);
 inline GType (*gdk_x11_window_get_type)(void);
 inline GType (*gdk_wayland_toplevel_get_type)(void);
 inline GType (*gdk_wayland_window_get_type)(void);
+// returns Window that is a typedef to unsigned long,
+// but we avoid to include Xlib.h here
 inline unsigned long (*gdk_x11_surface_get_xid)(GdkSurface *surface);
 inline unsigned long (*gdk_x11_window_get_xid)(GdkWindow *window);
-inline guint32 (*gdk_x11_get_server_time)(void *window); // GdkWindow on GTK3, GdkSurface on GTK4
+// takes and returns Display, but we avoid to include Xlib.h here
+inline void *(*gdk_x11_display_get_xdisplay)(GdkDisplay *display);
+inline int (*XChangeWindowAttributes)(
+	void *display,
+	unsigned long window,
+	unsigned long valuemask,
+	void *attributes);
+inline int (*XSetInputFocus)(
+	void *display,
+	unsigned long focus,
+	int revertTo,
+	unsigned long time);
+inline void (*gdk_x11_surface_set_frame_sync_enabled)(
+	GdkSurface *surface,
+	gboolean frame_sync_enabled);
+inline void (*gdk_x11_window_set_frame_sync_enabled)(
+	GdkWindow *window,
+	gboolean frame_sync_enabled);
+// GdkWindow on GTK3, GdkSurface on GTK4
+inline guint32 (*gdk_x11_get_server_time)(void *window);
 inline void (*gdk_window_set_shadow_width)(
 	GdkWindow *window,
 	gint left,
@@ -415,6 +429,8 @@ inline gboolean (*gdk_wayland_window_export_handle)(
 inline void (*gdk_wayland_window_announce_csd)(GdkWindow *window);
 inline gint (*gdk_surface_get_width)(GdkSurface *surface);
 inline gint (*gdk_surface_get_height)(GdkSurface *surface);
+inline int (*gdk_window_get_width)(GdkWindow *window);
+inline int (*gdk_window_get_height)(GdkWindow *window);
 inline void (*gtk_window_get_size)(
 	GtkWindow *window,
 	gint *width,
@@ -435,12 +451,6 @@ inline void (*gtk_uri_launcher_launch)(
 	GCancellable *cancellable,
 	GAsyncReadyCallback callback,
 	gpointer user_data);
-
-// returns Window that is a typedef to unsigned long,
-// but we avoid to include Xlib.h here
-inline GtkWidget *(*gtk_plug_new)(unsigned long socket_id);
-inline unsigned long (*gtk_plug_get_id)(GtkPlug *plug);
-inline GType (*gtk_plug_get_type)(void);
 
 inline char *(*jsc_value_to_string)(JSCValue *value);
 inline JSCValue *(*webkit_javascript_result_get_js_value)(
@@ -635,8 +645,6 @@ enum class Platform {
 	X11,
 };
 
-[[nodiscard]] ResolveResult Resolve(
-	Platform platform,
-	WindowMode mode);
+[[nodiscard]] ResolveResult Resolve(Platform platform);
 
 } // namespace Webview::WebKitGTK::Library

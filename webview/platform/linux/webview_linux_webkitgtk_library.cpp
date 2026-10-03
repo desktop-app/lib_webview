@@ -10,12 +10,8 @@
 
 namespace Webview::WebKitGTK::Library {
 
-ResolveResult Resolve(Platform platform, WindowMode mode) {
-	const auto gtkPlug = (platform == Platform::X11)
-		&& (mode == WindowMode::Embedded);
-	const auto lib = (!gtkPlug
-			? base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
-			: nullptr)
+ResolveResult Resolve(Platform platform) {
+	const auto lib = base::Platform::LoadLibrary("libwebkitgtk-6.0.so.4", RTLD_NODELETE)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.1.so.0", RTLD_NODELETE)
 		?: base::Platform::LoadLibrary("libwebkit2gtk-4.0.so.37", RTLD_NODELETE);
 	const auto result = lib
@@ -36,9 +32,10 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_unfullscreen)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_is_fullscreen)
 			|| LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_state))
-		&& LOAD_LIBRARY_SYMBOL(lib, gtk_scrolled_window_new)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_realize)
+		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_window_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_display)
@@ -64,10 +61,6 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 				&& LOAD_LIBRARY_SYMBOL(lib, gtk_uri_launcher_launch))
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_show_uri_on_window)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_show_uri))
-		&& (!gtkPlug
-			|| (LOAD_LIBRARY_SYMBOL(lib, gtk_plug_new)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_id)
-				&& LOAD_LIBRARY_SYMBOL(lib, gtk_plug_get_type)))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_set_propagation_phase)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_event_controller_reset)
@@ -153,6 +146,8 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	}
 	LOAD_LIBRARY_SYMBOL(lib, gtk_window_resize);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_show_all);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_width);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_window_get_height);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_screen);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visual);
 	LOAD_LIBRARY_SYMBOL(lib, gtk_native_get_type);
@@ -182,6 +177,11 @@ ResolveResult Resolve(Platform platform, WindowMode mode) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_get_type);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_get_xid);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_get_xid);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_display_get_xdisplay);
+	LOAD_LIBRARY_SYMBOL(lib, XChangeWindowAttributes);
+	LOAD_LIBRARY_SYMBOL(lib, XSetInputFocus);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_surface_set_frame_sync_enabled);
+	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_window_set_frame_sync_enabled);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_x11_get_server_time);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_toplevel_export_handle);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_wayland_window_export_handle);
