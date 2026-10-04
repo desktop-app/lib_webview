@@ -621,7 +621,6 @@ private:
 	bool _remoting = false;
 	WindowMode _mode = WindowMode::Embedded;
 	WindowStyle _windowStyle = WindowStyle::Default;
-	bool _connected = false;
 	Master _master;
 	Helper _helper;
 	GLib::MainLoop _mainLoop;
@@ -798,8 +797,8 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-		const ::base::has_weak_ptr guard;
-		std::optional<bool> success;
+		auto loop = GLib::MainLoop::new_();
+		auto success = false;
 		const auto debug = _debug;
 		const auto r = config.opaqueBg.red();
 		const auto g = config.opaqueBg.green();
@@ -834,18 +833,14 @@ bool Instance::create(Config config) {
 			allowThirdPartyCookies,
 			restrictedOrigin,
 			restrictedContentSecurityPolicy,
-			crl::guard(&guard, [&](
-					GObjectCpp::Object source_object,
-					Gio::AsyncResult res) {
+			[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
 				success = _helper.call_create_finish(res, nullptr);
-				GLib::MainContext::default_().wakeup();
-			}));
+				loop.quit();
+			});
 
-		while (!success && _connected) {
-			GLib::MainContext::default_().iteration(true);
-		}
 
-		if (!success.value_or(false)) {
+		loop.run();
+		if (!success) {
 			return false;
 		}
 
@@ -2107,22 +2102,19 @@ ResolveResult Instance::resolve() {
 			return ResolveResult::IPCFailure;
 		}
 
-		const ::base::has_weak_ptr guard;
+		auto loop = GLib::MainLoop::new_();
 		std::optional<ResolveResult> result;
-		_helper.call_resolve(crl::guard(&guard, [&](
+		_helper.call_resolve([&](
 				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_resolve_finish(res);
 			if (reply) {
 				result = ResolveResult(std::get<1>(*reply));
 			}
-			GLib::MainContext::default_().wakeup();
-		}));
+			loop.quit();
+		});
 
-		while (!result && _connected) {
-			GLib::MainContext::default_().iteration(true);
-		}
-
+		loop.run();
 		if (_platform != Platform::Any
 				&& result
 				&& *result != ResolveResult::Success) {
@@ -2389,23 +2381,20 @@ void *Instance::winId() {
 			return nullptr;
 		}
 
-		const ::base::has_weak_ptr guard;
-		std::optional<void*> ret;
-		_helper.call_get_win_id(crl::guard(&guard, [&](
+		auto loop = GLib::MainLoop::new_();
+		void *ret = nullptr;
+		_helper.call_get_win_id([&](
 				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
 			const auto reply = _helper.call_get_win_id_finish(res);
-			ret = reply
-				? reinterpret_cast<void*>(std::get<1>(*reply))
-				: nullptr;
-			GLib::MainContext::default_().wakeup();
-		}));
+			if (reply) {
+				ret = reinterpret_cast<void*>(std::get<1>(*reply));
+			}
+			loop.quit();
+		});
 
-		while (!ret && _connected) {
-			GLib::MainContext::default_().iteration(true);
-		}
-
-		return ret.value_or(nullptr);
+		loop.run();
+		return ret;
 	}
 
 	return reinterpret_cast<void*>(X11WindowId(_window));
@@ -2499,12 +2488,11 @@ PopupAnchor Instance::popupAnchor() {
 			return {};
 		}
 
-		const ::base::has_weak_ptr guard;
-		std::optional<PopupAnchor> ret;
-		_helper.call_get_window_anchor(crl::guard(&guard, [&](
+		auto loop = GLib::MainLoop::new_();
+		auto result = PopupAnchor();
+		_helper.call_get_window_anchor([&](
 				GObjectCpp::Object source_object,
 				Gio::AsyncResult res) {
-			auto result = PopupAnchor();
 			if (const auto reply = _helper.call_get_window_anchor_finish(res)) {
 				if (const auto parent = PopupAnchorParent(
 						std::get<1>(*reply),
@@ -2519,15 +2507,11 @@ PopupAnchor Instance::popupAnchor() {
 					result.outerSize = *outerSize;
 				}
 			}
-			ret = std::move(result);
-			GLib::MainContext::default_().wakeup();
-		}));
+			loop.quit();
+		});
 
-		while (!ret && _connected) {
-			GLib::MainContext::default_().iteration(true);
-		}
-
-		return ret.value_or(PopupAnchor());
+		loop.run();
+		return result;
 	}
 
 	return popupAnchorSnapshot();
@@ -2749,7 +2733,6 @@ void Instance::startProcess() {
 				_helper = *helper;
 
 				started = _helper.signal_started().connect([&](Helper) {
-					_connected = true;
 					loop.quit();
 				});
 			}));
@@ -2758,9 +2741,7 @@ void Instance::startProcess() {
 				Gio::DBusConnection,
 				bool remotePeerVanished,
 				GLib::Error_Ref error) {
-			_connected = false;
 			_widget = nullptr;
-			GLib::MainContext::default_().wakeup();
 		}));
 
 		return true;
