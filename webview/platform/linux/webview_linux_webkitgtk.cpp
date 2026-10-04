@@ -2427,7 +2427,9 @@ PopupAnchor Instance::popupAnchorSnapshot() {
 		gtk_window_get_size(GTK_WINDOW(_window), &width, &height);
 	}
 	if (width > 0 && height > 0) {
-		result.outerSize = QSize(width, height);
+		result.outerSize = QSize(width, height).shrunkBy(
+			windowFrameExtents()
+		) / PageScale(_window);
 	}
 	if (const auto nativeId = X11WindowId(_window)) {
 		result.transientParent = {
