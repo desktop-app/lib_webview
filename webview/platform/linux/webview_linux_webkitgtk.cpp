@@ -187,13 +187,6 @@ std::string SocketPath;
 	return true;
 }
 
-inline auto MethodError() {
-	return GLib::Error::new_literal(
-		Gio::DBusErrorNS_::quark(),
-		int(Gio::DBusError::UNKNOWN_METHOD_),
-		"Method does not exist.");
-}
-
 inline std::string SocketPathToDBusAddress(const std::string &socketPath) {
 	return "unix:path=" + Gio::dbus_address_escape_value(socketPath);
 }
@@ -2829,15 +2822,14 @@ void Instance::registerMasterMethodHandlers() {
 			Gio::DBusMethodInvocation invocation,
 			const std::string &message,
 			const std::string &sourceUrl) {
-		if (_messageHandler) {
-			_messageHandler(Message{
-				.text = message,
-				.sourceUrl = sourceUrl,
-			});
-			_master.complete_message_received(invocation);
-		} else {
-			invocation.return_gerror(MethodError());
+		if (!_messageHandler) {
+			return false;
 		}
+		_messageHandler(Message{
+			.text = message,
+			.sourceUrl = sourceUrl,
+		});
+		_master.complete_message_received(invocation);
 		return true;
 	});
 
@@ -2871,12 +2863,11 @@ void Instance::registerMasterMethodHandlers() {
 			Master,
 			Gio::DBusMethodInvocation invocation,
 			bool success) {
-		if (_navigationDoneHandler) {
-			_navigationDoneHandler(success);
-			_master.complete_navigation_done(invocation);
-		} else {
-			invocation.return_gerror(MethodError());
+		if (!_navigationDoneHandler) {
+			return false;
 		}
+		_navigationDoneHandler(success);
+		_master.complete_navigation_done(invocation);
 		return true;
 	});
 
@@ -2908,8 +2899,7 @@ void Instance::registerMasterMethodHandlers() {
 			const std::string &text,
 			const std::string &value) {
 		if (!_dialogHandler) {
-			invocation.return_gerror(MethodError());
-			return true;
+			return false;
 		}
 
 		const auto dialogType = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
@@ -3100,7 +3090,7 @@ void Instance::registerHelperMethodHandlers() {
 			bool allowThirdPartyCookies,
 			const std::string &restrictedOrigin,
 			const std::string &restrictedContentSecurityPolicy) {
-		if (create({
+		if (!create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
@@ -3118,10 +3108,9 @@ void Instance::registerHelperMethodHandlers() {
 			.restrictedContentSecurityPolicy
 				= restrictedContentSecurityPolicy,
 		})) {
-			_helper.complete_create(invocation);
-		} else {
-			invocation.return_gerror(MethodError());
+			return false;
 		}
+		_helper.complete_create(invocation);
 		return true;
 	});
 
