@@ -2874,9 +2874,10 @@ void Instance::registerMasterMethodHandlers() {
 	_master.signal_handle_external_window_closed().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
-		if (_externalWindowCloseHandler) {
-			_externalWindowCloseHandler();
+		if (!_externalWindowCloseHandler) {
+			return false;
 		}
+		_externalWindowCloseHandler();
 		_master.complete_external_window_closed(invocation);
 		return true;
 	});
@@ -2885,9 +2886,10 @@ void Instance::registerMasterMethodHandlers() {
 			Master,
 			Gio::DBusMethodInvocation invocation,
 			bool fullscreen) {
-		if (_fullscreenChangedHandler) {
-			_fullscreenChangedHandler(fullscreen);
+		if (!_fullscreenChangedHandler) {
+			return false;
 		}
+		_fullscreenChangedHandler(fullscreen);
 		_master.complete_fullscreen_changed(invocation);
 		return true;
 	});
@@ -2936,7 +2938,7 @@ void Instance::registerMasterMethodHandlers() {
 		const auto weak = ::base::make_weak(this);
 		const auto result = _dialogHandler(std::move(args));
 		if (!weak || !_master) {
-			return true;
+			return false;
 		}
 
 		_master.complete_script_dialog(
@@ -2967,9 +2969,10 @@ void Instance::registerMasterMethodHandlers() {
 	_master.signal_handle_user_interaction().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
-		if (_interactionHandler) {
-			_interactionHandler();
+		if (!_interactionHandler) {
+			return false;
 		}
+		_interactionHandler();
 		_master.complete_user_interaction(invocation);
 		return true;
 	});
