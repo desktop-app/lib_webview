@@ -2860,17 +2860,13 @@ void Instance::registerMasterMethodHandlers() {
 		};
 
 		if (_asyncDialogHandler) {
-			const auto weak = ::base::make_weak(this);
-			const auto handled = _asyncDialogHandler(args, [=](
+			const auto handled = _asyncDialogHandler(args, crl::guard(this, [=](
 					DialogResult result) mutable {
-				if (!weak) {
-					return;
-				}
 				_master.complete_script_dialog(
 					invocation,
 					result.accepted,
 					result.text);
-			});
+			}));
 			if (handled) {
 				return true;
 			}
