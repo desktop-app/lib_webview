@@ -90,6 +90,8 @@ ResolveResult Resolve(Platform platform) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_response_policy_decision_get_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_response_policy_decision_get_response)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_uri_response_get_mime_type)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_ref)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_unref)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_get_dialog_type)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_get_message)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_script_dialog_confirm_set_confirmed)

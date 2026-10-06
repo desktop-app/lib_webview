@@ -1830,27 +1830,31 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	const auto value = (type == WEBKIT_SCRIPT_DIALOG_PROMPT)
 		? webkit_script_dialog_prompt_get_default_text(dialog)
 		: nullptr;
-	bool accepted = false;
-	std::string result;
-	auto loop = GLib::MainLoop::new_();
+	webkit_script_dialog_ref(dialog);
+	// Script dialogs wait for the user longer than 25 seconds.
+	auto proxy = gi::object_cast<MasterProxy>(_master);
+	const auto timeout = proxy.get_default_timeout();
+	proxy.set_default_timeout(G_MAXINT);
 	_master.call_script_dialog(
 		type,
 		text ? text : "",
 		value ? value : "",
-		[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
+		[=](GObjectCpp::Object source_object, Gio::AsyncResult res) {
+			bool accepted = false;
+			std::string result;
 			if (const auto ret = _master.call_script_dialog_finish(res)) {
 				std::tie(std::ignore, accepted, result) = *ret;
 			}
-			loop.quit();
+			if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
+				webkit_script_dialog_prompt_set_text(
+					dialog,
+					accepted ? result.c_str() : nullptr);
+			} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
+				webkit_script_dialog_confirm_set_confirmed(dialog, accepted);
+			}
+			webkit_script_dialog_unref(dialog);
 		});
-	loop.run();
-	if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
-		webkit_script_dialog_prompt_set_text(
-			dialog,
-			accepted ? result.c_str() : nullptr);
-	} else if (type != WEBKIT_SCRIPT_DIALOG_ALERT) {
-		webkit_script_dialog_confirm_set_confirmed(dialog, accepted);
-	}
+	proxy.set_default_timeout(timeout);
 	return true;
 }
 

@@ -484,6 +484,9 @@ inline gboolean (*webkit_response_policy_decision_is_main_frame_main_resource)(
 inline const gchar *(*webkit_uri_response_get_mime_type)(
 	WebKitURIResponse *response);
 
+inline WebKitScriptDialog *(*webkit_script_dialog_ref)(
+	WebKitScriptDialog *dialog);
+inline void (*webkit_script_dialog_unref)(WebKitScriptDialog *dialog);
 inline WebKitScriptDialogType (*webkit_script_dialog_get_dialog_type)(
 	WebKitScriptDialog *dialog);
 inline const gchar *(*webkit_script_dialog_get_message)(
