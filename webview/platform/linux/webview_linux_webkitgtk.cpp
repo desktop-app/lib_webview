@@ -1128,9 +1128,7 @@ bool Instance::create(Config config) {
 		G_CALLBACK(+[](Instance *instance) {
 			// GTK 4 takes the shadow width only in compute-size.
 			instance->updateWindowFrameExtents();
-			if (instance->_window) {
-				gtk_widget_queue_resize(instance->_window);
-			}
+			gtk_widget_queue_resize(instance->_window);
 		}),
 		this);
 	g_signal_connect_swapped(
@@ -1268,9 +1266,7 @@ bool Instance::create(Config config) {
 				guint,
 				guint,
 				GdkModifierType) -> gboolean {
-				if (instance->_master) {
-					instance->_master.call_user_interaction(nullptr);
-				}
+				instance->_master.call_user_interaction(nullptr);
 				return FALSE;
 			}),
 			this);
@@ -1295,9 +1291,7 @@ bool Instance::create(Config config) {
 			G_CALLBACK(+[](
 				Instance *instance,
 				GdkEventKey*) -> gboolean {
-				if (instance->_master) {
-					instance->_master.call_user_interaction(nullptr);
-				}
+				instance->_master.call_user_interaction(nullptr);
 				return FALSE;
 			}),
 			this);
@@ -1369,9 +1363,6 @@ void Instance::scriptMessageReceived(void *message) {
 	if (handleShellControlMessage(text)) {
 		return;
 	}
-	if (!_master) {
-		return;
-	}
 	const auto sourceUrl = webkit_web_view_get_uri(_webview);
 	_master.call_message_received(text, sourceUrl ? sourceUrl : "", nullptr);
 }
@@ -1384,7 +1375,6 @@ bool Instance::handleShellControlMessage(const std::string &message) {
 	if (parsed.status == ShellControlParseStatus::NotShellControl) {
 		return false;
 	} else if (parsed.status == ShellControlParseStatus::Invalid
-		|| !_window
 		|| _shellMessageToken.empty()) {
 		return true;
 	}
@@ -1455,9 +1445,7 @@ void Instance::pressed(GtkGesture *gesture, double x, double y) {
 	if (_inputBlocked) {
 		return;
 	}
-	if (_master) {
-		_master.call_user_interaction(nullptr);
-	}
+	_master.call_user_interaction(nullptr);
 	takeX11InputFocus(gtk_event_controller_get_current_event_time(
 		GTK_EVENT_CONTROLLER(gesture)));
 	if (!customWindowFrame()) {
@@ -1507,9 +1495,7 @@ bool Instance::pressed(GdkEvent *event) {
 	if (!touch && !gdk_event_get_button(event, &button)) {
 		return false;
 	}
-	if (_master) {
-		_master.call_user_interaction(nullptr);
-	}
+	_master.call_user_interaction(nullptr);
 	takeX11InputFocus(gdk_event_get_time(event));
 	auto x = 0.;
 	auto y = 0.;
@@ -1638,7 +1624,7 @@ void Instance::setupToplevelFrameExtents() {
 }
 
 void Instance::updateWindowFrameExtents() {
-	if (!customWindowFrame() || !_window || !gdk_window_set_shadow_width) {
+	if (!customWindowFrame() || !gdk_window_set_shadow_width) {
 		return;
 	}
 	const auto gdkWindow = gtk_widget_get_window(_window);
@@ -1739,9 +1725,7 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 	if (loadEvent == WEBKIT_LOAD_STARTED) {
 		_loadFailed = false;
 	} else if (loadEvent == WEBKIT_LOAD_FINISHED) {
-		if (_master) {
-			_master.call_navigation_done(!_loadFailed, nullptr);
-		}
+		_master.call_navigation_done(!_loadFailed, nullptr);
 	}
 	updateHistoryStates();
 }
@@ -1780,24 +1764,21 @@ bool Instance::decidePolicy(
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const gchar *uri = webkit_uri_request_get_uri(request);
 	bool result = false;
-	if (_master) {
-		auto loop = GLib::MainLoop::new_();
-		_master.call_navigation_started(uri, false, [&](
-				GObjectCpp::Object source_object,
-				Gio::AsyncResult res) {
-			if (const auto ret = _master.call_navigation_started_finish(
-					res)) {
-				result = std::get<1>(*ret);
-			}
-			loop.quit();
-		});
-		loop.run();
-	}
+	auto loop = GLib::MainLoop::new_();
+	_master.call_navigation_started(uri, false, [&](
+			GObjectCpp::Object source_object,
+			Gio::AsyncResult res) {
+		if (const auto ret = _master.call_navigation_started_finish(res)) {
+			result = std::get<1>(*ret);
+		}
+		loop.quit();
+	});
+	loop.run();
 	if (!result) {
 		webkit_policy_decision_ignore(decision);
 	}
 	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-		if (!webkit_web_view_is_loading(_webview) && _master) {
+		if (!webkit_web_view_is_loading(_webview)) {
 			_master.call_navigation_done(!_loadFailed, nullptr);
 		}
 	}));
@@ -1810,9 +1791,6 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 	}
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const std::string uri = webkit_uri_request_get_uri(request);
-	if (!_master) {
-		return nullptr;
-	}
 	_master.call_navigation_started(uri, true, [=](
 			GObjectCpp::Object source_object,
 			Gio::AsyncResult res) {
@@ -1858,26 +1836,24 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 		: nullptr;
 	bool accepted = false;
 	std::string result;
-	if (_master) {
-		auto loop = GLib::MainLoop::new_();
-		++_scriptDialogDepth;
-		const auto guard = gsl::finally([&] {
-			if (--_scriptDialogDepth == 0) {
-				scheduleQueuedEvals();
+	auto loop = GLib::MainLoop::new_();
+	++_scriptDialogDepth;
+	const auto guard = gsl::finally([&] {
+		if (--_scriptDialogDepth == 0) {
+			scheduleQueuedEvals();
+		}
+	});
+	_master.call_script_dialog(
+		type,
+		text ? text : "",
+		value ? value : "",
+		[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
+			if (const auto ret = _master.call_script_dialog_finish(res)) {
+				std::tie(std::ignore, accepted, result) = *ret;
 			}
+			loop.quit();
 		});
-		_master.call_script_dialog(
-			type,
-			text ? text : "",
-			value ? value : "",
-			[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
-				if (const auto ret = _master.call_script_dialog_finish(res)) {
-					std::tie(std::ignore, accepted, result) = *ret;
-				}
-				loop.quit();
-			});
-		loop.run();
-	}
+	loop.run();
 	if (type == WEBKIT_SCRIPT_DIALOG_PROMPT) {
 		webkit_script_dialog_prompt_set_text(
 			dialog,
@@ -2257,9 +2233,7 @@ void Instance::scheduleQueuedEvals() {
 
 void Instance::focus() {
 	if (_mode != WindowMode::External) {
-		if (const auto widget = _widget.get()) {
-			widget->activateWindow();
-		}
+		_widget->activateWindow();
 		return;
 	}
 
@@ -2388,9 +2362,6 @@ void *Instance::winId() {
 
 PopupAnchor Instance::popupAnchorSnapshot() {
 	auto result = PopupAnchor();
-	if (!_window) {
-		return result;
-	}
 	auto width = gint(0);
 	auto height = gint(0);
 	if (gtk_native_get_surface) {
@@ -2427,8 +2398,6 @@ bool Instance::notifyExternalWindowClosed() {
 		return false;
 	} else if (_externalWindowClosePending) {
 		return true;
-	} else if (!_master) {
-		return false;
 	}
 	_externalWindowClosePending = true;
 	const auto weak = ::base::make_weak(this);
@@ -2440,13 +2409,8 @@ bool Instance::notifyExternalWindowClosed() {
 			return;
 		}
 		instance->_externalWindowClosePending = false;
-		if (instance->_master) {
-			instance->_master.call_external_window_closed_finish(res);
-		}
+		instance->_master.call_external_window_closed_finish(res);
 		const auto window = instance->_window;
-		if (!window) {
-			return;
-		}
 		instance->_externalWindowCloseAllowed = true;
 		if (gtk_window_destroy) {
 			gtk_window_destroy(GTK_WINDOW(window));
@@ -2463,9 +2427,7 @@ void Instance::fullscreenChanged(bool fullscreen) {
 	}
 	_fullscreen = fullscreen;
 	updateWindowFrameExtents();
-	if (_master) {
-		_master.call_fullscreen_changed(fullscreen, nullptr);
-	}
+	_master.call_fullscreen_changed(fullscreen, nullptr);
 }
 
 PopupAnchor Instance::popupAnchor() {
@@ -2585,9 +2547,8 @@ void Instance::setFullscreen(bool fullscreen) {
 		_helper.call_set_fullscreen(fullscreen, nullptr);
 		return;
 	}
-	if (!_window) {
-		return;
-	} else if (fullscreen) {
+
+	if (fullscreen) {
 		gtk_window_fullscreen(GTK_WINDOW(_window));
 	} else {
 		gtk_window_unfullscreen(GTK_WINDOW(_window));
@@ -2806,8 +2767,7 @@ void Instance::stopProcess() {
 void Instance::updateHistoryStates() {
 	const auto url = webkit_web_view_get_uri(_webview);
 	const auto title = webkit_web_view_get_title(_webview);
-	if (((_platform == Platform::Any) || (_mode == WindowMode::External))
-		&& _window) {
+	if ((_platform == Platform::Any) || (_mode == WindowMode::External)) {
 		gtk_window_set_title(GTK_WINDOW(_window), title ? title : "");
 	}
 	_master.call_navigation_state_update(
@@ -2819,10 +2779,6 @@ void Instance::updateHistoryStates() {
 }
 
 void Instance::registerMasterMethodHandlers() {
-	if (!_master) {
-		return;
-	}
-
 	_master.signal_handle_get_start_data().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
@@ -2953,7 +2909,7 @@ void Instance::registerMasterMethodHandlers() {
 			const auto weak = ::base::make_weak(this);
 			const auto handled = _asyncDialogHandler(args, [=](
 					DialogResult result) mutable {
-				if (!weak || !_master) {
+				if (!weak) {
 					return;
 				}
 				_master.complete_script_dialog(
@@ -2970,7 +2926,7 @@ void Instance::registerMasterMethodHandlers() {
 		// may destroy this instance together with `_master`.
 		const auto weak = ::base::make_weak(this);
 		const auto result = _dialogHandler(std::move(args));
-		if (!weak || !_master) {
+		if (!weak) {
 			return false;
 		}
 
@@ -3101,10 +3057,6 @@ int Instance::exec() {
 }
 
 void Instance::registerHelperMethodHandlers() {
-	if (!_helper) {
-		return;
-	}
-
 	_helper.signal_handle_create().connect([=](
 			Helper,
 			Gio::DBusMethodInvocation invocation,
