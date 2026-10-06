@@ -92,6 +92,8 @@ public:
 	}
 	virtual void setInputBlocked(bool blocked) {
 	}
+	virtual void setVisible(bool visible) {
+	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
 	[[nodiscard]] virtual PopupAnchor popupAnchor() {

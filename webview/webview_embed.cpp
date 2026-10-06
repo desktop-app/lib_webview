@@ -302,6 +302,12 @@ void Window::setInputBlocked(bool blocked) {
 	_webview->setInputBlocked(blocked);
 }
 
+void Window::setVisible(bool visible) {
+	Expects(_webview != nullptr);
+
+	_webview->setVisible(visible);
+}
+
 void Window::setInteractionHandler(Fn<void()> handler) {
 	_interactionHandler = std::move(handler);
 	if (_webview) {

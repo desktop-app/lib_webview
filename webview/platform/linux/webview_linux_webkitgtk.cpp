@@ -537,6 +537,7 @@ public:
 	void setInteractionHandler(Fn<void()> handler) override;
 	void setFullscreen(bool fullscreen) override;
 	void setInputBlocked(bool blocked) override;
+	void setVisible(bool visible) override;
 
 	QWidget *widget() override;
 	PopupAnchor popupAnchor() override;
@@ -2616,6 +2617,23 @@ void Instance::setInputBlocked(bool blocked) {
 	}
 }
 
+void Instance::setVisible(bool visible) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_set_visible(visible, nullptr);
+		return;
+	}
+
+	if (visible) {
+		showWindow();
+	} else {
+		gtk_widget_set_visible(_window, false);
+	}
+}
+
 void Instance::startProcess() {
 	auto loop = GLib::MainLoop::new_();
 
@@ -3191,6 +3209,15 @@ void Instance::registerHelperMethodHandlers() {
 			bool blocked) {
 		setInputBlocked(blocked);
 		_helper.complete_set_input_blocked(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_set_visible().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			bool visible) {
+		setVisible(visible);
+		_helper.complete_set_visible(invocation);
 		return true;
 	});
 

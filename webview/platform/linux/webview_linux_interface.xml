@@ -83,6 +83,9 @@
 		<method name='SetInputBlocked'>
 			<arg type='b' name='blocked' direction='in'/>
 		</method>
+		<method name='SetVisible'>
+			<arg type='b' name='visible' direction='in'/>
+		</method>
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>
