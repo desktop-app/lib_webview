@@ -183,7 +183,7 @@ void Instance::ready(WebViewControl webview) {
 			});
 		}
 	});
-	_webview.NavigationStarting([=, handler = _config.navigationStartHandler](
+	_webview.NavigationStarting([=, handler = _config.navigationPolicyHandler](
 			const auto &sender,
 			const WebViewControlNavigationStartingEventArgs &args) {
 		if (handler
@@ -191,6 +191,9 @@ void Instance::ready(WebViewControl webview) {
 			args.Cancel(true);
 		} else {
 			_webview.AddInitializeScript(winrt::to_hstring(_initScript));
+			if (_config.navigationStartHandler) {
+				_config.navigationStartHandler();
+			}
 		}
 		updateHistoryStates();
 	});
@@ -208,7 +211,7 @@ void Instance::ready(WebViewControl webview) {
 		}
 		updateHistoryStates();
 	});
-	_webview.NewWindowRequested([=, handler = _config.navigationStartHandler](
+	_webview.NewWindowRequested([=, handler = _config.navigationPolicyHandler](
 			const auto &sender,
 			const WebViewControlNewWindowRequestedEventArgs &args) {
 		const auto url = winrt::to_string(args.Uri().AbsoluteUri());

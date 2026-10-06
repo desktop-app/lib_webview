@@ -121,7 +121,6 @@ ResolveResult Resolve(Platform platform) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_javascript_can_open_windows_automatically)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_settings_set_media_playback_requires_user_gesture)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_set_is_muted)
-		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_is_loading)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_uri)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_load_alternate_html)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_reload_bypass_cache)

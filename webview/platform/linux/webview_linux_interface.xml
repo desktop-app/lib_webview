@@ -1,6 +1,6 @@
 <node>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
-		<method name='NavigationStarted'>
+		<method name='NavigationPolicy'>
 			<arg type='s' name='uri' direction='in'/>
 			<arg type='b' name='newWindow' direction='in'/>
 			<arg type='b' name='result' direction='out'/>
@@ -102,6 +102,7 @@
 			<arg type='ay' name='message'/>
 			<arg type='s' name='sourceUrl'/>
 		</signal>
+		<signal name='NavigationStarted'/>
 		<signal name='NavigationDone'>
 			<arg type='b' name='success'/>
 		</signal>

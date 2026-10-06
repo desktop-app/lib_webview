@@ -647,7 +647,8 @@ private:
 
 	bool _debug = false;
 	std::function<void(Message)> _messageHandler;
-	std::function<bool(std::string,bool)> _navigationStartHandler;
+	std::function<bool(std::string,bool)> _navigationPolicyHandler;
+	std::function<void()> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<void()> _externalWindowCloseHandler;
 	std::function<void(bool)> _fullscreenChangedHandler;
@@ -773,6 +774,7 @@ bool Instance::create(Config config) {
 	}
 	_debug = config.debug && _restrictedOrigin.empty();
 	_messageHandler = std::move(config.messageHandler);
+	_navigationPolicyHandler = std::move(config.navigationPolicyHandler);
 	_navigationStartHandler = std::move(config.navigationStartHandler);
 	_navigationDoneHandler = std::move(config.navigationDoneHandler);
 	_externalWindowCloseHandler = std::move(config.externalWindowCloseHandler);
@@ -1718,6 +1720,7 @@ bool Instance::loadFailed(
 void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 	if (loadEvent == WEBKIT_LOAD_STARTED) {
 		_loadFailed = false;
+		_helper.emit_navigation_started();
 	} else if (loadEvent == WEBKIT_LOAD_FINISHED) {
 		_helper.emit_navigation_done(!_loadFailed);
 	}
@@ -1758,20 +1761,15 @@ bool Instance::decidePolicy(
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const gchar *uri = webkit_uri_request_get_uri(request);
 	g_object_ref(decision);
-	_master.call_navigation_started(uri, false, [=](
+	_master.call_navigation_policy(uri, false, [=](
 			GObjectCpp::Object source_object,
 			Gio::AsyncResult res) {
-		const auto result = _master.call_navigation_started_finish(res);
+		const auto result = _master.call_navigation_policy_finish(res);
 		// Fallback to default decision on object destruction
 		if (!result || !std::get<1>(*result)) {
 			webkit_policy_decision_ignore(decision);
 		}
 		g_object_unref(decision);
-		GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-			if (!webkit_web_view_is_loading(_webview)) {
-				_helper.emit_navigation_done(!_loadFailed);
-			}
-		}));
 	});
 	return true;
 }
@@ -1782,10 +1780,10 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 	}
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const std::string uri = webkit_uri_request_get_uri(request);
-	_master.call_navigation_started(uri, true, [=](
+	_master.call_navigation_policy(uri, true, [=](
 			GObjectCpp::Object source_object,
 			Gio::AsyncResult res) {
-		const auto ret = _master.call_navigation_started_finish(res);
+		const auto ret = _master.call_navigation_policy_finish(res);
 		if (!ret || !std::get<1>(*ret)) {
 			return;
 		}
@@ -2760,28 +2758,28 @@ void Instance::updateHistoryStates() {
 }
 
 void Instance::registerMasterMethodHandlers() {
-	_master.signal_handle_navigation_started().connect([=](
+	_master.signal_handle_navigation_policy().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation,
 			const std::string &uri,
 			bool newWindow) {
 		if (newWindow) {
-			if (_navigationStartHandler
-					&& _navigationStartHandler(uri, true)) {
+			if (_navigationPolicyHandler
+					&& _navigationPolicyHandler(uri, true)) {
 				if (_platform == Platform::Any
 						|| _mode == WindowMode::External) {
-					_master.complete_navigation_started(invocation, true);
+					_master.complete_navigation_policy(invocation, true);
 					return true;
 				}
 				QDesktopServices::openUrl(QString::fromStdString(uri));
 			}
-			_master.complete_navigation_started(invocation, false);
+			_master.complete_navigation_policy(invocation, false);
 		} else if (!uri.starts_with(dataDomain())
-				&& _navigationStartHandler
-				&& !_navigationStartHandler(uri, false)) {
-			_master.complete_navigation_started(invocation, false);
+				&& _navigationPolicyHandler
+				&& !_navigationPolicyHandler(uri, false)) {
+			_master.complete_navigation_policy(invocation, false);
 		} else {
-			_master.complete_navigation_started(invocation, true);
+			_master.complete_navigation_policy(invocation, true);
 		}
 		return true;
 	});
@@ -3132,6 +3130,12 @@ void Instance::registerHelperSignalHandlers() {
 				.text = message,
 				.sourceUrl = sourceUrl,
 			});
+		}
+	});
+
+	_helper.signal_navigation_started().connect([=](Helper) {
+		if (_navigationStartHandler) {
+			_navigationStartHandler();
 		}
 	});
 

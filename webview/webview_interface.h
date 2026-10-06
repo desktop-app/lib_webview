@@ -159,7 +159,8 @@ struct Config {
 	QWidget *parent = nullptr;
 	QColor opaqueBg;
 	std::function<void(Message)> messageHandler;
-	std::function<bool(std::string,bool)> navigationStartHandler;
+	std::function<bool(std::string,bool)> navigationPolicyHandler;
+	std::function<void()> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
 	std::function<void()> externalWindowCloseHandler;
 	std::function<void(bool)> fullscreenChangedHandler;

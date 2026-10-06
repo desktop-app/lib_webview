@@ -296,7 +296,8 @@ private:
 	winrt::com_ptr<ICoreWebView2Controller> _controller;
 	winrt::com_ptr<ICoreWebView2> _webview;
 	std::function<void(Webview::Message)> _messageHandler;
-	std::function<bool(std::string, bool)> _navigationStartHandler;
+	std::function<bool(std::string, bool)> _navigationPolicyHandler;
+	std::function<void()> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
@@ -322,6 +323,7 @@ Handler::Handler(
 	std::function<void()> readyHandler)
 : _window(handle)
 , _messageHandler(std::move(config.messageHandler))
+, _navigationPolicyHandler(std::move(config.navigationPolicyHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler))
 , _dialogHandler(std::move(config.dialogHandler))
@@ -549,15 +551,18 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	auto uri = base::CoTaskMemString();
 	const auto result = args->get_Uri(uri.put());
 
-	if (result == S_OK && uri && _navigationStartHandler) {
+	if (result == S_OK && uri && _navigationPolicyHandler) {
 		const auto weak = base::make_weak(this);
-		const auto allowed = _navigationStartHandler(FromWide(uri), false);
+		const auto allowed = _navigationPolicyHandler(FromWide(uri), false);
 		if (!weak || _destroying) {
 			return S_OK;
 		} else if (!allowed) {
 			args->put_Cancel(TRUE);
 			return S_OK;
 		}
+	}
+	if (_navigationStartHandler) {
+		_navigationStartHandler();
 	}
 	updateHistoryStates();
 	return S_OK;
@@ -608,7 +613,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 
 	if (result == S_OK && uri && isUserInitiated && _restrictedOrigin.empty()) {
 		const auto url = FromWide(uri);
-		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
+		if (_navigationPolicyHandler && _navigationPolicyHandler(url, true)) {
 			QDesktopServices::openUrl(QString::fromStdString(url));
 		}
 	}

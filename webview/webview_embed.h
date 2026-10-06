@@ -79,7 +79,8 @@ public:
 	void setMessageHandler(Fn<void(Message)> handler);
 	void setMessageHandler(Fn<void(std::string)> handler);
 	void setMessageHandler(Fn<void(const QJsonDocument&)> handler);
-	void setNavigationStartHandler(Fn<bool(QString,bool)> handler);
+	void setNavigationPolicyHandler(Fn<bool(QString,bool)> handler);
+	void setNavigationStartHandler(Fn<void()> handler);
 	void setNavigationDoneHandler(Fn<void(bool)> handler);
 	void setExternalWindowCloseHandler(Fn<void()> handler);
 	void setFullscreenChangedHandler(Fn<void(bool)> handler);
@@ -108,7 +109,8 @@ public:
 private:
 	bool createWebView(QWidget *parent, const WindowConfig &config);
 	[[nodiscard]] Fn<void(Message)> messageHandler() const;
-	[[nodiscard]] Fn<bool(std::string,bool)> navigationStartHandler() const;
+	[[nodiscard]] Fn<bool(std::string,bool)> navigationPolicyHandler() const;
+	[[nodiscard]] Fn<void()> navigationStartHandler() const;
 	[[nodiscard]] Fn<void(bool)> navigationDoneHandler() const;
 	[[nodiscard]] Fn<void()> externalWindowCloseHandler() const;
 	[[nodiscard]] Fn<void(bool)> fullscreenChangedHandler() const;
@@ -119,7 +121,8 @@ private:
 	std::unique_ptr<QTemporaryDir> _temporaryStorage;
 	std::unique_ptr<Interface> _webview;
 	Fn<void(Message)> _messageHandler;
-	Fn<bool(std::string,bool)> _navigationStartHandler;
+	Fn<bool(std::string,bool)> _navigationPolicyHandler;
+	Fn<void()> _navigationStartHandler;
 	Fn<void(bool)> _navigationDoneHandler;
 	Fn<void()> _externalWindowCloseHandler;
 	Fn<void(bool)> _fullscreenChangedHandler;

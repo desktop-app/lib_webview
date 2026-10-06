@@ -158,6 +158,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.parent = parent,
 		.opaqueBg = config.opaqueBg,
 		.messageHandler = messageHandler(),
+		.navigationPolicyHandler = navigationPolicyHandler(),
 		.navigationStartHandler = navigationStartHandler(),
 		.navigationDoneHandler = navigationDoneHandler(),
 		.externalWindowCloseHandler = externalWindowCloseHandler(),
@@ -391,14 +392,18 @@ Fn<void(Message)> Window::messageHandler() const {
 	};
 }
 
-void Window::setNavigationStartHandler(Fn<bool(QString,bool)> handler) {
+void Window::setNavigationPolicyHandler(Fn<bool(QString,bool)> handler) {
 	if (!handler) {
-		_navigationStartHandler = nullptr;
+		_navigationPolicyHandler = nullptr;
 		return;
 	}
-	_navigationStartHandler = [=](std::string uri, bool newWindow) {
+	_navigationPolicyHandler = [=](std::string uri, bool newWindow) {
 		return handler(QString::fromStdString(uri), newWindow);
 	};
+}
+
+void Window::setNavigationStartHandler(Fn<void()> handler) {
+	_navigationStartHandler = std::move(handler);
 }
 
 void Window::setNavigationDoneHandler(Fn<void(bool)> handler) {
@@ -425,7 +430,7 @@ void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 	_dataRequestHandler = std::move(handler);
 }
 
-Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
+Fn<bool(std::string,bool)> Window::navigationPolicyHandler() const {
 	return [=](std::string message, bool newWindow) {
 		const auto lower = QString::fromStdString(message).toLower();
 		if (!lower.startsWith(u"http://"_q)
@@ -435,14 +440,24 @@ Fn<bool(std::string,bool)> Window::navigationStartHandler() const {
 			return false;
 		}
 		auto result = true;
-		if (_navigationStartHandler) {
+		if (_navigationPolicyHandler) {
 			base::Integration::Instance().enterFromEventLoop([&] {
-				result = _navigationStartHandler(
+				result = _navigationPolicyHandler(
 					std::move(message),
 					newWindow);
 			});
 		}
 		return result;
+	};
+}
+
+Fn<void()> Window::navigationStartHandler() const {
+	return [=] {
+		if (_navigationStartHandler) {
+			base::Integration::Instance().enterFromEventLoop([&] {
+				_navigationStartHandler();
+			});
+		}
 	};
 }
 
