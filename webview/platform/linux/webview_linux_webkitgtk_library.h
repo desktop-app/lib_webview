@@ -272,6 +272,11 @@ inline void (*gtk_window_resize)(
 inline void (*gtk_widget_realize)(GtkWidget *widget);
 inline gboolean (*gtk_widget_get_visible)(GtkWidget *widget);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
+inline void (*gtk_widget_set_sensitive)(GtkWidget *widget, gboolean sensitive);
+inline void (*gtk_widget_set_can_target)(
+	GtkWidget *widget,
+	gboolean can_target);
+inline void (*gtk_widget_grab_focus)(GtkWidget *widget);
 inline void (*gtk_widget_show_all)(GtkWidget *widget);
 inline GType (*gtk_window_get_type)(void);
 inline GdkDisplay *(*gtk_widget_get_display)(GtkWidget *widget);

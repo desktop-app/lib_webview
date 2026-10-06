@@ -90,6 +90,8 @@ public:
 	virtual void setOpaqueBg(QColor opaqueBg) = 0;
 	virtual void setFullscreen(bool fullscreen) {
 	}
+	virtual void setInputBlocked(bool blocked) {
+	}
 
 	[[nodiscard]] virtual QWidget *widget() = 0;
 	[[nodiscard]] virtual PopupAnchor popupAnchor() {

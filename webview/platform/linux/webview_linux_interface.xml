@@ -80,6 +80,9 @@
 		<method name='SetFullscreen'>
 			<arg type='b' name='fullscreen' direction='in'/>
 		</method>
+		<method name='SetInputBlocked'>
+			<arg type='b' name='blocked' direction='in'/>
+		</method>
 		<method name='Init'>
 			<arg type='ay' name='js' direction='in'/>
 		</method>

@@ -296,6 +296,12 @@ void Window::setFullscreen(bool fullscreen) {
 	_webview->setFullscreen(fullscreen);
 }
 
+void Window::setInputBlocked(bool blocked) {
+	Expects(_webview != nullptr);
+
+	_webview->setInputBlocked(blocked);
+}
+
 void Window::setInteractionHandler(Fn<void()> handler) {
 	_interactionHandler = std::move(handler);
 	if (_webview) {

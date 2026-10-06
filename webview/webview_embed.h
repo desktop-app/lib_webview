@@ -91,6 +91,7 @@ public:
 
 	void focus();
 	void setFullscreen(bool fullscreen);
+	void setInputBlocked(bool blocked);
 	void setInteractionHandler(Fn<void()> handler);
 
 	void refreshNavigationHistoryState();

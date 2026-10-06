@@ -536,6 +536,7 @@ public:
 	void focus() override;
 	void setInteractionHandler(Fn<void()> handler) override;
 	void setFullscreen(bool fullscreen) override;
+	void setInputBlocked(bool blocked) override;
 
 	QWidget *widget() override;
 	PopupAnchor popupAnchor() override;
@@ -638,6 +639,7 @@ private:
 	std::vector<QRectF> _shellNoDragRegions;
 	bool _windowSupportsAlpha = true;
 	bool _fullscreen = false;
+	bool _inputBlocked = false;
 	gulong _xftDpiChangedHandler = 0;
 	gulong _x11EventHandler = 0;
 	std::string _applicationId;
@@ -1462,6 +1464,9 @@ bool Instance::shellMoveArea(QPointF point) const {
 }
 
 void Instance::pressed(GtkGesture *gesture, double x, double y) {
+	if (_inputBlocked) {
+		return;
+	}
 	if (_master) {
 		_master.call_user_interaction(nullptr);
 	}
@@ -2601,6 +2606,29 @@ void Instance::setFullscreen(bool fullscreen) {
 	}
 }
 
+void Instance::setInputBlocked(bool blocked) {
+	if (_remoting) {
+		if (!_helper) {
+			return;
+		}
+
+		_helper.call_set_input_blocked(blocked, nullptr);
+		return;
+	}
+
+	_inputBlocked = blocked;
+	// GTK 4 stops tracking the activity of an insensitive window.
+	if (gtk_widget_set_can_target) {
+		gtk_widget_set_can_target(_window, !blocked);
+		return;
+	}
+	gtk_widget_set_sensitive(_window, !blocked);
+	if (!blocked) {
+		// GTK takes the focus from an insensitive widget.
+		gtk_widget_grab_focus(GTK_WIDGET(_webview));
+	}
+}
+
 void Instance::startProcess() {
 	auto loop = GLib::MainLoop::new_();
 
@@ -3167,6 +3195,15 @@ void Instance::registerHelperMethodHandlers() {
 			bool fullscreen) {
 		setFullscreen(fullscreen);
 		_helper.complete_set_fullscreen(invocation);
+		return true;
+	});
+
+	_helper.signal_handle_set_input_blocked().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			bool blocked) {
+		setInputBlocked(blocked);
+		_helper.complete_set_input_blocked(invocation);
 		return true;
 	});
 
