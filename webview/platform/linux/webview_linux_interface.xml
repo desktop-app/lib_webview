@@ -1,11 +1,5 @@
 <node>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
-		<method name='GetStartData'>
-			<arg type='i' name='platform' direction='out'/>
-			<arg type='i' name='mode' direction='out'/>
-			<arg type='s' name='waylandDisplay' direction='out'/>
-			<arg type='s' name='appId' direction='out'/>
-		</method>
 		<method name='MessageReceived'>
 			<arg type='ay' name='message' direction='in'/>
 			<arg type='s' name='sourceUrl' direction='in'/>
@@ -42,6 +36,12 @@
 		</signal>
 	</interface>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Helper'>
+		<method name='SetStartData'>
+			<arg type='i' name='platform' direction='in'/>
+			<arg type='i' name='mode' direction='in'/>
+			<arg type='s' name='waylandDisplay' direction='in'/>
+			<arg type='s' name='appId' direction='in'/>
+		</method>
 		<method name='Create'>
 			<arg type='b' name='debug' direction='in'/>
 			<arg type='i' name='r' direction='in'/>
@@ -115,6 +115,5 @@
 			<arg type='i' name='outerWidth' direction='out'/>
 			<arg type='i' name='outerHeight' direction='out'/>
 		</method>
-		<signal name='Started'/>
 	</interface>
 </node>

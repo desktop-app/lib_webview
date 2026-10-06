@@ -2658,7 +2658,6 @@ void Instance::startProcess() {
 	_dbusServer = *dbusServer;
 	_dbusServer.start();
 	const ::base::has_weak_ptr guard;
-	auto started = ulong();
 	const auto newConnection = _dbusServer.signal_new_connection().connect(
 		[&](
 			Gio::DBusServer,
@@ -2671,26 +2670,48 @@ void Instance::startProcess() {
 		_dbusObjectManager.set_connection(connection);
 		registerMasterMethodHandlers();
 
-		HelperProxy::new_(
+		auto helper = HelperProxy::new_sync(
 			connection,
-			Gio::DBusProxyFlags::NONE_,
-			kHelperObjectPath,
+			Gio::DBusProxyFlags::DO_NOT_LOAD_PROPERTIES_,
+			kHelperObjectPath);
+
+		if (!helper) {
+			LOG(("WebView Error: %1").arg(
+				helper.error().message_().c_str()));
+			loop.quit();
+			return true;
+		}
+
+		_helper = *helper;
+		_helper.call_set_start_data(
+			int(_platform),
+			int(_mode),
+			_compositor ? _compositor->socketName().toStdString() : "",
+			[] {
+				if (auto app = Gio::Application::get_default()) {
+					if (const auto appId = app.get_application_id()) {
+						return std::string(appId);
+					}
+				}
+
+				const auto qtAppId = QGuiApplication::desktopFileName()
+					.toStdString();
+
+				if (Gio::Application::id_is_valid(qtAppId)) {
+					return qtAppId;
+				}
+
+				return std::string();
+			}(),
 			crl::guard(&guard, [&](
 					GObjectCpp::Object source_object,
 					Gio::AsyncResult res) {
-				auto helper = HelperProxy::new_finish(res);
-				if (!helper) {
+				const auto result = _helper.call_set_start_data_finish(res);
+				if (!result) {
 					LOG(("WebView Error: %1").arg(
-						helper.error().message_().c_str()));
-					loop.quit();
-					return;
+						result.error().message_().c_str()));
 				}
-
-				_helper = *helper;
-
-				started = _helper.signal_started().connect([&](Helper) {
-					loop.quit();
-				});
+				loop.quit();
 			}));
 
 		connection.signal_closed().connect(crl::guard(this, [=](
@@ -2716,9 +2737,6 @@ void Instance::startProcess() {
 		LOG(("WebView Error: Timed out waiting for WebView helper process."));
 	} else {
 		GLib::Source::remove(timeout);
-	}
-	if (_helper && started) {
-		_helper.disconnect(started);
 	}
 	_dbusServer.disconnect(newConnection);
 }
@@ -2748,33 +2766,6 @@ void Instance::updateHistoryStates() {
 }
 
 void Instance::registerMasterMethodHandlers() {
-	_master.signal_handle_get_start_data().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation) {
-		_master.complete_get_start_data(
-			invocation,
-			int(_platform),
-			int(_mode),
-			_compositor ? _compositor->socketName().toStdString() : "",
-			[] {
-				if (auto app = Gio::Application::get_default()) {
-					if (const auto appId = app.get_application_id()) {
-						return std::string(appId);
-					}
-				}
-
-				const auto qtAppId = QGuiApplication::desktopFileName()
-					.toStdString();
-
-				if (Gio::Application::id_is_valid(qtAppId)) {
-					return qtAppId;
-				}
-
-				return std::string();
-			}());
-		return true;
-	});
-
 	_master.signal_handle_message_received().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation,
@@ -2953,7 +2944,8 @@ int Instance::exec() {
 				std::make_format_args(
 					static_cast<const std::string>(
 						std::to_string(getpid()))))),
-		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_);
+		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_
+			| Gio::DBusConnectionFlags::DELAY_MESSAGE_PROCESSING_);
 
 	if (!connection) {
 		g_error("%s", connection.error().message_().c_str());
@@ -2966,45 +2958,25 @@ int Instance::exec() {
 	_dbusObjectManager.export_(object);
 	_dbusObjectManager.set_connection(*connection);
 	registerHelperMethodHandlers();
+	connection->start_message_processing();
 
-	MasterProxy::new_(
+	auto master = MasterProxy::new_sync(
 		*connection,
-		Gio::DBusProxyFlags::NONE_,
-		kMasterObjectPath,
-		[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
-			auto master = MasterProxy::new_finish(res);
-			if (!master) {
-				g_error("%s", master.error().message_().c_str());
-			}
-			_master = *master;
-			_master.signal_data_server_started().connect([=](
-					Master,
-					std::uint16_t port,
-					const std::string &password) {
-				_dataPort = port;
-				_dataPassword = password;
-			});
-			_master.call_get_start_data([&](
-					GObjectCpp::Object source_object,
-					Gio::AsyncResult res) {
-				const auto settings = _master.call_get_start_data_finish(
-					res);
-				if (!settings) {
-					g_error("%s", settings.error().message_().c_str());
-				}
-				_platform = Platform(std::get<1>(*settings));
-				_mode = WindowMode(std::get<2>(*settings));
-				if (const auto waylandDisplay = std::get<3>(*settings)
-						; !waylandDisplay.empty()) {
-					GLib::setenv("WAYLAND_DISPLAY", waylandDisplay, true);
-				}
-				if (const auto appId = std::get<4>(*settings)
-						; !appId.empty()) {
-					_applicationId = appId;
-				}
-				_helper.emit_started();
-			});
-		});
+		Gio::DBusProxyFlags::DO_NOT_LOAD_PROPERTIES_,
+		kMasterObjectPath);
+
+	if (!master) {
+		g_error("%s", master.error().message_().c_str());
+	}
+
+	_master = *master;
+	_master.signal_data_server_started().connect([=](
+			Master,
+			std::uint16_t port,
+			const std::string &password) {
+		_dataPort = port;
+		_dataPassword = password;
+	});
 
 	connection->signal_closed().connect([&](
 			Gio::DBusConnection,
@@ -3018,6 +2990,25 @@ int Instance::exec() {
 }
 
 void Instance::registerHelperMethodHandlers() {
+	_helper.signal_handle_set_start_data().connect([=](
+			Helper,
+			Gio::DBusMethodInvocation invocation,
+			int platform,
+			int mode,
+			const std::string &waylandDisplay,
+			const std::string &appId) {
+		_platform = Platform(platform);
+		_mode = WindowMode(mode);
+		if (!waylandDisplay.empty()) {
+			GLib::setenv("WAYLAND_DISPLAY", waylandDisplay, true);
+		}
+		if (!appId.empty()) {
+			_applicationId = appId;
+		}
+		_helper.complete_set_start_data(invocation);
+		return true;
+	});
+
 	_helper.signal_handle_create().connect([=](
 			Helper,
 			Gio::DBusMethodInvocation invocation,
