@@ -105,8 +105,8 @@ bool HttpServer::Private::processRedirect(
 		const std::shared_ptr<Guard> &guard) {
 	const auto slash = id.indexOf('/');
 	if (redirectHost.isEmpty()
-		|| slash <= 0
-		|| id.first(slash).compare(redirectHost, Qt::CaseInsensitive)) {
+			|| slash <= 0
+			|| id.first(slash).compare(redirectHost, Qt::CaseInsensitive)) {
 		return false;
 	}
 
@@ -114,12 +114,12 @@ bool HttpServer::Private::processRedirect(
 		QString::fromUtf8("https://" + id),
 		QUrl::StrictMode);
 	if (!url.isValid()
-		|| url.scheme().compare(u"https"_q, Qt::CaseInsensitive)
-		|| url.host().compare(
-			QString::fromUtf8(redirectHost),
-			Qt::CaseInsensitive)
-		|| !url.userInfo().isEmpty()
-		|| url.port(-1) != -1) {
+			|| url.scheme().compare(u"https"_q, Qt::CaseInsensitive)
+			|| url.host().compare(
+				QString::fromUtf8(redirectHost),
+				Qt::CaseInsensitive)
+			|| !url.userInfo().isEmpty()
+			|| url.port(-1) != -1) {
 		return false;
 	}
 

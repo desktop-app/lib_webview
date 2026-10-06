@@ -117,7 +117,7 @@ std::string SocketPath;
 
 [[nodiscard]] bool BlockDownloads(::GObject *owner) {
 	if (!owner
-		|| !g_signal_lookup("download-started", G_OBJECT_TYPE(owner))) {
+			|| !g_signal_lookup("download-started", G_OBJECT_TYPE(owner))) {
 		return false;
 	}
 	g_signal_connect(
@@ -268,11 +268,11 @@ struct ShellControlMessage {
 	}
 	const auto eventData = object.value("eventData");
 	if (object.value("type").toString() != kExternalMessageType
-		|| object.value("source").toString() != kExternalShellSource
-		|| object.value("token").toString().toStdString()
-			!= shellMessageToken
-		|| !IsExternalShellOrigin(object.value("origin").toString())
-		|| (!eventData.isUndefined() && !eventData.isObject())) {
+			|| object.value("source").toString() != kExternalShellSource
+			|| object.value("token").toString().toStdString()
+				!= shellMessageToken
+			|| !IsExternalShellOrigin(object.value("origin").toString())
+			|| (!eventData.isUndefined() && !eventData.isObject())) {
 		return ShellControlMessage{
 			.status = ShellControlParseStatus::Invalid,
 			.action = action,
@@ -302,7 +302,7 @@ struct ShellControlMessage {
 	for (const auto &entry : value.toArray()) {
 		const auto values = entry.toArray();
 		if (values.size() != 4
-			|| !std::all_of(values.begin(), values.end(), isNumber)) {
+				|| !std::all_of(values.begin(), values.end(), isNumber)) {
 			return std::nullopt;
 		}
 		result.emplace_back(
@@ -771,7 +771,7 @@ bool Instance::create(Config config) {
 	_restrictedContentSecurityPolicy = std::move(
 		config.restrictedContentSecurityPolicy);
 	if (!_restrictedOrigin.empty()
-		&& _restrictedContentSecurityPolicy.empty()) {
+			&& _restrictedContentSecurityPolicy.empty()) {
 		return false;
 	}
 	_debug = config.debug && _restrictedOrigin.empty();
@@ -881,7 +881,7 @@ bool Instance::create(Config config) {
 					window,
 					[=](not_null<QEvent*> event) {
 						if (event->type() == QEvent::MouseButtonPress
-							&& !QGuiApplication::focusWindow()) {
+								&& !QGuiApplication::focusWindow()) {
 							FocusX11Window(window->winId());
 						}
 						return ::base::EventFilterResult::Continue;
@@ -993,7 +993,7 @@ bool Instance::create(Config config) {
 
 	const auto restricted = !_restrictedOrigin.empty();
 	if (restricted
-		&& !webkit_web_view_get_default_content_security_policy) {
+			&& !webkit_web_view_get_default_content_security_policy) {
 		return false;
 	}
 	if (webkit_network_session_new) {
@@ -1356,7 +1356,7 @@ if (window === window.top) {
 void Instance::scriptMessageReceived(void *message) {
 	const auto received = JavascriptMessageText(message);
 	if (received.size() > kMaxScriptMessageBytes + _messageToken.size()
-		|| !received.starts_with(_messageToken)) {
+			|| !received.starts_with(_messageToken)) {
 		return;
 	}
 	const auto text = received.substr(_messageToken.size());
@@ -1375,7 +1375,7 @@ bool Instance::handleShellControlMessage(const std::string &message) {
 	if (parsed.status == ShellControlParseStatus::NotShellControl) {
 		return false;
 	} else if (parsed.status == ShellControlParseStatus::Invalid
-		|| _shellMessageToken.empty()) {
+			|| _shellMessageToken.empty()) {
 		return true;
 	}
 	switch (parsed.action) {
@@ -1502,9 +1502,9 @@ bool Instance::pressed(GdkEvent *event) {
 	auto rootX = 0.;
 	auto rootY = 0.;
 	if (!customWindowFrame()
-		|| (!touch && button != GDK_BUTTON_PRIMARY)
-		|| !gdk_event_get_coords(event, &x, &y)
-		|| !gdk_event_get_root_coords(event, &rootX, &rootY)) {
+			|| (!touch && button != GDK_BUTTON_PRIMARY)
+			|| !gdk_event_get_coords(event, &x, &y)
+			|| !gdk_event_get_root_coords(event, &rootX, &rootY)) {
 		return false;
 	}
 	auto width = gint();
@@ -1734,8 +1734,8 @@ bool Instance::decidePolicy(
 		WebKitPolicyDecision *decision,
 		WebKitPolicyDecisionType decisionType) {
 	if (decisionType == WEBKIT_POLICY_DECISION_TYPE_RESPONSE
-		&& !_restrictedOrigin.empty()
-		&& webkit_response_policy_decision_is_main_frame_main_resource) {
+			&& !_restrictedOrigin.empty()
+			&& webkit_response_policy_decision_is_main_frame_main_resource) {
 		const auto responseDecision = WEBKIT_RESPONSE_POLICY_DECISION(decision);
 		if (!webkit_response_policy_decision_is_main_frame_main_resource(
 				responseDecision)) {
@@ -1893,7 +1893,7 @@ bool Instance::permissionRequest(WebKitPermissionRequest *request) {
 	//
 	// WebKitGTK denies unhandled requests by default, we make it explicit.
 	if (webkit_clipboard_permission_request_get_type
-		&& WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(request)) {
+			&& WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(request)) {
 		webkit_permission_request_deny(request);
 		return true;
 	}
@@ -2264,8 +2264,8 @@ void Instance::focus() {
 				return std::string("_TIME")
 					+ std::to_string(gdk_x11_get_server_time(surface));
 			}
-		} else if (const auto gdkWindow = gtk_widget_get_window(_window);
-			IsGdkX11Window(gdkWindow)) {
+		} else if (const auto gdkWindow = gtk_widget_get_window(_window)
+				; IsGdkX11Window(gdkWindow)) {
 			return std::string("_TIME")
 				+ std::to_string(gdk_x11_get_server_time(gdkWindow));
 		}
