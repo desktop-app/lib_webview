@@ -75,10 +75,11 @@ struct AsyncPopupState {
 }
 
 [[nodiscard]] DialogResult DialogResultFromPopup(PopupResult &&result) {
+	if (result.id == "cancel") {
+		return {};
+	}
 	return {
-		.text = (result.id == "cancel"
-			? std::string()
-			: result.value.value_or(QString()).toStdString()),
+		.text = result.value.value_or(QString()).toStdString(),
 		.accepted = (result.id == "ok" || result.value.has_value()),
 	};
 }
