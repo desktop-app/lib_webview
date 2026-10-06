@@ -587,8 +587,6 @@ private:
 		WebKitPolicyDecisionType decisionType);
 	GtkWidget *createAnother(WebKitNavigationAction *action);
 	bool scriptDialog(WebKitScriptDialog *dialog);
-	void evalNow(std::string js);
-	void scheduleQueuedEvals();
 	bool authenticate(WebKitAuthenticationRequest *request);
 	bool permissionRequest(WebKitPermissionRequest *request);
 
@@ -664,8 +662,6 @@ private:
 	std::string _dataPassword;
 	std::string _shellMessageToken;
 	std::string _messageToken = GenerateMessageToken();
-	int _scriptDialogDepth = 0;
-	std::vector<std::string> _queuedScriptDialogEvals;
 	bool _loadFailed = false;
 	bool _externalWindowCloseAllowed = false;
 	bool _externalWindowClosePending = false;
@@ -1837,12 +1833,6 @@ bool Instance::scriptDialog(WebKitScriptDialog *dialog) {
 	bool accepted = false;
 	std::string result;
 	auto loop = GLib::MainLoop::new_();
-	++_scriptDialogDepth;
-	const auto guard = gsl::finally([&] {
-		if (--_scriptDialogDepth == 0) {
-			scheduleQueuedEvals();
-		}
-	});
 	_master.call_script_dialog(
 		type,
 		text ? text : "",
@@ -2191,14 +2181,6 @@ void Instance::eval(std::string js) {
 		return;
 	}
 
-	if (_scriptDialogDepth > 0) {
-		_queuedScriptDialogEvals.push_back(std::move(js));
-		return;
-	}
-	evalNow(std::move(js));
-}
-
-void Instance::evalNow(std::string js) {
 	if (webkit_web_view_evaluate_javascript) {
 		webkit_web_view_evaluate_javascript(
 			_webview,
@@ -2217,18 +2199,6 @@ void Instance::evalNow(std::string js) {
 			nullptr,
 			nullptr);
 	}
-}
-
-void Instance::scheduleQueuedEvals() {
-	if (_queuedScriptDialogEvals.empty()) {
-		return;
-	}
-	const auto scripts = ::base::take(_queuedScriptDialogEvals);
-	GLib::idle_add_once(crl::guard(this, [=] {
-		for (const auto &script : scripts) {
-			eval(script);
-		}
-	}));
 }
 
 void Instance::focus() {
