@@ -37,7 +37,6 @@ ResolveResult Resolve(Platform platform) {
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_window_destroy)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_destroy))
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_realize)
-		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_get_visible)
 		&& LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_visible)
 		&& (LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_can_target)
 			|| LOAD_LIBRARY_SYMBOL(lib, gtk_widget_set_sensitive))

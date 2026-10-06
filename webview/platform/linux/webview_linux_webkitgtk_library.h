@@ -270,7 +270,6 @@ inline void (*gtk_window_resize)(
 	gint width,
 	gint height);
 inline void (*gtk_widget_realize)(GtkWidget *widget);
-inline gboolean (*gtk_widget_get_visible)(GtkWidget *widget);
 inline void (*gtk_widget_set_visible)(GtkWidget *widget, gboolean visible);
 inline void (*gtk_widget_set_sensitive)(GtkWidget *widget, gboolean sensitive);
 inline void (*gtk_widget_set_can_target)(

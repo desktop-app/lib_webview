@@ -1701,9 +1701,7 @@ void Instance::setupX11Embedding() {
 		_window,
 		"map-event",
 		G_CALLBACK(+[](Instance *instance) -> gboolean {
-			if (!gtk_widget_get_visible(instance->_window)) {
-				instance->showWindow();
-			}
+			instance->showWindow();
 			return false;
 		}),
 		this);
