@@ -1151,19 +1151,6 @@ bool Instance::create(Config config) {
 		this);
 	g_signal_connect_swapped(
 		_webview,
-		"notify::is-web-process-responsive",
-		G_CALLBACK(+[](
-				Instance *instance,
-				GParamSpec *pspec) {
-			if (!webkit_web_view_get_is_web_process_responsive(
-					instance->_webview)) {
-				g_critical("Web process became unresponsive.");
-				instance->_mainLoop.quit();
-			}
-		}),
-		this);
-	g_signal_connect_swapped(
-		_webview,
 		"load-failed",
 		G_CALLBACK(+[](
 			Instance *instance,
@@ -1368,7 +1355,7 @@ if (window === window.top) {
 	});
 })");
 
-	return webkit_web_view_get_is_web_process_responsive(_webview);
+	return true;
 }
 
 void Instance::scriptMessageReceived(void *message) {
