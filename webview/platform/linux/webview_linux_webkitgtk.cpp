@@ -1757,26 +1757,23 @@ bool Instance::decidePolicy(
 			navigationDecision);
 	WebKitURIRequest *request = webkit_navigation_action_get_request(action);
 	const gchar *uri = webkit_uri_request_get_uri(request);
-	bool result = false;
-	auto loop = GLib::MainLoop::new_();
-	_master.call_navigation_started(uri, false, [&](
+	g_object_ref(decision);
+	_master.call_navigation_started(uri, false, [=](
 			GObjectCpp::Object source_object,
 			Gio::AsyncResult res) {
-		if (const auto ret = _master.call_navigation_started_finish(res)) {
-			result = std::get<1>(*ret);
+		const auto result = _master.call_navigation_started_finish(res);
+		// Fallback to default decision on object destruction
+		if (!result || !std::get<1>(*result)) {
+			webkit_policy_decision_ignore(decision);
 		}
-		loop.quit();
+		g_object_unref(decision);
+		GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
+			if (!webkit_web_view_is_loading(_webview)) {
+				_master.call_navigation_done(!_loadFailed, nullptr);
+			}
+		}));
 	});
-	loop.run();
-	if (!result) {
-		webkit_policy_decision_ignore(decision);
-	}
-	GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
-		if (!webkit_web_view_is_loading(_webview)) {
-			_master.call_navigation_done(!_loadFailed, nullptr);
-		}
-	}));
-	return !result;
+	return true;
 }
 
 GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
