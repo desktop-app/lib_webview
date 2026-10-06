@@ -2369,22 +2369,16 @@ bool Instance::notifyExternalWindowClosed() {
 		return true;
 	}
 	_externalWindowClosePending = true;
-	const auto weak = ::base::make_weak(this);
 	_master.call_external_window_closed([=](
 			GObjectCpp::Object,
 			Gio::AsyncResult res) {
-		const auto instance = weak.get();
-		if (!instance) {
-			return;
-		}
-		instance->_externalWindowClosePending = false;
-		instance->_master.call_external_window_closed_finish(res);
-		const auto window = instance->_window;
-		instance->_externalWindowCloseAllowed = true;
+		_externalWindowClosePending = false;
+		_master.call_external_window_closed_finish(res);
+		_externalWindowCloseAllowed = true;
 		if (gtk_window_destroy) {
-			gtk_window_destroy(GTK_WINDOW(window));
+			gtk_window_destroy(GTK_WINDOW(_window));
 		} else {
-			gtk_widget_destroy(window);
+			gtk_widget_destroy(_window);
 		}
 	});
 	return true;
