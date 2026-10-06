@@ -2956,8 +2956,7 @@ int Instance::exec() {
 		Gio::DBusConnectionFlags::AUTHENTICATION_CLIENT_);
 
 	if (!connection) {
-		g_critical("%s", connection.error().message_().c_str());
-		return 1;
+		g_error("%s", connection.error().message_().c_str());
 	}
 
 	_helper = HelperSkeleton::new_();
@@ -2968,7 +2967,6 @@ int Instance::exec() {
 	_dbusObjectManager.set_connection(*connection);
 	registerHelperMethodHandlers();
 
-	bool error = false;
 	MasterProxy::new_(
 		*connection,
 		Gio::DBusProxyFlags::NONE_,
@@ -2976,10 +2974,7 @@ int Instance::exec() {
 		[&](GObjectCpp::Object source_object, Gio::AsyncResult res) {
 			auto master = MasterProxy::new_finish(res);
 			if (!master) {
-				error = true;
-				g_critical("%s", master.error().message_().c_str());
-				_mainLoop.quit();
-				return;
+				g_error("%s", master.error().message_().c_str());
 			}
 			_master = *master;
 			_master.signal_data_server_started().connect([=](
@@ -2995,10 +2990,7 @@ int Instance::exec() {
 				const auto settings = _master.call_get_start_data_finish(
 					res);
 				if (!settings) {
-					error = true;
-					g_critical("%s", settings.error().message_().c_str());
-					_mainLoop.quit();
-					return;
+					g_error("%s", settings.error().message_().c_str());
 				}
 				_platform = Platform(std::get<1>(*settings));
 				_mode = WindowMode(std::get<2>(*settings));
@@ -3022,7 +3014,7 @@ int Instance::exec() {
 	});
 
 	_mainLoop.run();
-	return error;
+	return 0;
 }
 
 void Instance::registerHelperMethodHandlers() {
