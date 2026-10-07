@@ -1797,7 +1797,7 @@ GtkWidget *Instance::createAnother(WebKitNavigationAction *action) {
 				nullptr,
 				nullptr,
 				nullptr);
-				g_object_unref(launcher);
+			g_object_unref(launcher);
 		} else if (gtk_show_uri_on_window) {
 			gtk_show_uri_on_window(
 				GTK_WINDOW(_window),
