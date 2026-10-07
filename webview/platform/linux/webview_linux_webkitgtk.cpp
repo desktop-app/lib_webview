@@ -1360,8 +1360,7 @@ void Instance::scriptMessageReceived(void *message) {
 	if (handleShellControlMessage(text)) {
 		return;
 	}
-	const auto sourceUrl = webkit_web_view_get_uri(_webview);
-	_helper.emit_message_received(text, sourceUrl ? sourceUrl : "");
+	_helper.emit_message_received(text, webkit_web_view_get_uri(_webview));
 }
 
 bool Instance::handleShellControlMessage(const std::string &message) {
@@ -2749,13 +2748,12 @@ void Instance::stopProcess() {
 }
 
 void Instance::updateHistoryStates() {
-	const auto url = webkit_web_view_get_uri(_webview);
 	const auto title = webkit_web_view_get_title(_webview);
 	if ((_platform == Platform::Any) || (_mode == WindowMode::External)) {
 		gtk_window_set_title(GTK_WINDOW(_window), title ? title : "");
 	}
 	_helper.emit_navigation_state_update(
-		url ? url : "",
+		webkit_web_view_get_uri(_webview),
 		title ? title : "",
 		webkit_web_view_can_go_back(_webview),
 		webkit_web_view_can_go_forward(_webview));
