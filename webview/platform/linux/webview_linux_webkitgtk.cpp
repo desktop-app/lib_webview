@@ -607,6 +607,7 @@ private:
 
 	void registerMasterMethodHandlers();
 	void registerHelperMethodHandlers();
+	void registerHelperSignalHandlers();
 	void exportWaylandPopupAnchor();
 	[[nodiscard]] void *winId();
 	[[nodiscard]] PopupAnchor popupAnchorSnapshot();
@@ -1262,7 +1263,7 @@ bool Instance::create(Config config) {
 				guint,
 				guint,
 				GdkModifierType) -> gboolean {
-				instance->_master.call_user_interaction(nullptr);
+				instance->_helper.emit_user_interaction();
 				return FALSE;
 			}),
 			this);
@@ -1287,7 +1288,7 @@ bool Instance::create(Config config) {
 			G_CALLBACK(+[](
 				Instance *instance,
 				GdkEventKey*) -> gboolean {
-				instance->_master.call_user_interaction(nullptr);
+				instance->_helper.emit_user_interaction();
 				return FALSE;
 			}),
 			this);
@@ -1360,7 +1361,7 @@ void Instance::scriptMessageReceived(void *message) {
 		return;
 	}
 	const auto sourceUrl = webkit_web_view_get_uri(_webview);
-	_master.call_message_received(text, sourceUrl ? sourceUrl : "", nullptr);
+	_helper.emit_message_received(text, sourceUrl ? sourceUrl : "");
 }
 
 bool Instance::handleShellControlMessage(const std::string &message) {
@@ -1441,7 +1442,7 @@ void Instance::pressed(GtkGesture *gesture, double x, double y) {
 	if (_inputBlocked) {
 		return;
 	}
-	_master.call_user_interaction(nullptr);
+	_helper.emit_user_interaction();
 	takeX11InputFocus(gtk_event_controller_get_current_event_time(
 		GTK_EVENT_CONTROLLER(gesture)));
 	if (!customWindowFrame()) {
@@ -1491,7 +1492,7 @@ bool Instance::pressed(GdkEvent *event) {
 	if (!touch && !gdk_event_get_button(event, &button)) {
 		return false;
 	}
-	_master.call_user_interaction(nullptr);
+	_helper.emit_user_interaction();
 	takeX11InputFocus(gdk_event_get_time(event));
 	auto x = 0.;
 	auto y = 0.;
@@ -1719,7 +1720,7 @@ void Instance::loadChanged(WebKitLoadEvent loadEvent) {
 	if (loadEvent == WEBKIT_LOAD_STARTED) {
 		_loadFailed = false;
 	} else if (loadEvent == WEBKIT_LOAD_FINISHED) {
-		_master.call_navigation_done(!_loadFailed, nullptr);
+		_helper.emit_navigation_done(!_loadFailed);
 	}
 	updateHistoryStates();
 }
@@ -1769,7 +1770,7 @@ bool Instance::decidePolicy(
 		g_object_unref(decision);
 		GLib::timeout_add_seconds_once(1, crl::guard(this, [=] {
 			if (!webkit_web_view_is_loading(_webview)) {
-				_master.call_navigation_done(!_loadFailed, nullptr);
+				_helper.emit_navigation_done(!_loadFailed);
 			}
 		}));
 	});
@@ -2390,7 +2391,7 @@ void Instance::fullscreenChanged(bool fullscreen) {
 	}
 	_fullscreen = fullscreen;
 	updateWindowFrameExtents();
-	_master.call_fullscreen_changed(fullscreen, nullptr);
+	_helper.emit_fullscreen_changed(fullscreen);
 }
 
 PopupAnchor Instance::popupAnchor() {
@@ -2677,6 +2678,8 @@ void Instance::startProcess() {
 		}
 
 		_helper = *helper;
+		registerHelperSignalHandlers();
+
 		_helper.call_set_start_data(
 			int(_platform),
 			int(_mode),
@@ -2751,31 +2754,14 @@ void Instance::updateHistoryStates() {
 	if ((_platform == Platform::Any) || (_mode == WindowMode::External)) {
 		gtk_window_set_title(GTK_WINDOW(_window), title ? title : "");
 	}
-	_master.call_navigation_state_update(
+	_helper.emit_navigation_state_update(
 		url ? url : "",
 		title ? title : "",
 		webkit_web_view_can_go_back(_webview),
-		webkit_web_view_can_go_forward(_webview),
-		nullptr);
+		webkit_web_view_can_go_forward(_webview));
 }
 
 void Instance::registerMasterMethodHandlers() {
-	_master.signal_handle_message_received().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation,
-			const std::string &message,
-			const std::string &sourceUrl) {
-		if (!_messageHandler) {
-			return false;
-		}
-		_messageHandler(Message{
-			.text = message,
-			.sourceUrl = sourceUrl,
-		});
-		_master.complete_message_received(invocation);
-		return true;
-	});
-
 	_master.signal_handle_navigation_started().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation,
@@ -2802,18 +2788,6 @@ void Instance::registerMasterMethodHandlers() {
 		return true;
 	});
 
-	_master.signal_handle_navigation_done().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation,
-			bool success) {
-		if (!_navigationDoneHandler) {
-			return false;
-		}
-		_navigationDoneHandler(success);
-		_master.complete_navigation_done(invocation);
-		return true;
-	});
-
 	_master.signal_handle_external_window_closed().connect([=](
 			Master,
 			Gio::DBusMethodInvocation invocation) {
@@ -2822,18 +2796,6 @@ void Instance::registerMasterMethodHandlers() {
 		}
 		_externalWindowCloseHandler();
 		_master.complete_external_window_closed(invocation);
-		return true;
-	});
-
-	_master.signal_handle_fullscreen_changed().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation,
-			bool fullscreen) {
-		if (!_fullscreenChangedHandler) {
-			return false;
-		}
-		_fullscreenChangedHandler(fullscreen);
-		_master.complete_fullscreen_changed(invocation);
 		return true;
 	});
 
@@ -2885,34 +2847,6 @@ void Instance::registerMasterMethodHandlers() {
 			result.accepted,
 			result.text);
 
-		return true;
-	});
-
-	_master.signal_handle_navigation_state_update().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation,
-			const std::string &url,
-			const std::string &title,
-			bool canGoBack,
-			bool canGoForward) {
-		_navigationHistoryState = NavigationHistoryState{
-			.url = url,
-			.title = title,
-			.canGoBack = canGoBack,
-			.canGoForward = canGoForward,
-		};
-		_master.complete_navigation_state_update(invocation);
-		return true;
-	});
-
-	_master.signal_handle_user_interaction().connect([=](
-			Master,
-			Gio::DBusMethodInvocation invocation) {
-		if (!_interactionHandler) {
-			return false;
-		}
-		_interactionHandler();
-		_master.complete_user_interaction(invocation);
 		return true;
 	});
 }
@@ -3187,6 +3121,52 @@ void Instance::registerHelperMethodHandlers() {
 			outerSize.width(),
 			outerSize.height());
 		return true;
+	});
+}
+
+void Instance::registerHelperSignalHandlers() {
+	_helper.signal_message_received().connect([=](
+			Helper,
+			const std::string &message,
+			const std::string &sourceUrl) {
+		if (_messageHandler) {
+			_messageHandler(Message{
+				.text = message,
+				.sourceUrl = sourceUrl,
+			});
+		}
+	});
+
+	_helper.signal_navigation_done().connect([=](Helper, bool success) {
+		if (_navigationDoneHandler) {
+			_navigationDoneHandler(success);
+		}
+	});
+
+	_helper.signal_fullscreen_changed().connect([=](Helper, bool fullscreen) {
+		if (_fullscreenChangedHandler) {
+			_fullscreenChangedHandler(fullscreen);
+		}
+	});
+
+	_helper.signal_navigation_state_update().connect([=](
+			Helper,
+			const std::string &url,
+			const std::string &title,
+			bool canGoBack,
+			bool canGoForward) {
+		_navigationHistoryState = NavigationHistoryState{
+			.url = url,
+			.title = title,
+			.canGoBack = canGoBack,
+			.canGoForward = canGoForward,
+		};
+	});
+
+	_helper.signal_user_interaction().connect([=](Helper) {
+		if (_interactionHandler) {
+			_interactionHandler();
+		}
 	});
 }
 

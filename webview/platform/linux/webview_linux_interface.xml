@@ -1,21 +1,11 @@
 <node>
 	<interface name='org.desktop_app.GtkIntegration.Webview.Master'>
-		<method name='MessageReceived'>
-			<arg type='ay' name='message' direction='in'/>
-			<arg type='s' name='sourceUrl' direction='in'/>
-		</method>
 		<method name='NavigationStarted'>
 			<arg type='s' name='uri' direction='in'/>
 			<arg type='b' name='newWindow' direction='in'/>
 			<arg type='b' name='result' direction='out'/>
 		</method>
-		<method name='NavigationDone'>
-			<arg type='b' name='success' direction='in'/>
-		</method>
 		<method name='ExternalWindowClosed'/>
-		<method name='FullscreenChanged'>
-			<arg type='b' name='fullscreen' direction='in'/>
-		</method>
 		<method name='ScriptDialog'>
 			<arg type='i' name='type' direction='in'/>
 			<arg type='s' name='text' direction='in'/>
@@ -23,13 +13,6 @@
 			<arg type='b' name='accepted' direction='out'/>
 			<arg type='s' name='text' direction='out'/>
 		</method>
-		<method name='NavigationStateUpdate'>
-			<arg type='s' name='url' direction='in'/>
-			<arg type='s' name='title' direction='in'/>
-			<arg type='b' name='canGoBack' direction='in'/>
-			<arg type='b' name='canGoForward' direction='in'/>
-		</method>
-		<method name='UserInteraction'/>
 		<signal name='DataServerStarted'>
 			<arg type='q' name='port'/>
 			<arg type='s' name='password'/>
@@ -115,5 +98,22 @@
 			<arg type='i' name='outerWidth' direction='out'/>
 			<arg type='i' name='outerHeight' direction='out'/>
 		</method>
+		<signal name='MessageReceived'>
+			<arg type='ay' name='message'/>
+			<arg type='s' name='sourceUrl'/>
+		</signal>
+		<signal name='NavigationDone'>
+			<arg type='b' name='success'/>
+		</signal>
+		<signal name='FullscreenChanged'>
+			<arg type='b' name='fullscreen'/>
+		</signal>
+		<signal name='NavigationStateUpdate'>
+			<arg type='s' name='url'/>
+			<arg type='s' name='title'/>
+			<arg type='b' name='canGoBack'/>
+			<arg type='b' name='canGoForward'/>
+		</signal>
+		<signal name='UserInteraction'/>
 	</interface>
 </node>
