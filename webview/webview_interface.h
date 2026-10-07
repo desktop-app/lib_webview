@@ -131,6 +131,15 @@ struct DialogResult {
 using AsyncDialogHandler = std::function<
 	bool(DialogArgs, std::function<void(DialogResult)>)>;
 
+enum class PermissionType {
+	Microphone,
+	Camera,
+	CameraAndMicrophone,
+	Geolocation,
+};
+using PermissionHandler = std::function<
+	void(PermissionType, std::function<void(bool)>)>;
+
 struct DataResponse {
 	std::unique_ptr<DataStream> stream;
 	std::int64_t streamOffset = 0;
@@ -166,6 +175,7 @@ struct Config {
 	std::function<void(bool)> fullscreenChangedHandler;
 	std::function<DialogResult(DialogArgs)> dialogHandler;
 	AsyncDialogHandler asyncDialogHandler;
+	PermissionHandler permissionHandler;
 	std::function<DataResult(DataRequest)> dataRequestHandler;
 	std::string dataProtocolOverride;
 	std::string dataRequestRedirectHost;

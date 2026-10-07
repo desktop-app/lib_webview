@@ -13,6 +13,10 @@
 			<arg type='b' name='accepted' direction='out'/>
 			<arg type='s' name='text' direction='out'/>
 		</method>
+		<method name='PermissionRequest'>
+			<arg type='i' name='type' direction='in'/>
+			<arg type='b' name='allowed' direction='out'/>
+		</method>
 		<signal name='DataServerStarted'>
 			<arg type='q' name='port'/>
 			<arg type='s' name='password'/>

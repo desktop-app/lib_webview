@@ -86,6 +86,7 @@ public:
 	void setFullscreenChangedHandler(Fn<void(bool)> handler);
 	void setDialogHandler(Fn<DialogResult(DialogArgs)> handler);
 	void setAsyncDialogHandler(AsyncDialogHandler handler);
+	void setPermissionHandler(PermissionHandler handler);
 	void setDataRequestHandler(Fn<DataResult(DataRequest)> handler);
 	void init(const QByteArray &js);
 	void eval(const QByteArray &js);
@@ -116,6 +117,7 @@ private:
 	[[nodiscard]] Fn<void(bool)> fullscreenChangedHandler() const;
 	[[nodiscard]] Fn<DialogResult(DialogArgs)> dialogHandler() const;
 	[[nodiscard]] AsyncDialogHandler asyncDialogHandler() const;
+	[[nodiscard]] PermissionHandler permissionHandler() const;
 	[[nodiscard]] Fn<DataResult(DataRequest)> dataRequestHandler() const;
 
 	std::unique_ptr<QTemporaryDir> _temporaryStorage;
@@ -128,6 +130,7 @@ private:
 	Fn<void(bool)> _fullscreenChangedHandler;
 	Fn<DialogResult(DialogArgs)> _dialogHandler;
 	AsyncDialogHandler _asyncDialogHandler;
+	PermissionHandler _permissionHandler;
 	Fn<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
 	rpl::lifetime _lifetime;

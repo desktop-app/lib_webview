@@ -62,6 +62,13 @@
 #define WEBKIT_TYPE_CLIPBOARD_PERMISSION_REQUEST (webkit_clipboard_permission_request_get_type())
 #define WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), WEBKIT_TYPE_CLIPBOARD_PERMISSION_REQUEST))
 
+#define WEBKIT_TYPE_GEOLOCATION_PERMISSION_REQUEST (webkit_geolocation_permission_request_get_type())
+#define WEBKIT_IS_GEOLOCATION_PERMISSION_REQUEST(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), WEBKIT_TYPE_GEOLOCATION_PERMISSION_REQUEST))
+
+#define WEBKIT_TYPE_USER_MEDIA_PERMISSION_REQUEST (webkit_user_media_permission_request_get_type())
+#define WEBKIT_USER_MEDIA_PERMISSION_REQUEST(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), WEBKIT_TYPE_USER_MEDIA_PERMISSION_REQUEST, WebKitUserMediaPermissionRequest))
+#define WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), WEBKIT_TYPE_USER_MEDIA_PERMISSION_REQUEST))
+
 struct _GdkRGBA {
 	float red;
 	float green;
@@ -126,6 +133,7 @@ typedef struct _WebKitDownload WebKitDownload;
 typedef struct _WebKitAuthenticationRequest WebKitAuthenticationRequest;
 typedef struct _WebKitCredential WebKitCredential;
 typedef struct _WebKitPermissionRequest WebKitPermissionRequest;
+typedef struct _WebKitUserMediaPermissionRequest WebKitUserMediaPermissionRequest;
 
 typedef enum {
 	GTK_WINDOW_TOPLEVEL,
@@ -641,8 +649,16 @@ inline WebKitCredential *(*webkit_credential_new)(
 	WebKitCredentialPersistence persistence);
 inline void (*webkit_credential_free)(WebKitCredential *credential);
 inline GType (*webkit_clipboard_permission_request_get_type)(void);
+inline GType (*webkit_geolocation_permission_request_get_type)(void);
+inline void (*webkit_permission_request_allow)(
+	WebKitPermissionRequest *request);
 inline void (*webkit_permission_request_deny)(
 	WebKitPermissionRequest *request);
+inline GType (*webkit_user_media_permission_request_get_type)(void);
+inline gboolean (*webkit_user_media_permission_is_for_audio_device)(
+	WebKitUserMediaPermissionRequest *request);
+inline gboolean (*webkit_user_media_permission_is_for_video_device)(
+	WebKitUserMediaPermissionRequest *request);
 
 enum class ResolveResult {
 	Success,

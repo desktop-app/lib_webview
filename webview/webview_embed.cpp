@@ -165,6 +165,7 @@ bool Window::createWebView(QWidget *parent, const WindowConfig &config) {
 		.fullscreenChangedHandler = fullscreenChangedHandler(),
 		.dialogHandler = dialogHandler(),
 		.asyncDialogHandler = asyncDialogHandler(),
+		.permissionHandler = permissionHandler(),
 		.dataRequestHandler = dataRequestHandler(),
 		.dataProtocolOverride = config.dataProtocolOverride.toStdString(),
 		.dataRequestRedirectHost = config.dataRequestRedirectHost.toStdString(),
@@ -426,6 +427,10 @@ void Window::setAsyncDialogHandler(AsyncDialogHandler handler) {
 	_asyncDialogHandler = std::move(handler);
 }
 
+void Window::setPermissionHandler(PermissionHandler handler) {
+	_permissionHandler = std::move(handler);
+}
+
 void Window::setDataRequestHandler(Fn<DataResult(DataRequest)> handler) {
 	_dataRequestHandler = std::move(handler);
 }
@@ -517,6 +522,18 @@ AsyncDialogHandler Window::asyncDialogHandler() const {
 			result = _asyncDialogHandler(std::move(args), std::move(done));
 		});
 		return result;
+	};
+}
+
+PermissionHandler Window::permissionHandler() const {
+	return [=](PermissionType type, std::function<void(bool)> done) {
+		if (!_permissionHandler) {
+			done(false);
+			return;
+		}
+		base::Integration::Instance().enterFromEventLoop([&] {
+			_permissionHandler(type, std::move(done));
+		});
 	};
 }
 

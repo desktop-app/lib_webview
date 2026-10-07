@@ -647,6 +647,7 @@ private:
 	std::function<void(bool)> _fullscreenChangedHandler;
 	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	AsyncDialogHandler _asyncDialogHandler;
+	PermissionHandler _permissionHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
 	Fn<void()> _interactionHandler;
@@ -774,6 +775,7 @@ bool Instance::create(Config config) {
 	_fullscreenChangedHandler = std::move(config.fullscreenChangedHandler);
 	_dialogHandler = std::move(config.dialogHandler);
 	_asyncDialogHandler = std::move(config.asyncDialogHandler);
+	_permissionHandler = std::move(config.permissionHandler);
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	_dataRequestRedirectHost = std::move(config.dataRequestRedirectHost);
 	_windowStyle = config.windowStyle;
@@ -1877,7 +1879,47 @@ bool Instance::permissionRequest(WebKitPermissionRequest *request) {
 		webkit_permission_request_deny(request);
 		return true;
 	}
-	return false;
+	const auto type = [&]() -> std::optional<PermissionType> {
+		if (WEBKIT_IS_GEOLOCATION_PERMISSION_REQUEST(request)) {
+			return PermissionType::Geolocation;
+		} else if (!WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request)) {
+			return std::nullopt;
+		}
+		const auto media = WEBKIT_USER_MEDIA_PERMISSION_REQUEST(request);
+		const auto audio = webkit_user_media_permission_is_for_audio_device(
+			media);
+		const auto video = webkit_user_media_permission_is_for_video_device(
+			media);
+		if (audio && video) {
+			return PermissionType::CameraAndMicrophone;
+		} else if (audio) {
+			return PermissionType::Microphone;
+		} else if (video) {
+			return PermissionType::Camera;
+		}
+		return std::nullopt;
+	}();
+	if (!type) {
+		return false;
+	}
+	g_object_ref(request);
+	// Permission requests wait for the user longer than 25 seconds
+	auto proxy = gi::object_cast<MasterProxy>(_master);
+	const auto timeout = proxy.get_default_timeout();
+	proxy.set_default_timeout(G_MAXINT);
+	_master.call_permission_request(int(*type), [=](
+			GObjectCpp::Object source_object,
+			Gio::AsyncResult res) {
+		const auto result = _master.call_permission_request_finish(res);
+		if (result && std::get<1>(*result)) {
+			webkit_permission_request_allow(request);
+		} else {
+			webkit_permission_request_deny(request);
+		}
+		g_object_unref(request);
+	});
+	proxy.set_default_timeout(timeout);
+	return true;
 }
 
 // https://bugs.webkit.org/show_bug.cgi?id=146351
@@ -2836,6 +2878,21 @@ void Instance::registerMasterMethodHandlers() {
 			result.accepted,
 			result.text);
 
+		return true;
+	});
+
+	_master.signal_handle_permission_request().connect([=](
+			Master,
+			Gio::DBusMethodInvocation invocation,
+			int type) {
+		if (!_permissionHandler) {
+			return false;
+		}
+		_permissionHandler(
+			PermissionType(type),
+			crl::guard(this, [=](bool allowed) mutable {
+				_master.complete_permission_request(invocation, allowed);
+			}));
 		return true;
 	});
 }
