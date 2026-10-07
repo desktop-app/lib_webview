@@ -895,18 +895,15 @@ bool Instance::create(Config config) {
 		gdk_display_sync(gtk_widget_get_display(_window));
 		gdk_display_sync(gtk_widget_get_display(_window));
 	}
+	if (!_applicationId.empty()) {
+		// GTK and WebKit take the application id from GtkApplication
+		_application = gtk_application_new(
+			_applicationId.c_str(),
+			G_APPLICATION_NON_UNIQUE);
+		g_application_register(G_APPLICATION(_application), nullptr, nullptr);
+		gtk_window_set_application(GTK_WINDOW(_window), _application);
+	}
 	if (_mode == WindowMode::External) {
-		if (!_applicationId.empty()) {
-			// GTK gives windows an application id only from GtkApplication.
-			_application = gtk_application_new(
-				_applicationId.c_str(),
-				G_APPLICATION_NON_UNIQUE);
-			g_application_register(
-				G_APPLICATION(_application),
-				nullptr,
-				nullptr);
-			gtk_window_set_application(GTK_WINDOW(_window), _application);
-		}
 		if (customWindowFrame()) {
 			gtk_window_set_decorated(GTK_WINDOW(_window), FALSE);
 		}
