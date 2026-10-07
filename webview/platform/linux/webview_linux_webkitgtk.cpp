@@ -889,18 +889,21 @@ bool Instance::create(Config config) {
 		return true;
 	}
 
-	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
-		// GTK takes the scale on creation: bind the new output, get its scale.
-		gdk_display_sync(gtk_widget_get_display(_window));
-		gdk_display_sync(gtk_widget_get_display(_window));
-	}
+	// Before any widget, or GtkApplication startup reloads the icon theme
 	if (!_applicationId.empty()) {
 		// GTK and WebKit take the application id from GtkApplication
 		_application = gtk_application_new(
 			_applicationId.c_str(),
 			G_APPLICATION_NON_UNIQUE);
 		g_application_register(G_APPLICATION(_application), nullptr, nullptr);
+	}
+	_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
+		// GTK takes the scale on creation: bind the new output, get its scale.
+		gdk_display_sync(gtk_widget_get_display(_window));
+		gdk_display_sync(gtk_widget_get_display(_window));
+	}
+	if (_application) {
 		gtk_window_set_application(GTK_WINDOW(_window), _application);
 	}
 	if (_mode == WindowMode::External) {
