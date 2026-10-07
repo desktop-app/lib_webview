@@ -36,7 +36,6 @@
 #include <QtWidgets/QWidget>
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -88,17 +87,11 @@ void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
 
 std::string SocketPath;
 
-[[nodiscard]] std::string GenerateMessageToken() {
-	auto bytes = std::array<std::uint8_t, 32>();
+[[nodiscard]] std::string GenerateSecret() {
+	auto bytes = QByteArray();
+	bytes.resize(32);
 	::base::RandomFill(bytes.data(), bytes.size());
-	constexpr auto kHex = "0123456789abcdef";
-	auto result = std::string();
-	result.reserve(bytes.size() * 2);
-	for (const auto byte : bytes) {
-		result.push_back(kHex[byte >> 4]);
-		result.push_back(kHex[byte & 0x0F]);
-	}
-	return result;
+	return bytes.toHex().toStdString();
 }
 
 [[nodiscard]] bool SetCookiePolicy(
@@ -663,7 +656,7 @@ private:
 	std::uint16_t _dataPort = 0;
 	std::string _dataPassword;
 	std::string _shellMessageToken;
-	std::string _messageToken = GenerateMessageToken();
+	std::string _messageToken = GenerateSecret();
 	bool _loadFailed = false;
 	bool _externalWindowCloseAllowed = false;
 	bool _externalWindowClosePending = false;
@@ -1894,7 +1887,7 @@ bool Instance::startDataServer() {
 	}
 
 	_dataServer.emplace(
-		(_dataPassword = GLib::uuid_string_random()).c_str(),
+		(_dataPassword = GenerateSecret()).c_str(),
 		QByteArray::fromStdString(_dataRequestRedirectHost),
 		[=](
 				QTcpSocket *socket,
