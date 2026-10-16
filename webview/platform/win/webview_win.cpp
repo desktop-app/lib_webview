@@ -25,6 +25,13 @@ namespace {
 base::unique_qptr<QWindow> MakeFramelessWindow() {
 	auto result = base::make_unique_q<QWindow>();
 	result->setFlag(Qt::FramelessWindowHint);
+
+	// The default format has alpha, which makes Qt create this native
+	// child as a layered window, and an empty layered window is skipped
+	// by mouse hit-testing, so the input never reaches the webview.
+	auto format = result->format();
+	format.setAlphaBufferSize(0);
+	result->setFormat(format);
 	return result;
 }
 
