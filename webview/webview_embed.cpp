@@ -129,7 +129,12 @@ Window::Window(QWidget *parent, WindowConfig config) {
 	}
 }
 
-Window::~Window() = default;
+Window::~Window() {
+	if (_temporaryStorage
+		&& DeferTemporaryStorageRemoval(_temporaryStorage->path())) {
+		_temporaryStorage->setAutoRemove(false);
+	}
+}
 
 bool Window::valid() const {
 	return (_webview != nullptr);

@@ -165,6 +165,41 @@ void KeepProcessesActive(
 	}
 }
 
+[[nodiscard]] bool CreateEngineFolder(const std::wstring &path) {
+	const auto engine = path + L"\\EBWebView";
+	if (!CreateDirectoryW(engine.c_str(), nullptr)
+		&& GetLastError() != ERROR_ALREADY_EXISTS) {
+		return false;
+	}
+	const auto attributes = GetFileAttributesW(engine.c_str());
+	return (attributes != INVALID_FILE_ATTRIBUTES)
+		&& (attributes & FILE_ATTRIBUTE_DIRECTORY)
+		&& !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+}
+
+[[nodiscard]] winrt::file_handle PinDirectory(const std::wstring &path) {
+	auto result = winrt::file_handle(CreateFileW(
+		path.c_str(),
+		FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		nullptr,
+		OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+		nullptr));
+	auto info = FILE_BASIC_INFO();
+	if (!result
+		|| !GetFileInformationByHandleEx(
+			result.get(),
+			FileBasicInfo,
+			&info,
+			sizeof(info))
+		|| !(info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		|| (info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+		return {};
+	}
+	return result;
+}
+
 class Handler
 	: public winrt::implements<
 		Handler,
@@ -192,6 +227,7 @@ public:
 	Handler(
 		Config config,
 		HWND handle,
+		winrt::file_handle userDataPin,
 		std::function<void(not_null<Handler*>)> saveThis,
 		std::function<void()> readyHandler);
 	~Handler();
@@ -291,6 +327,8 @@ public:
 private:
 	void updateHistoryStates();
 
+	// Keeps the folder unclaimable until every runtime object below is gone.
+	winrt::file_handle _userDataPin;
 	HWND _window = nullptr;
 	winrt::com_ptr<ICoreWebView2Environment> _environment;
 	winrt::com_ptr<ICoreWebView2Controller> _controller;
@@ -319,9 +357,11 @@ private:
 Handler::Handler(
 	Config config,
 	HWND handle,
+	winrt::file_handle userDataPin,
 	std::function<void(not_null<Handler*>)> saveThis,
 	std::function<void()> readyHandler)
-: _window(handle)
+: _userDataPin(std::move(userDataPin))
+, _window(handle)
 , _messageHandler(std::move(config.messageHandler))
 , _navigationPolicyHandler(std::move(config.navigationPolicyHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
@@ -355,6 +395,9 @@ void Handler::setOpaqueBg(QColor opaqueBg) {
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Environment *env) {
+	if (_destroying) {
+		return S_OK;
+	}
 	_environment.copy_from(env);
 	if (!_environment) {
 		return E_FAIL;
@@ -385,7 +428,12 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Controller *controller) {
-	if (!_readyHandler) {
+	if (_destroying) {
+		if (controller) {
+			controller->Close();
+		}
+		return S_OK;
+	} else if (!_readyHandler) {
 		return S_OK;
 	}
 	_controller.copy_from(controller);
@@ -1015,6 +1063,16 @@ void Instance::start(Config &&config) {
 		_keepActiveTimer.callEach(kKeepActiveInterval);
 	}
 
+	const auto wpath = ToWide(config.userDataPath);
+	auto pin = winrt::file_handle();
+	if (!config.restrictedOrigin.empty() && !wpath.empty()) {
+		if (CreateEngineFolder(wpath)) {
+			pin = PinDirectory(wpath);
+		}
+		if (!pin) {
+			return;
+		}
+	}
 	auto handler = (Handler*)nullptr;
 	const auto ready = [=] {
 		_readyFlag = true;
@@ -1025,9 +1083,9 @@ void Instance::start(Config &&config) {
 	auto owned = winrt::make<Handler>(
 		config,
 		_handle,
+		std::move(pin),
 		[&](not_null<Handler*> that) { handler = that; },
 		crl::guard(this, ready));
-	const auto wpath = ToWide(config.userDataPath);
 	const auto result = CreateCoreWebView2EnvironmentWithOptions(
 		nullptr,
 		wpath.empty() ? nullptr : wpath.c_str(),

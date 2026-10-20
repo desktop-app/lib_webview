@@ -41,4 +41,11 @@ std::string GenerateStorageToken() {
 void ClearStorageDataByToken(const std::string &token) {
 }
 
+bool DeferTemporaryStorageRemoval(const QString &path) {
+	return false;
+}
+
+void ClearStaleTemporaryStorage() {
+}
+
 } // namespace Webview

@@ -222,5 +222,7 @@ void ParseRangeHeaderFor(DataRequest &request, std::string_view header);
 
 [[nodiscard]] std::string GenerateStorageToken();
 void ClearStorageDataByToken(const std::string &token);
+[[nodiscard]] bool DeferTemporaryStorageRemoval(const QString &path);
+void ClearStaleTemporaryStorage();
 
 } // namespace Webview
