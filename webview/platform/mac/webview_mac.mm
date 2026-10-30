@@ -10,6 +10,7 @@
 #include "webview/webview_data_stream_memory.h"
 #include "base/algorithm.h"
 #include "base/debug_log.h"
+#include "base/flat_set.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
 #include "base/flat_map.h"
@@ -48,6 +49,10 @@ constexpr auto kPartsCacheLimit = 32 * 1024 * 1024;
 constexpr auto kUuidSize = 16;
 
 using TaskPointer = id<WKURLSchemeTask>;
+using PermissionRequested = std::function<void(
+	Webview::PermissionType,
+	std::string,
+	std::function<void(bool)>)>;
 
 [[nodiscard]] NSString *stdToNS(std::string_view value) {
 	return [[NSString alloc]
@@ -198,6 +203,63 @@ void DisableClipboardReading(WKPreferences *preferences) {
 		&& (port == -1 || port == 443);
 }
 
+// WHY: WebKit throws when a media decision handler is released uncalled,
+// and the popup drops its answer when the panel dies first, so the last
+// copy of an unanswered decision denies.
+class PermissionDecision final {
+public:
+	explicit PermissionDecision(std::function<void(bool)> callback);
+	~PermissionDecision();
+
+	void resolve(bool allowed);
+
+private:
+	std::function<void(bool)> _callback;
+
+};
+
+PermissionDecision::PermissionDecision(std::function<void(bool)> callback)
+: _callback(std::move(callback)) {
+}
+
+PermissionDecision::~PermissionDecision() {
+	resolve(false);
+}
+
+void PermissionDecision::resolve(bool allowed) {
+	if (const auto callback = base::take(_callback)) {
+		callback(allowed);
+	}
+}
+
+[[nodiscard]] std::function<void(bool)> AnswerOnce(
+		std::function<void(bool)> callback) {
+	const auto decision = std::make_shared<PermissionDecision>(
+		std::move(callback));
+	return [=](bool allowed) {
+		decision->resolve(allowed);
+	};
+}
+
+[[nodiscard]] std::string OriginKey(
+		WKSecurityOrigin *page,
+		WKSecurityOrigin *requester) {
+	const auto serialize = [](WKSecurityOrigin *origin) {
+		return (origin.protocol.length && origin.host.length)
+			? (std::string(origin.protocol.UTF8String)
+				+ "://"
+				+ origin.host.UTF8String
+				+ ':'
+				+ std::to_string(origin.port))
+			: std::string();
+	};
+	const auto first = serialize(page);
+	const auto second = serialize(requester);
+	return (first.empty() || second.empty())
+		? std::string()
+		: (first + ' ' + second);
+}
+
 } // namespace
 
 @interface RedirectDelegate : NSObject<NSURLSessionTaskDelegate> {
@@ -232,7 +294,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted;
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
@@ -245,6 +307,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 - (void) webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler;
 - (void) webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler;
 - (void) webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *result))completionHandler;
+- (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0));
 - (void) webView:(WKWebView *)webView startURLSchemeTask:(id <WKURLSchemeTask>)task;
 - (void) webView:(WKWebView *)webView stopURLSchemeTask:(id <WKURLSchemeTask>)task;
 - (void) dealloc;
@@ -270,6 +333,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	std::function<void(bool)> _navigationDoneHandler;
 	std::function<Webview::DialogResult(Webview::DialogArgs)> _dialogHandler;
 	std::function<void(id<WKURLSchemeTask> task, bool started)> _dataRequested;
+	PermissionRequested _permissionRequested;
 	std::function<void()> _updateStates;
 	std::string _dataDomain;
 	std::string _dataRequestRedirectHost;
@@ -280,7 +344,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	BOOL _restricted;
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted {
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationPolicyHandler = std::move(navigationPolicyHandler);
@@ -288,6 +352,7 @@ void DisableClipboardReading(WKPreferences *preferences) {
 		_navigationDoneHandler = std::move(navigationDoneHandler);
 		_dialogHandler = std::move(dialogHandler);
 		_dataRequested = std::move(dataRequested);
+		_permissionRequested = std::move(permissionRequested);
 		_updateStates = std::move(updateStates);
 		_dataDomain = std::move(dataDomain);
 		_dataRequestRedirectHost = std::move(dataRequestRedirectHost);
@@ -473,6 +538,35 @@ void DisableClipboardReading(WKPreferences *preferences) {
 	} else {
 		completionHandler(nil);
 	}
+}
+
+- (void) webView:(WKWebView *)webView requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler {
+	using Type = Webview::PermissionType;
+	const auto permission = [&]() -> std::optional<Type> {
+		switch (type) {
+		case WKMediaCaptureTypeCamera:
+			return Type::Camera;
+		case WKMediaCaptureTypeMicrophone:
+			return Type::Microphone;
+		case WKMediaCaptureTypeCameraAndMicrophone:
+			return Type::CameraAndMicrophone;
+		}
+		return std::nullopt;
+	}();
+	if (!permission || !_permissionRequested) {
+		decisionHandler(WKPermissionDecisionDeny);
+		return;
+	}
+	void (^handler)(WKPermissionDecision) = [decisionHandler copy];
+	_permissionRequested(
+		*permission,
+		OriginKey(origin, frame.securityOrigin),
+		[handler](bool allowed) {
+			handler(allowed
+				? WKPermissionDecisionGrant
+				: WKPermissionDecisionDeny);
+			[handler release];
+		});
 }
 
 - (void) webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
@@ -708,6 +802,10 @@ private:
 		int64 total);
 
 	void processDataRequest(TaskPointer task, bool started);
+	void requestMediaPermission(
+		PermissionType type,
+		std::string origin,
+		std::function<void(bool)> done);
 
 	[[nodiscard]] CachedResult fillFromCache(const DataRequest &request);
 	void addToCache(uint32 resourceIndex, int64 offset, PartData data);
@@ -737,12 +835,15 @@ private:
 	std::string _dataProtocol;
 	std::string _dataDomain;
 	std::function<DataResult(DataRequest)> _dataRequestHandler;
+	PermissionHandler _permissionHandler;
 	rpl::variable<NavigationHistoryState> _navigationHistoryState;
 
 	base::flat_map<TaskPointer, Task> _tasks;
 	base::flat_map<std::string, PartialResource> _partialResources;
 	base::flat_map<CacheKey, PartData> _partsCache;
 	std::vector<CacheKey> _partsLRU;
+	// WebKit asks again after a reload or idle time, Allow lasts per view.
+	base::flat_set<std::pair<std::string, PermissionType>> _allowedMedia;
 	RestrictedRulesState _restrictedRulesState = RestrictedRulesState::None;
 	std::string _pendingNavigation;
 	int64 _cacheTotal = 0;
@@ -776,6 +877,16 @@ Instance::Instance(Config config) {
 			processDataRequest(task, started);
 		} else if (started) {
 			TaskFail(task);
+		}
+	};
+	const auto handlePermissionRequest = [=](
+			PermissionType type,
+			std::string origin,
+			std::function<void(bool)> done) {
+		if (weak) {
+			requestMediaPermission(type, std::move(origin), std::move(done));
+		} else {
+			done(false);
 		}
 	};
 
@@ -818,8 +929,9 @@ Instance::Instance(Config config) {
 	const auto handler = restricted
 		? [RestrictedHandler alloc]
 		: [Handler alloc];
-	_handler = [handler initWithMessageHandler:config.messageHandler navigationPolicyHandler:config.navigationPolicyHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost) restricted:restricted];
+	_handler = [handler initWithMessageHandler:config.messageHandler navigationPolicyHandler:config.navigationPolicyHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest permissionRequested:handlePermissionRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost) restricted:restricted];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
+	_permissionHandler = std::move(config.permissionHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(_dataProtocol)];
 	if (!restricted) {
 		if (@available(macOS 14, *)) {
@@ -868,6 +980,7 @@ window.external = {
 }
 
 Instance::~Instance() {
+	invalidate_weak_ptrs(this);
 	if (_eventMonitor) {
 		[NSEvent removeMonitor:_eventMonitor];
 		_eventMonitor = nil;
@@ -1183,6 +1296,34 @@ void Instance::processDataRequest(TaskPointer task, bool started) {
 	}
 
 	}
+}
+
+void Instance::requestMediaPermission(
+		PermissionType type,
+		std::string origin,
+		std::function<void(bool)> done) {
+	const auto devices = (type == PermissionType::CameraAndMicrophone)
+		? std::vector{ PermissionType::Camera, PermissionType::Microphone }
+		: std::vector{ type };
+	const auto cached = !origin.empty()
+		&& std::ranges::all_of(devices, [&](PermissionType device) {
+			return _allowedMedia.contains(std::pair(origin, device));
+		});
+	if (cached || !_permissionHandler) {
+		done(cached);
+		return;
+	}
+	const auto weak = base::make_weak(this);
+	_permissionHandler(type, AnswerOnce([=, done = std::move(done)](
+			bool allowed) {
+		const auto granted = allowed && weak;
+		if (granted && !origin.empty()) {
+			for (const auto device : devices) {
+				weak->_allowedMedia.emplace(origin, device);
+			}
+		}
+		done(granted);
+	}));
 }
 
 void Instance::compileRestrictedRules(
