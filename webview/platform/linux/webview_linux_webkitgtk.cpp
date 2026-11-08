@@ -76,15 +76,6 @@ constexpr auto kExternalShellSource = "shell";
 constexpr auto kMaxPopupAnchorDimension = 32768;
 constexpr auto kMaxWaylandPopupAnchorHandleBytes = 4096;
 
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-void (* const SetGraphicsApi)(QSGRendererInterface::GraphicsApi) =
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-	QQuickWindow::setGraphicsApi;
-#else // Qt >= 6.0.0
-	QQuickWindow::setSceneGraphBackend;
-#endif // Qt < 6.0.0
-#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-
 std::string SocketPath;
 
 [[nodiscard]] std::string GenerateSecret() {
@@ -734,10 +725,12 @@ bool Instance::create(Config config) {
 				[[maybe_unused]] static const auto Inited = [&] {
 					switch (_glBackend) {
 					case Ui::GL::Backend::Raster:
-						SetGraphicsApi(QSGRendererInterface::Software);
+						QQuickWindow::setGraphicsApi(
+							QSGRendererInterface::Software);
 						break;
 					case Ui::GL::Backend::OpenGL:
-						SetGraphicsApi(QSGRendererInterface::OpenGL);
+						QQuickWindow::setGraphicsApi(
+							QSGRendererInterface::OpenGL);
 						break;
 					}
 					return true;
