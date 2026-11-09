@@ -290,12 +290,10 @@ Compositor::Compositor(const QByteArray &socketName)
 			QWaylandXdgPopup *popup,
 			QWaylandXdgSurface *xdgSurface) {
 		const auto widget = _private->widget;
-		const auto parent = (*static_cast<QQuickWindow * const *>(
-			popup->parentXdgSurface()->property("window").constData()
-		));
-		const auto output = (*static_cast<Output * const *>(
-			parent->property("output").constData()
-		));
+		const auto parent = qvariant_cast<QQuickWindow*>(
+			popup->parentXdgSurface()->property("window"));
+		const auto output = qvariant_cast<Output*>(
+			parent->property("output"));
 		const auto window = new QQuickWindow;
 		static_cast<QObject*>(window)->setParent(xdgSurface);
 		window->setProperty("output", QVariant::fromValue(output));
