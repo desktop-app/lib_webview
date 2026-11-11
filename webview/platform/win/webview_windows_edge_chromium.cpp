@@ -1167,10 +1167,12 @@ void Instance::start(Config &&config) {
 		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
 		winrt::take_ownership_from_abi);
 	// Avoid Windows account lockouts: crbug.com/541310282.
+	// File choosers in panels under 400x300: WebView2Feedback issue 5797.
 	options->put_AdditionalBrowserArguments(config.restrictedOrigin.empty()
-		? L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses"
+		? L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses,"
+			L"FileChooserMinWindowSize"
 		: L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses,"
-			L"msSmartScreenProtection "
+			L"FileChooserMinWindowSize,msSmartScreenProtection "
 			L"--force-webrtc-ip-handling-policy=disable_non_proxied_udp "
 			L"--mute-audio");
 	if (_hidden && !config.restrictedOrigin.empty()) {
