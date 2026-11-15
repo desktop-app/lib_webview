@@ -211,7 +211,7 @@ void Window::updateTheme(
 	if (!_webview) {
 		return;
 	}
-#ifndef Q_OS_MAC
+#ifndef Q_OS_MACOS
 	const auto wrap = [](QColor color) {
 		return u"rgba(%1, %2, %3, %4)"_q
 			.arg(color.red())
