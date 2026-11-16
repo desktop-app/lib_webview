@@ -146,6 +146,8 @@ ResolveResult Resolve(Platform platform) {
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_media_permission_is_for_audio_device)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_user_media_permission_is_for_video_device)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_cancel)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_network_proxy_settings_new)
+		&& LOAD_LIBRARY_SYMBOL(lib, webkit_network_proxy_settings_free)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_authenticate)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_get_host)
 		&& LOAD_LIBRARY_SYMBOL(lib, webkit_authentication_request_get_port)
@@ -174,6 +176,11 @@ ResolveResult Resolve(Platform platform) {
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_get_bounds);
 	LOAD_LIBRARY_SYMBOL(lib, gdk_toplevel_size_set_size);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_javascript_result_get_js_value);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_new_ephemeral);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_website_data_manager_set_network_proxy_settings);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_network_session_set_proxy_settings);
+	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_new_with_website_data_manager);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_context_set_sandbox_enabled);
 	LOAD_LIBRARY_SYMBOL(lib, webkit_web_view_get_default_content_security_policy);
 	LOAD_LIBRARY_SYMBOL(

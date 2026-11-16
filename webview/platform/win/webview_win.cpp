@@ -70,6 +70,9 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		return EdgeChromium::CreateInstance(std::move(config));
 	} else if (auto result = EdgeChromium::CreateInstance(config)) {
 		return result;
+	} else if (config.proxySettings) {
+		// EdgeHTML cannot apply proxy settings, fail instead of leaking.
+		return nullptr;
 	}
 	return EdgeHtml::CreateInstance(config);
 }
