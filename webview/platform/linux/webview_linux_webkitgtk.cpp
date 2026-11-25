@@ -2601,16 +2601,7 @@ void Instance::startProcess() {
 	auto serviceLauncher = Gio::SubprocessLauncher::new_(
 		Gio::SubprocessFlags::NONE_);
 
-	if (_platform == Platform::Wayland
-			&& _mode == WindowMode::Embedded
-			&& _glBackend == Ui::GL::Backend::Raster) {
-		serviceLauncher.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true);
-		serviceLauncher.setenv("GSK_RENDERER", "cairo", true);
-		serviceLauncher.setenv("GDK_DISABLE", "gl", true);
-		serviceLauncher.setenv("GDK_DEBUG", "gl-disable", true);
-		serviceLauncher.setenv("GDK_GL", "disable", true);
-		serviceLauncher.setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", true);
-	} else if (_platform == Platform::Any || _mode == WindowMode::External) {
+	if (_platform == Platform::Any || _mode == WindowMode::External) {
 		const auto token = ::base::Platform::XdgActivationToken().toStdString();
 		if (!token.empty()) {
 			serviceLauncher.setenv("XDG_ACTIVATION_TOKEN", token, true);
@@ -2661,7 +2652,9 @@ void Instance::startProcess() {
 	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
 		_compositor.emplace(
 			QByteArray::fromStdString(
-				GLib::path_get_basename(socketPath + "-wayland")));
+				GLib::path_get_basename(
+					socketPath + "-wayland")),
+			_glBackend != Ui::GL::Backend::Raster);
 	}
 
 	auto authObserver = Gio::DBusAuthObserver::new_();

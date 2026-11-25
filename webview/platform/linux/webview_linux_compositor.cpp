@@ -18,6 +18,8 @@
 #include <QtWaylandCompositor/QWaylandQuickOutput>
 #include <QtWaylandCompositor/QWaylandQuickShellSurfaceItem>
 
+#include <wayland-server-core.h>
+
 namespace Webview {
 
 struct Compositor::Private {
@@ -270,7 +272,7 @@ Compositor::Chrome::Chrome(
 	}
 }
 
-Compositor::Compositor(const QByteArray &socketName)
+Compositor::Compositor(const QByteArray &socketName, bool gpu)
 : _private(std::make_unique<Private>(this)) {
 	connect(&_private->shell, &QWaylandXdgShell::toplevelCreated, [=](
 			QWaylandXdgToplevel *toplevel,
@@ -315,6 +317,20 @@ Compositor::Compositor(const QByteArray &socketName)
 			window->show();
 		}, _private->lifetime);
 	});
+
+	if (!gpu) {
+		const auto filter = [](
+				const wl_client*,
+				const wl_global *global,
+				void*) {
+			const auto name = std::string_view(
+				wl_global_get_interface(global)->name);
+			return name != "wl_drm"
+				&& name != "zwp_linux_dmabuf_v1"
+				&& name != "wl_eglstream_display";
+		};
+		wl_display_set_global_filter(display(), filter, nullptr);
+	}
 
 	setSocketName(socketName);
 	create();

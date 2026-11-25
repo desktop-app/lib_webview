@@ -22,7 +22,7 @@ namespace Webview {
 
 class Compositor : public QWaylandQuickCompositor {
 public:
-	Compositor(const QByteArray &socketName = {});
+	Compositor(const QByteArray &socketName = {}, bool gpu = true);
 	~Compositor();
 
 	void setWidget(QQuickWidget *widget);
@@ -44,7 +44,7 @@ namespace Webview {
 
 class Compositor : public QObject {
 public:
-	Compositor(const QByteArray &socketName = {}) {}
+	Compositor(const QByteArray &socketName = {}, bool gpu = true) {}
 	QString socketName() { return {}; }
 };
 
