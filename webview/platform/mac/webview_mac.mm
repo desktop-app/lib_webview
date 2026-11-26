@@ -25,6 +25,7 @@
 #include <QtWidgets/QWidget>
 
 #import <Foundation/Foundation.h>
+#import <CFNetwork/CFNetwork.h>
 #import <WebKit/WebKit.h>
 #import <Network/Network.h>
 
@@ -295,7 +296,7 @@ void PermissionDecision::resolve(bool allowed) {
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted;
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost proxySettings:(std::optional<Webview::ProxySettings>)proxySettings restricted:(BOOL)restricted;
 - (void) userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message;
 - (void) webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
 - (void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context;
@@ -345,7 +346,7 @@ void PermissionDecision::resolve(bool allowed) {
 	BOOL _restricted;
 }
 
-- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost restricted:(BOOL)restricted {
+- (id) initWithMessageHandler:(std::function<void(Webview::Message)>)messageHandler navigationPolicyHandler:(std::function<bool(std::string,bool)>)navigationPolicyHandler navigationStartHandler:(std::function<void()>)navigationStartHandler navigationDoneHandler:(std::function<void(bool)>)navigationDoneHandler dialogHandler:(std::function<Webview::DialogResult(Webview::DialogArgs)>)dialogHandler dataRequested:(std::function<void(id<WKURLSchemeTask>,bool)>)dataRequested permissionRequested:(PermissionRequested)permissionRequested updateStates:(std::function<void()>)updateStates dataDomain:(std::string)dataDomain dataRequestRedirectHost:(std::string)dataRequestRedirectHost proxySettings:(std::optional<Webview::ProxySettings>)proxySettings restricted:(BOOL)restricted {
 	if (self = [super init]) {
 		_messageHandler = std::move(messageHandler);
 		_navigationPolicyHandler = std::move(navigationPolicyHandler);
@@ -361,8 +362,31 @@ void PermissionDecision::resolve(bool allowed) {
 		if (!_dataRequestRedirectHost.empty()) {
 			_redirectDelegate = [[RedirectDelegate alloc]
 				initWithHost:_dataRequestRedirectHost];
+			const auto sessionConfiguration =
+				NSURLSessionConfiguration.ephemeralSessionConfiguration;
+			if (proxySettings) {
+				const auto &proxy = *proxySettings;
+				NSString *host = stdToNS(proxy.host);
+				const auto settings = [@{
+					(__bridge NSString *)kCFNetworkProxiesSOCKSEnable: @YES,
+					(__bridge NSString *)kCFNetworkProxiesSOCKSProxy: host,
+					(__bridge NSString *)kCFNetworkProxiesSOCKSPort:
+						[NSNumber numberWithInt:QString::fromStdString(proxy.port).toInt()],
+				} mutableCopy];
+				[host release];
+				if (!proxy.username.empty()) {
+					NSString *username = stdToNS(proxy.username);
+					NSString *password = stdToNS(proxy.password);
+					settings[(__bridge NSString *)kCFNetworkProxiesSOCKSUser] = username;
+					settings[(__bridge NSString *)kCFNetworkProxiesSOCKSPassword] = password;
+					[username release];
+					[password release];
+				}
+				sessionConfiguration.connectionProxyDictionary = settings;
+				[settings release];
+			}
 			_redirectSession = [[NSURLSession
-				sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration
+				sessionWithConfiguration:sessionConfiguration
 				delegate:_redirectDelegate
 				delegateQueue:nil] retain];
 		}
@@ -930,7 +954,7 @@ Instance::Instance(Config config) {
 	const auto handler = restricted
 		? [RestrictedHandler alloc]
 		: [Handler alloc];
-	_handler = [handler initWithMessageHandler:config.messageHandler navigationPolicyHandler:config.navigationPolicyHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest permissionRequested:handlePermissionRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost) restricted:restricted];
+	_handler = [handler initWithMessageHandler:config.messageHandler navigationPolicyHandler:config.navigationPolicyHandler navigationStartHandler:config.navigationStartHandler navigationDoneHandler:config.navigationDoneHandler dialogHandler:config.dialogHandler dataRequested:handleDataRequest permissionRequested:handlePermissionRequest updateStates:updateStates dataDomain:_dataDomain dataRequestRedirectHost:std::move(config.dataRequestRedirectHost) proxySettings:config.proxySettings restricted:restricted];
 	_dataRequestHandler = std::move(config.dataRequestHandler);
 	_permissionHandler = std::move(config.permissionHandler);
 	[configuration setURLSchemeHandler:_handler forURLScheme:stdToNS(_dataProtocol)];

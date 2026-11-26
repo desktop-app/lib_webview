@@ -58,7 +58,9 @@ PUBLIC
     desktop-app::lib_base
 )
 
-if (WIN32)
+if (APPLE)
+    target_link_frameworks(lib_webview PRIVATE CFNetwork)
+elseif (WIN32)
     nuget_add_webview(lib_webview)
 elseif (LINUX)
     include(${cmake_helpers_loc}/external/glib/generate_dbus.cmake)
