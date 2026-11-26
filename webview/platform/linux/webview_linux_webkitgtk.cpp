@@ -2628,13 +2628,17 @@ void Instance::startProcess() {
 	Gio::File::new_for_path(socketPath).delete_();
 
 	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
+		using Ui::GL::Backend;
 		const auto backend = Ui::GL::ChooseBackendDefault(
 			Ui::GL::CheckCapabilities());
+		const auto rhiOpenGL = (backend == Backend::QRhi)
+			&& !Ui::GL::WidgetsRhiVulkan();
+		const auto gpu = (backend == Backend::OpenGL) || rhiOpenGL;
 		_compositor.emplace(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(
 					socketPath + "-wayland")),
-			backend != Ui::GL::Backend::Raster);
+			gpu);
 	}
 
 	auto authObserver = Gio::DBusAuthObserver::new_();
