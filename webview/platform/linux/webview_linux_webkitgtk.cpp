@@ -70,6 +70,10 @@ constexpr auto kMasterObjectPath
 constexpr auto kHelperObjectPath
 	= "/org/desktop_app/GtkIntegration/Webview/Helper";
 constexpr auto kDataHost = "127.0.0.1";
+constexpr const char *kDataProxyIgnoreHosts[] = {
+	kDataHost,
+	nullptr,
+};
 constexpr auto kExternalShellFallbackBackground = "#eeeeee";
 constexpr auto kMaxScriptMessageBytes = 64 * 1024 * 1024;
 constexpr auto kExternalMessageType = "tdesktop_external_bot_webapp";
@@ -1009,7 +1013,9 @@ bool Instance::create(Config config) {
 		}
 		const auto uri = ProxyUri(*config.proxySettings);
 		return uri
-			? webkit_network_proxy_settings_new(uri->c_str(), nullptr)
+			? webkit_network_proxy_settings_new(
+				uri->c_str(),
+				kDataProxyIgnoreHosts)
 			: nullptr;
 	}();
 	if (config.proxySettings && !proxySettings) {
