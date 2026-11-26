@@ -388,8 +388,23 @@ struct Compositor::Private {
 	, shell(compositor)
 	, xdgOutput(compositor)
 	, viewporter(compositor)
+	, logger(wl_display_add_protocol_logger(
+		compositor->display(),
+		Log,
+		this))
 	, gpu(gpu) {
 	}
+	~Private() {
+		if (logger) {
+			wl_protocol_logger_destroy(logger);
+		}
+	}
+
+	static void Log(
+		void *data,
+		wl_protocol_logger_type direction,
+		const wl_protocol_logger_message *message);
+	void request(not_null<const wl_protocol_logger_message*> message);
 
 	[[nodiscard]] not_null<Display*> createDisplay(
 		QWidget *parent,
@@ -418,11 +433,15 @@ struct Compositor::Private {
 	QWaylandXdgShell shell;
 	QWaylandXdgOutputManagerV1 xdgOutput;
 	QWaylandViewporter viewporter;
+	wl_protocol_logger *logger = nullptr;
 	const bool gpu = false;
 	bool dragging = false;
 	QColor background;
 	base::weak_ptr<Display> display;
 	base::flat_map<QWaylandXdgSurface*, std::unique_ptr<Chrome>> chromes;
+	base::flat_map<
+		std::pair<wl_client*, uint32_t>,
+		QPointer<QWaylandXdgSurface>> popupSurfaces;
 };
 
 Compositor::Output::Output(
@@ -1356,6 +1375,51 @@ void Compositor::Chrome::setupWindow(
 	}, _lifetime);
 }
 
+void Compositor::Private::Log(
+		void *data,
+		wl_protocol_logger_type direction,
+		const wl_protocol_logger_message *message) {
+	if (direction == WL_PROTOCOL_LOGGER_REQUEST) {
+		static_cast<Private*>(data)->request(message);
+	}
+}
+
+void Compositor::Private::request(
+		not_null<const wl_protocol_logger_message*> message) {
+	const auto resource = message->resource;
+	const auto client = wl_resource_get_client(resource);
+	const auto type = std::string_view(
+		wl_resource_get_class(resource));
+	const auto name = std::string_view(message->message->name);
+	if (type == "xdg_surface" && name == "get_popup") {
+		auto i = popupSurfaces.begin();
+		while (i != popupSurfaces.end()) {
+			if (i->second) {
+				++i;
+			} else {
+				i = popupSurfaces.erase(i);
+			}
+		}
+		const auto id = message->arguments[0].n;
+		const auto xdgSurface = QWaylandXdgSurface::fromResource(
+			resource);
+		popupSurfaces[{ client, id }] = xdgSurface;
+	} else if (type == "xdg_popup" && name == "grab") {
+		const auto id = wl_resource_get_id(resource);
+		const auto xdgSurface = popupSurfaces.take({ client, id });
+		const auto i = xdgSurface
+			? chromes.find(xdgSurface->data())
+			: chromes.end();
+		const auto display = (i != chromes.end())
+			? i->second->display()
+			: nullptr;
+		if (display) {
+			const auto window = display->widget()->rpWidget();
+			window->setWindowFlags(Qt::Popup);
+		}
+	}
+}
+
 auto Compositor::Private::createDisplay(
 		QWidget *parent,
 		Output *output) -> not_null<Display*> {
@@ -1455,7 +1519,7 @@ void Compositor::Private::popupCreated(
 		parent->widget()->rpWidget()->window(),
 		parent->output());
 	const auto window = own->widget()->rpWidget();
-	window->setWindowFlags(Qt::Popup);
+	window->setWindowFlags(Qt::ToolTip);
 	window->setAttribute(Qt::WA_TranslucentBackground);
 	own->setParentDisplay(parent);
 	const auto chrome = addChrome(
