@@ -45,6 +45,7 @@ namespace Webview::EdgeChromium {
 namespace {
 
 constexpr auto kKeepActiveInterval = crl::time(1000);
+constexpr auto kSavedPermissionsTimeout = crl::time(1000);
 
 constexpr auto kDataUrlPrefix
 	= std::string_view("http://desktop-app-resource/");
@@ -335,6 +336,13 @@ public:
 
 private:
 	void updateHistoryStates();
+	void fireReady();
+	[[nodiscard]] bool resetSavedPermissions();
+	void savedPermissionsListed(
+		const winrt::com_ptr<ICoreWebView2Profile4> &profile,
+		HRESULT result,
+		ICoreWebView2PermissionSettingCollectionView *list);
+	void savedPermissionReset();
 	void denyPermission(ICoreWebView2PermissionRequestedEventArgs *args);
 	void requestPermission(
 		ICoreWebView2PermissionRequestedEventArgs *args,
@@ -372,6 +380,9 @@ private:
 	bool _destroying = false;
 	bool _permissionAsking = false;
 
+	base::Timer _savedPermissionsTimer;
+	int _savedPermissionsPending = 0;
+
 };
 
 Handler::Handler(
@@ -392,7 +403,8 @@ Handler::Handler(
 , _readyHandler(std::move(readyHandler))
 , _opaqueBg(config.opaqueBg)
 , _restrictedOrigin(std::move(config.restrictedOrigin))
-, _debug(config.debug) {
+, _debug(config.debug)
+, _savedPermissionsTimer([=] { fireReady(); }) {
 	saveThis(this);
 	setOpaqueBg(_opaqueBg);
 }
@@ -458,10 +470,11 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		return S_OK;
 	}
 	_controller.copy_from(controller);
+	auto waiting = false;
 	const auto guard = gsl::finally([&] {
-		const auto onstack = _readyHandler;
-		_readyHandler = nullptr;
-		onstack();
+		if (!waiting) {
+			fireReady();
+		}
 	});
 	if (!_controller) {
 		_window = nullptr;
@@ -474,7 +487,11 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	}
 	auto token = ::EventRegistrationToken();
 	_webview->add_WebMessageReceived(this, &token);
-	_webview->add_PermissionRequested(this, &token);
+	if (_webview->add_PermissionRequested(this, &token) != S_OK) {
+		_controller->Close();
+		_window = nullptr;
+		return E_FAIL;
+	}
 	_webview->add_NavigationStarting(this, &token);
 	_webview->add_NavigationCompleted(this, &token);
 	_webview->add_ContentLoading(this, &token);
@@ -555,7 +572,100 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 
 	setOpaqueBg(_opaqueBg);
 
+	// WHY: answers to WebView2's own prompts stay saved in the profile.
+	waiting = _restrictedOrigin.empty() && resetSavedPermissions();
 	return S_OK;
+}
+
+void Handler::fireReady() {
+	_savedPermissionsTimer.cancel();
+	if (_destroying) {
+		return;
+	} else if (const auto onstack = base::take(_readyHandler)) {
+		onstack();
+	}
+}
+
+bool Handler::resetSavedPermissions() {
+	const auto modern = _webview.try_as<ICoreWebView2_13>();
+	auto profile = winrt::com_ptr<ICoreWebView2Profile>();
+	if (!modern || modern->get_Profile(profile.put()) != S_OK || !profile) {
+		return false;
+	}
+	const auto saved = profile.try_as<ICoreWebView2Profile4>();
+	if (!saved) {
+		return false;
+	}
+	const auto weak = base::make_weak(this);
+	_savedPermissionsTimer.callOnce(kSavedPermissionsTimeout);
+	const auto started = saved->GetNonDefaultPermissionSettings(
+		Microsoft::WRL::Callback<
+			ICoreWebView2GetNonDefaultPermissionSettingsCompletedHandler>(
+			[weak, saved](
+					HRESULT result,
+					ICoreWebView2PermissionSettingCollectionView *list
+					) -> HRESULT {
+				if (const auto that = weak.get()) {
+					that->savedPermissionsListed(saved, result, list);
+				}
+				return S_OK;
+			}).Get());
+	if (started != S_OK) {
+		_savedPermissionsTimer.cancel();
+		return false;
+	}
+	return true;
+}
+
+void Handler::savedPermissionsListed(
+		const winrt::com_ptr<ICoreWebView2Profile4> &profile,
+		HRESULT result,
+		ICoreWebView2PermissionSettingCollectionView *list) {
+	if (_destroying) {
+		return;
+	}
+	// Held until every entry is asked for: a completion may come at once.
+	++_savedPermissionsPending;
+	auto count = UINT32();
+	if (result == S_OK && list && list->get_Count(&count) == S_OK) {
+		const auto weak = base::make_weak(this);
+		for (auto i = UINT32(); i != count; ++i) {
+			auto setting = winrt::com_ptr<ICoreWebView2PermissionSetting>();
+			auto kind = COREWEBVIEW2_PERMISSION_KIND{};
+			auto origin = base::CoTaskMemString();
+			if (list->GetValueAtIndex(i, setting.put()) != S_OK
+				|| !setting
+				|| setting->get_PermissionKind(&kind) != S_OK
+				|| kind == COREWEBVIEW2_PERMISSION_KIND_AUTOPLAY
+				|| setting->get_PermissionOrigin(origin.put()) != S_OK
+				|| !origin) {
+				continue;
+			}
+			++_savedPermissionsPending;
+			const auto started = profile->SetPermissionState(
+				kind,
+				origin.data(),
+				COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+				Microsoft::WRL::Callback<
+					ICoreWebView2SetPermissionStateCompletedHandler>(
+					[weak](HRESULT) -> HRESULT {
+						if (const auto that = weak.get()) {
+							that->savedPermissionReset();
+						}
+						return S_OK;
+					}).Get());
+			if (started != S_OK) {
+				--_savedPermissionsPending;
+			}
+		}
+	}
+	savedPermissionReset();
+}
+
+void Handler::savedPermissionReset() {
+	if (_savedPermissionsPending > 0 && !--_savedPermissionsPending) {
+		fireReady();
+	}
 }
 
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
