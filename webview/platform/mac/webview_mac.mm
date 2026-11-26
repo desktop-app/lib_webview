@@ -293,6 +293,15 @@ void PermissionDecision::resolve(bool allowed) {
 
 @end // @implementation RedirectDelegate
 
+@interface ProxyState : NSObject {
+@public
+	std::optional<Webview::ProxySettings> settings;
+}
+@end // @interface ProxyState
+
+@implementation ProxyState
+@end // @implementation ProxyState
+
 @interface Handler : NSObject<WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler> {
 }
 
@@ -757,6 +766,57 @@ void PermissionDecision::resolve(bool allowed) {
 namespace Webview {
 namespace {
 
+[[nodiscard]] NSMapTable<WKWebsiteDataStore*, ProxyState*> *ProxyStates() {
+	static const auto states = [[NSMapTable alloc]
+		initWithKeyOptions:NSPointerFunctionsWeakMemory
+			| NSPointerFunctionsObjectPointerPersonality
+		valueOptions:NSPointerFunctionsStrongMemory
+		capacity:0];
+	return states;
+}
+
+[[nodiscard]] bool ApplyProxySettings(
+		WKWebsiteDataStore *store,
+		const std::optional<ProxySettings> &settings) API_AVAILABLE(macos(14.0)) {
+	const auto states = ProxyStates();
+	const auto state = [states objectForKey:store];
+	if (state && state->settings == settings) {
+		return true;
+	} else if (!settings && !state) {
+		// Do not overwrite proxy configurations installed by other clients.
+		return true;
+	}
+	if (settings) {
+		const auto &proxy = *settings;
+		const auto endpoint = nw_endpoint_create_host(
+			proxy.host.c_str(),
+			proxy.port.c_str());
+		if (!endpoint) {
+			return false;
+		}
+		const auto proxyConfig = nw_proxy_config_create_socksv5(endpoint);
+		if (!proxyConfig) {
+			return false;
+		}
+		if (!proxy.username.empty()) {
+			nw_proxy_config_set_username_and_password(
+				proxyConfig,
+				proxy.username.c_str(),
+				proxy.password.c_str());
+		}
+		store.proxyConfigurations = @[ (id)proxyConfig ];
+	} else {
+		store.proxyConfigurations = @[];
+	}
+	if (!state) {
+		const auto added = [[ProxyState alloc] init];
+		[states setObject:added forKey:store];
+		[added release];
+	}
+	[states objectForKey:store]->settings = settings;
+	return true;
+}
+
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config config);
@@ -775,6 +835,9 @@ public:
 	void setInteractionHandler(Fn<void()> handler) override;
 
 	QWidget *widget() override;
+	[[nodiscard]] bool failed() const {
+		return _failed;
+	}
 
 	void refreshNavigationHistoryState() override;
 	auto navigationHistoryState()
@@ -875,6 +938,7 @@ private:
 	int _taskAutoincrement = 0;
 	id _eventMonitor = nil;
 	Fn<void()> _interactionHandler;
+	bool _failed = false;
 
 };
 
@@ -967,31 +1031,23 @@ Instance::Instance(Config config) {
 			}
 		}
 	}
-	if (config.proxySettings
-		&& config.proxySettings->type == ProxyType::SOCKS5) {
-		const auto &proxy = *config.proxySettings;
-		if (@available(macOS 14, *)) {
-			auto store = configuration.websiteDataStore;
-			if (!store) {
-				store = [WKWebsiteDataStore defaultDataStore];
-				[configuration setWebsiteDataStore:store];
-			}
-			nw_endpoint_t endpoint = nw_endpoint_create_host(
-				proxy.host.c_str(),
-				proxy.port.c_str());
-			nw_proxy_config_t proxyConfig
-				= nw_proxy_config_create_socksv5(endpoint);
-			if (!proxy.username.empty()) {
-				nw_proxy_config_set_username_and_password(
-					proxyConfig,
-					proxy.username.c_str(),
-					proxy.password.c_str());
-			}
-			store.proxyConfigurations = @[ (id)proxyConfig ];
-		} else {
-			// Older macOS cannot apply proxy settings, fail instead of leaking.
+	if (@available(macOS 14, *)) {
+		auto store = configuration.websiteDataStore;
+		if (!store) {
+			store = [WKWebsiteDataStore defaultDataStore];
+		}
+		if (!ApplyProxySettings(store, config.proxySettings)) {
+			_failed = true;
+			_manager = nullptr;
+			[configuration release];
 			return;
 		}
+	} else if (config.proxySettings) {
+		// Older macOS cannot apply proxy settings, fail instead of leaking.
+		_failed = true;
+		_manager = nullptr;
+		[configuration release];
+		return;
 	}
 	_webview = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
 	if (@available(macOS 13.3, *)) {
@@ -1566,7 +1622,11 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	if (!Supported()) {
 		return nullptr;
 	}
-	return std::make_unique<Instance>(std::move(config));
+	auto result = std::make_unique<Instance>(std::move(config));
+	if (result->failed()) {
+		return nullptr;
+	}
+	return result;
 }
 
 std::string GenerateStorageToken() {
