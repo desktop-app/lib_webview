@@ -108,8 +108,6 @@ Instance::Instance(Config config)
 , _window(MakeFramelessWindow())
 , _handle(HWND(_window->winId()))
 , _widget(base::make_unique_q<Ui::RpWidget>(config.parent)) {
-	_widget->show();
-
 	setOpaqueBg(_config.opaqueBg);
 	init("if(window===window.top){window.external.invoke=s=>window.external.notify(s)}");
 

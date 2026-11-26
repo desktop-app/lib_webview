@@ -962,7 +962,6 @@ Instance::Instance(Config config) {
 				_window.get(),
 				config.parent,
 				Qt::FramelessWindowHint));
-		_widget->show();
 	}
 
 	setOpaqueBg(config.opaqueBg);

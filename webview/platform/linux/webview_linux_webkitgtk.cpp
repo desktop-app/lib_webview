@@ -740,7 +740,6 @@ bool Instance::create(Config config) {
 				_compositor->setWidget(widget);
 			}
 			widget->setClearColor(config.opaqueBg);
-			widget->show();
 		}
 #else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 		if (_compositor) {
@@ -847,7 +846,6 @@ bool Instance::create(Config config) {
 				}
 				return ::base::EventFilterResult::Continue;
 			});
-			_widget->show();
 			break;
 		case Platform::X11:
 			_widget.reset(
@@ -875,7 +873,6 @@ bool Instance::create(Config config) {
 					}).get());
 				return ::base::EventFilterResult::Continue;
 			});
-			_widget->show();
 			break;
 		}
 

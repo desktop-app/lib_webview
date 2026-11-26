@@ -1265,7 +1265,6 @@ Instance::Instance(Config &&config)
 				_window,
 				config.parent,
 				Qt::FramelessWindowHint));
-		_widget->show();
 	}
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
