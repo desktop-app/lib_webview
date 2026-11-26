@@ -3327,6 +3327,10 @@ bool HiddenSupported() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
+	if (config.proxySettings
+		&& config.proxySettings->type != ProxyType::SOCKS5) {
+		return nullptr;
+	}
 	auto result = std::make_unique<Instance>(true, config.mode);
 	if (!result->create(std::move(config))) {
 		return nullptr;

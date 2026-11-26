@@ -1535,6 +1535,10 @@ bool SeparateStorageIdSupported() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
+	if (config.proxySettings
+		&& config.proxySettings->type != ProxyType::SOCKS5) {
+		return nullptr;
+	}
 	if (!Supported()) {
 		return nullptr;
 	}
