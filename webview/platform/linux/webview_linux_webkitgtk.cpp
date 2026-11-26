@@ -3062,7 +3062,7 @@ void Instance::registerHelperMethodHandlers() {
 			const std::string &proxyPort,
 			const std::string &proxyUsername,
 			const std::string &proxyPassword) {
-		if (create({
+		if (!create({
 			.opaqueBg = QColor(r, g, b, a),
 			.userDataPath = path,
 			.debug = debug,
