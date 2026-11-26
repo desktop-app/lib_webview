@@ -1301,8 +1301,8 @@ void Instance::start(Config &&config) {
 			L"FileChooserMinWindowSize"
 		: L"--disable-features=ElasticOverscroll,AutofillAiWalletPrivatePasses,"
 			L"FileChooserMinWindowSize,msSmartScreenProtection "
-			L"--force-webrtc-ip-handling-policy=disable_non_proxied_udp "
 			L"--mute-audio");
+	auto disableNonProxiedUdp = !config.restrictedOrigin.empty();
 	if (config.proxySettings
 		&& config.proxySettings->type == ProxyType::SOCKS5) {
 		// Chromium SOCKS5 supports no auth, credentials break the rule.
@@ -1314,6 +1314,10 @@ void Instance::start(Config &&config) {
 			return;
 		}
 		arguments += L" --proxy-server=" + ToWide(*uri);
+		disableNonProxiedUdp = true;
+	}
+	if (disableNonProxiedUdp) {
+		arguments += L" --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
 	}
 	auto options = winrt::com_ptr<ICoreWebView2EnvironmentOptions>(
 		Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach(),
