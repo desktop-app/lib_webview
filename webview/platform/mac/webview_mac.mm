@@ -795,6 +795,7 @@ namespace {
 			return false;
 		}
 		const auto proxyConfig = nw_proxy_config_create_socksv5(endpoint);
+		nw_release(endpoint);
 		if (!proxyConfig) {
 			return false;
 		}
@@ -805,6 +806,7 @@ namespace {
 				proxy.password.c_str());
 		}
 		store.proxyConfigurations = @[ (id)proxyConfig ];
+		nw_release(proxyConfig);
 	} else {
 		store.proxyConfigurations = @[];
 	}
@@ -1615,9 +1617,15 @@ bool SeparateStorageIdSupported() {
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (config.proxySettings
-		&& config.proxySettings->type != ProxyType::SOCKS5) {
-		return nullptr;
+	if (config.proxySettings) {
+		if (config.proxySettings->type != ProxyType::SOCKS5
+			|| !ProxyUri(*config.proxySettings)) {
+			return nullptr;
+		}
+		if (@available(macOS 14.0, *)) {
+		} else {
+			return nullptr;
+		}
 	}
 	if (!Supported()) {
 		return nullptr;
