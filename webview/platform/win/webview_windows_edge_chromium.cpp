@@ -335,7 +335,8 @@ public:
 
 private:
 	void updateHistoryStates();
-	void requestMediaPermission(
+	void denyPermission(ICoreWebView2PermissionRequestedEventArgs *args);
+	void requestPermission(
 		ICoreWebView2PermissionRequestedEventArgs *args,
 		COREWEBVIEW2_PERMISSION_KIND kind);
 	void processPermissionRequests();
@@ -600,18 +601,24 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_PermissionKind(&kind);
 	if (result == S_OK) {
 		if (!_restrictedOrigin.empty()) {
-			args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+			denyPermission(args);
 		} else if (kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ) {
 			// Never let the page read the clipboard on its own, not even
 			// after asking the user: navigator.clipboard.read/readText()
 			// would give any embedded content silent access to whatever
 			// the user copied. The embedder is expected to expose its own
 			// method for that, gated on a real user interaction.
-			args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+			denyPermission(args);
 		} else if (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
-			|| kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA) {
-			requestMediaPermission(args, kind);
+			|| kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+			|| kind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION) {
+			requestPermission(args, kind);
+		} else if (kind != COREWEBVIEW2_PERMISSION_KIND_AUTOPLAY) {
+			// WHY: the default state has WebView2 ask and remember itself.
+			denyPermission(args);
 		}
+	} else {
+		denyPermission(args);
 	}
 	return S_OK;
 }
@@ -956,7 +963,19 @@ void Handler::updateHistoryStates() {
 	};
 }
 
-void Handler::requestMediaPermission(
+void Handler::denyPermission(
+		ICoreWebView2PermissionRequestedEventArgs *args) {
+	auto owned = winrt::com_ptr<ICoreWebView2PermissionRequestedEventArgs>();
+	owned.copy_from(args);
+	const auto transient
+		= owned.try_as<ICoreWebView2PermissionRequestedEventArgs3>();
+	if (transient) {
+		transient->put_SavesInProfile(FALSE);
+	}
+	args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+}
+
+void Handler::requestPermission(
 		ICoreWebView2PermissionRequestedEventArgs *args,
 		COREWEBVIEW2_PERMISSION_KIND kind) {
 	if (_destroying) {
@@ -1022,6 +1041,8 @@ void Handler::processPermissionRequests() {
 	const auto key = std::pair(request.origin, request.kind);
 	const auto type = (request.kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA)
 		? PermissionType::Camera
+		: (request.kind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION)
+		? PermissionType::Geolocation
 		: PermissionType::Microphone;
 	const auto done = crl::guard(this, [=](bool allowed) {
 		if (_destroying) {
