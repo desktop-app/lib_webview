@@ -68,4 +68,10 @@ elseif (LINUX)
     PRIVATE
         G_LOG_DOMAIN="WebView"
     )
+
+    if (NOT TARGET Qt::WaylandCompositor)
+        remove_target_sources(lib_webview ${src_loc}
+            webview/platform/linux/webview_linux_compositor.cpp
+        )
+    endif()
 endif()

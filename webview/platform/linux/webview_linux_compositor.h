@@ -8,45 +8,35 @@
 
 #include <QtCore/QObject>
 
-#if defined QT_QUICKWIDGETS_LIB && defined QT_WAYLANDCOMPOSITOR_LIB
-#include <QtWaylandCompositor/qtwaylandcompositor-config.h>
-
-#if QT_CONFIG(wayland_compositor_quick)
-#include <QtWaylandCompositor/QWaylandQuickCompositor>
-
-#define DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-
-class QQuickWidget;
+#ifdef QT_WAYLANDCOMPOSITOR_LIB
+#include <QtWaylandCompositor/QWaylandCompositor>
+#endif // QT_WAYLANDCOMPOSITOR_LIB
 
 namespace Webview {
 
-class Compositor : public QWaylandQuickCompositor {
+#ifdef QT_WAYLANDCOMPOSITOR_LIB
+class Compositor : public QWaylandCompositor {
 public:
 	Compositor(const QByteArray &socketName = {}, bool gpu = true);
 	~Compositor();
 
-	void setWidget(QQuickWidget *widget);
+	[[nodiscard]] QWidget *createWidget(QWidget *parent);
+	void setBackground(QColor color);
 
 private:
 	class Output;
+	class Display;
 	class Chrome;
 
 	struct Private;
 	const std::unique_ptr<Private> _private;
 };
-
-} // namespace Webview
-#endif // QT_CONFIG(wayland_compositor_quick)
-#endif // QT_QUICKWIDGETS_LIB && QT_WAYLANDCOMPOSITOR_LIB
-
-#ifndef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-namespace Webview {
-
+#else // QT_WAYLANDCOMPOSITOR_LIB
 class Compositor : public QObject {
 public:
 	Compositor(const QByteArray &socketName = {}, bool gpu = true) {}
 	QString socketName() { return {}; }
 };
+#endif // !QT_WAYLANDCOMPOSITOR_LIB
 
 } // namespace Webview
-#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR

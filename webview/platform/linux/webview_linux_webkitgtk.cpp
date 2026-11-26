@@ -39,9 +39,6 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-#include <QtQuickWidgets/QQuickWidget>
-#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
 
 #if __has_include(<giounix/giounix.hpp>)
 #include <giounix/giounix.hpp>
@@ -607,7 +604,6 @@ private:
 	Gio::Subprocess _serviceProcess;
 
 	Platform _platform = Platform::Any;
-	Ui::GL::Backend _glBackend;
 	::base::unique_qptr<QWidget> _widget;
 	::base::unique_qptr<QObject> _x11FocusReturnFilter;
 	::base::unique_qptr<Compositor> _compositor;
@@ -663,14 +659,13 @@ Instance::Instance(bool remoting, WindowMode mode)
 	}
 	_platform = ::Platform::IsX11()
 		? Platform::X11
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#ifdef QT_WAYLANDCOMPOSITOR_LIB
 		: (_mode == WindowMode::Embedded
 			? Platform::Wayland
 			: Platform::Any);
-#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#else // QT_WAYLANDCOMPOSITOR_LIB
 		: Platform::Any;
-#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-	_glBackend = Ui::GL::ChooseBackendDefault(Ui::GL::CheckCapabilities());
+#endif // !QT_WAYLANDCOMPOSITOR_LIB
 	startProcess();
 }
 
@@ -718,37 +713,23 @@ bool Instance::create(Config config) {
 			return false;
 		}
 
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#ifdef QT_WAYLANDCOMPOSITOR_LIB
 		if (_compositor) {
-			auto widget = qobject_cast<QQuickWidget*>(_widget);
-			if (!widget) {
-				[[maybe_unused]] static const auto Inited = [&] {
-					switch (_glBackend) {
-					case Ui::GL::Backend::Raster:
-						QQuickWindow::setGraphicsApi(
-							QSGRendererInterface::Software);
-						break;
-					case Ui::GL::Backend::OpenGL:
-						QQuickWindow::setGraphicsApi(
-							QSGRendererInterface::OpenGL);
-						break;
-					}
-					return true;
-				}();
-				_widget = ::base::make_unique_q<QQuickWidget>(config.parent);
-				widget = static_cast<QQuickWidget*>(_widget.get());
-				_compositor->setWidget(widget);
+			if (!_widget) {
+				const auto widget = _compositor->createWidget(
+					config.parent);
+				_widget.reset(widget);
 			}
-			widget->setClearColor(config.opaqueBg);
+			_compositor->setBackground(config.opaqueBg);
 		}
-#else // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#else // QT_WAYLANDCOMPOSITOR_LIB
 		if (_compositor) {
 			_platform = Platform::Any;
 			stopProcess();
 			startProcess();
 			return create(std::move(config));
 		}
-#endif // !DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#endif // !QT_WAYLANDCOMPOSITOR_LIB
 	}
 
 	_restrictedOrigin = std::move(config.restrictedOrigin);
@@ -2473,11 +2454,11 @@ auto Instance::navigationHistoryState()
 
 void Instance::setOpaqueBg(QColor opaqueBg) {
 	if (_remoting) {
-#ifdef DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
-		if (const auto widget = qobject_cast<QQuickWidget*>(_widget.get())) {
-			widget->setClearColor(opaqueBg);
+#ifdef QT_WAYLANDCOMPOSITOR_LIB
+		if (_compositor) {
+			_compositor->setBackground(opaqueBg);
 		}
-#endif // DESKTOP_APP_WEBVIEW_WAYLAND_COMPOSITOR
+#endif // QT_WAYLANDCOMPOSITOR_LIB
 
 		if (!_helper) {
 			return;
@@ -2647,11 +2628,13 @@ void Instance::startProcess() {
 	Gio::File::new_for_path(socketPath).delete_();
 
 	if (_platform == Platform::Wayland && _mode == WindowMode::Embedded) {
+		const auto backend = Ui::GL::ChooseBackendDefault(
+			Ui::GL::CheckCapabilities());
 		_compositor.emplace(
 			QByteArray::fromStdString(
 				GLib::path_get_basename(
 					socketPath + "-wayland")),
-			_glBackend != Ui::GL::Backend::Raster);
+			backend != Ui::GL::Backend::Raster);
 	}
 
 	auto authObserver = Gio::DBusAuthObserver::new_();
