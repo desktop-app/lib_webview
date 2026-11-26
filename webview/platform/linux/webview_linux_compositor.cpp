@@ -24,6 +24,7 @@
 #include <QtOpenGL/QOpenGLTexture>
 #include <QtOpenGL/QOpenGLTextureBlitter>
 #include <QtOpenGLWidgets/QOpenGLWidget>
+#include <QtWaylandCompositor/QWaylandClient>
 #include <QtWaylandCompositor/QWaylandDrag>
 #include <QtWaylandCompositor/QWaylandOutput>
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -33,6 +34,7 @@
 #include <QtWaylandCompositor/QWaylandXdgOutputV1>
 
 #include <wayland-server-core.h>
+#include <qwayland-server-cursor-shape-v1.h>
 
 #include <cmath>
 #include <ranges>
@@ -250,6 +252,140 @@ void SurfaceNode::restack(
 	_update();
 }
 
+[[nodiscard]] std::optional<Qt::CursorShape> CursorShape(
+		uint32_t shape,
+		int version) {
+	using Device = QtWaylandServer::wp_cursor_shape_device_v1;
+	switch (shape) {
+	case Device::shape_default: return Qt::ArrowCursor;
+	case Device::shape_context_menu: return Qt::ArrowCursor;
+	case Device::shape_help: return Qt::WhatsThisCursor;
+	case Device::shape_pointer: return Qt::PointingHandCursor;
+	case Device::shape_progress: return Qt::BusyCursor;
+	case Device::shape_wait: return Qt::WaitCursor;
+	case Device::shape_cell: return Qt::CrossCursor;
+	case Device::shape_crosshair: return Qt::CrossCursor;
+	case Device::shape_text: return Qt::IBeamCursor;
+	case Device::shape_vertical_text: return Qt::IBeamCursor;
+	case Device::shape_alias: return Qt::DragLinkCursor;
+	case Device::shape_copy: return Qt::DragCopyCursor;
+	case Device::shape_move: return Qt::DragMoveCursor;
+	case Device::shape_no_drop: return Qt::ForbiddenCursor;
+	case Device::shape_not_allowed: return Qt::ForbiddenCursor;
+	case Device::shape_grab: return Qt::OpenHandCursor;
+	case Device::shape_grabbing: return Qt::ClosedHandCursor;
+	case Device::shape_e_resize: return Qt::SizeHorCursor;
+	case Device::shape_n_resize: return Qt::UpArrowCursor;
+	case Device::shape_ne_resize: return Qt::SizeBDiagCursor;
+	case Device::shape_nw_resize: return Qt::SizeFDiagCursor;
+	case Device::shape_s_resize: return Qt::SizeVerCursor;
+	case Device::shape_se_resize: return Qt::SizeFDiagCursor;
+	case Device::shape_sw_resize: return Qt::SizeBDiagCursor;
+	case Device::shape_w_resize: return Qt::SizeHorCursor;
+	case Device::shape_ew_resize: return Qt::SizeHorCursor;
+	case Device::shape_ns_resize: return Qt::SizeVerCursor;
+	case Device::shape_nesw_resize: return Qt::SizeBDiagCursor;
+	case Device::shape_nwse_resize: return Qt::SizeFDiagCursor;
+	case Device::shape_col_resize: return Qt::SplitHCursor;
+	case Device::shape_row_resize: return Qt::SplitVCursor;
+	case Device::shape_all_scroll: return Qt::SizeAllCursor;
+	case Device::shape_zoom_in: return Qt::ArrowCursor;
+	case Device::shape_zoom_out: return Qt::ArrowCursor;
+	case Device::shape_dnd_ask:
+		return (version >= 2)
+			? std::make_optional(Qt::DragCopyCursor)
+			: std::nullopt;
+	case Device::shape_all_resize:
+		return (version >= 2)
+			? std::make_optional(Qt::SizeAllCursor)
+			: std::nullopt;
+	}
+	return std::nullopt;
+}
+
+class CursorShapeDevice final
+	: public QtWaylandServer::wp_cursor_shape_device_v1 {
+public:
+	explicit CursorShapeDevice(
+		Fn<void(wl_client*, Qt::CursorShape)> apply);
+
+protected:
+	void wp_cursor_shape_device_v1_set_shape(
+		Resource *resource,
+		uint32_t serial,
+		uint32_t shape) override;
+
+private:
+	const Fn<void(wl_client*, Qt::CursorShape)> _apply;
+
+};
+
+class CursorShapeManager final
+	: public QtWaylandServer::wp_cursor_shape_manager_v1 {
+public:
+	CursorShapeManager(
+		wl_display *display,
+		Fn<void(wl_client*, Qt::CursorShape)> apply);
+
+protected:
+	void wp_cursor_shape_manager_v1_get_pointer(
+		Resource *resource,
+		uint32_t id,
+		wl_resource *pointer) override;
+	void wp_cursor_shape_manager_v1_get_tablet_tool_v2(
+		Resource *resource,
+		uint32_t id,
+		wl_resource *tool) override;
+
+private:
+	CursorShapeDevice _pointers;
+	QtWaylandServer::wp_cursor_shape_device_v1 _tools;
+
+};
+
+CursorShapeDevice::CursorShapeDevice(
+		Fn<void(wl_client*, Qt::CursorShape)> apply)
+: _apply(std::move(apply)) {
+}
+
+void CursorShapeDevice::wp_cursor_shape_device_v1_set_shape(
+		Resource *resource,
+		uint32_t,
+		uint32_t shape) {
+	const auto cursor = CursorShape(shape, resource->version());
+	if (!cursor) {
+		wl_resource_post_error(
+			resource->handle,
+			error_invalid_shape,
+			"invalid shape %u",
+			shape);
+		return;
+	}
+	_apply(resource->client(), *cursor);
+}
+
+CursorShapeManager::CursorShapeManager(
+		wl_display *display,
+		Fn<void(wl_client*, Qt::CursorShape)> apply)
+: wp_cursor_shape_manager_v1(display, interfaceVersion())
+, _pointers(std::move(apply)) {
+}
+
+void CursorShapeManager::wp_cursor_shape_manager_v1_get_pointer(
+		Resource *resource,
+		uint32_t id,
+		wl_resource *) {
+	_pointers.add(resource->client(), id, resource->version());
+}
+
+void CursorShapeManager::wp_cursor_shape_manager_v1_get_tablet_tool_v2(
+		Resource *resource,
+		uint32_t id,
+		wl_resource *) {
+	// Tablets aren't supported, so their shapes never apply
+	_tools.add(resource->client(), id, resource->version());
+}
+
 } // namespace
 
 class Compositor::Output final : public QWaylandOutput {
@@ -275,6 +411,7 @@ public:
 	[[nodiscard]] not_null<Ui::RpWidgetWrap*> widget() const;
 	[[nodiscard]] Output *output() const;
 	[[nodiscard]] bool hasSurface() const;
+	[[nodiscard]] bool hasView(QWaylandView *view) const;
 	[[nodiscard]] qreal scale() const;
 	[[nodiscard]] rpl::producer<qreal> scaleValue() const;
 
@@ -428,6 +565,22 @@ struct Compositor::Private {
 		not_null<QWaylandXdgPopup*> popup,
 		not_null<Chrome*> chrome,
 		not_null<QRect*> sent);
+	[[nodiscard]] Display *displayFor(QWaylandView *view) const;
+	[[nodiscard]] Display *cursorTarget(
+		not_null<QWaylandSeat*> seat,
+		QWaylandClient *client);
+	void setupCursor(not_null<QWaylandSeat*> seat);
+	void setCursor(
+		not_null<QWaylandSeat*> seat,
+		QWaylandSurface *surface,
+		QPoint hotspot,
+		QWaylandClient *client);
+	void setCursorShape(
+		not_null<QWaylandSeat*> seat,
+		Qt::CursorShape shape,
+		QWaylandClient *client);
+	void updateCursor();
+	void resetCursor();
 
 	const not_null<Compositor*> compositor;
 	QWaylandXdgShell shell;
@@ -442,6 +595,12 @@ struct Compositor::Private {
 	base::flat_map<
 		std::pair<wl_client*, uint32_t>,
 		QPointer<QWaylandXdgSurface>> popupSurfaces;
+	QWaylandView cursorView;
+	QPoint cursorHotspot;
+	base::weak_ptr<Display> cursorDisplay;
+	rpl::lifetime cursorLifetime;
+	std::unique_ptr<CursorShapeManager> cursorShapes;
+	rpl::lifetime lifetime;
 };
 
 Compositor::Output::Output(
@@ -522,6 +681,10 @@ Compositor::Output *Compositor::Display::output() const {
 
 bool Compositor::Display::hasSurface() const {
 	return _root != nullptr;
+}
+
+bool Compositor::Display::hasView(QWaylandView *view) const {
+	return targetFor(view).has_value();
 }
 
 qreal Compositor::Display::scale() const {
@@ -1621,6 +1784,162 @@ void Compositor::Private::sendPopupPlacement(
 	popup->sendConfigure(*sent);
 }
 
+auto Compositor::Private::displayFor(
+		QWaylandView *view) const -> Display* {
+	for (const auto &[xdgSurface, chrome] : chromes) {
+		const auto display = chrome->display();
+		if (display && display->hasView(view)) {
+			return display;
+		}
+	}
+	return nullptr;
+}
+
+auto Compositor::Private::cursorTarget(
+		not_null<QWaylandSeat*> seat,
+		QWaylandClient *client) -> Display* {
+	const auto focus = seat->mouseFocus();
+	const auto focused = focus ? focus->surface() : nullptr;
+	const auto display = (focused && focused->client() == client)
+		? displayFor(focus)
+		: nullptr;
+	if (display && cursorDisplay.get() != display) {
+		resetCursor();
+		cursorDisplay = base::make_weak(display);
+	}
+	return display;
+}
+
+void Compositor::Private::setupCursor(not_null<QWaylandSeat*> seat) {
+	cursorShapes = std::make_unique<CursorShapeManager>(
+		compositor->display(),
+		[=](wl_client *client, Qt::CursorShape shape) {
+			const auto wrapped = QWaylandClient::fromWlClient(
+				compositor,
+				client);
+			setCursorShape(seat, shape, wrapped);
+		});
+
+	base::qt_signal_producer(
+		seat.get(),
+		&QWaylandSeat::cursorSurfaceRequested
+	) | rpl::on_next([=](
+			QWaylandSurface *surface,
+			int hotspotX,
+			int hotspotY,
+			QWaylandClient *client) {
+		setCursor(seat, surface, { hotspotX, hotspotY }, client);
+	}, lifetime);
+
+	base::qt_signal_producer(
+		seat.get(),
+		&QWaylandSeat::mouseFocusChanged
+	) | rpl::on_next([=](QWaylandView *now, QWaylandView *was) {
+		const auto display = cursorDisplay.get();
+		// Both are null when the focused view dies, maybe in ~Display
+		if ((now || was) && display && !display->hasView(now)) {
+			resetCursor();
+		}
+	}, lifetime);
+}
+
+void Compositor::Private::setCursor(
+		not_null<QWaylandSeat*> seat,
+		QWaylandSurface *surface,
+		QPoint hotspot,
+		QWaylandClient *client) {
+	const auto display = cursorTarget(seat, client);
+	if (!display) {
+		return;
+	}
+	cursorHotspot = hotspot;
+	if (cursorView.output() != display->output()) {
+		cursorView.setOutput(display->output());
+		display->widget()->rpWidget()->update();
+	}
+	if (cursorView.surface() != surface) {
+		cursorLifetime.destroy();
+		cursorView.setSurface(surface);
+		if (surface) {
+			base::qt_signal_producer(
+				surface,
+				&QWaylandSurface::offsetForNextFrame
+			) | rpl::on_next([=](const QPoint &offset) {
+				cursorHotspot -= offset;
+			}, cursorLifetime);
+
+			base::qt_signal_producer(
+				surface,
+				&QWaylandSurface::redraw
+			) | rpl::on_next([=] {
+				updateCursor();
+			}, cursorLifetime);
+		}
+	}
+	updateCursor();
+}
+
+void Compositor::Private::setCursorShape(
+		not_null<QWaylandSeat*> seat,
+		Qt::CursorShape shape,
+		QWaylandClient *client) {
+	const auto display = cursorTarget(seat, client);
+	if (!display) {
+		return;
+	}
+	cursorLifetime.destroy();
+	cursorView.setSurface(nullptr);
+	display->widget()->rpWidget()->setCursor(shape);
+}
+
+void Compositor::Private::updateCursor() {
+	const auto display = cursorDisplay.get();
+	if (!display) {
+		return;
+	}
+	const auto widget = display->widget()->rpWidget();
+	const auto surface = cursorView.surface();
+	if (!surface) {
+		widget->setCursor(Qt::BlankCursor);
+		return;
+	}
+	cursorView.advance();
+	const auto buffer = cursorView.currentBuffer();
+	const auto size = surface->destinationSize();
+	if (!buffer.hasContent() || size.isEmpty()) {
+		widget->setCursor(Qt::BlankCursor);
+		return;
+	} else if (!buffer.isSharedMemory()) {
+		return;
+	}
+	const auto source = SourceRect(surface);
+	const auto ratio = std::max(
+		int(std::round(source.width() / size.width())),
+		1);
+	QImage image(size * ratio, QImage::Format_ARGB32_Premultiplied);
+	{
+		QPainter p(&image);
+		p.setCompositionMode(QPainter::CompositionMode_Source);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawImage(
+			QRect(QPoint(), image.size()),
+			buffer.image(),
+			source);
+	}
+	image.setDevicePixelRatio(ratio);
+	widget->setCursor(QCursor(
+		QPixmap::fromImage(std::move(image)),
+		cursorHotspot.x(),
+		cursorHotspot.y()));
+}
+
+void Compositor::Private::resetCursor() {
+	if (const auto display = cursorDisplay.get()) {
+		display->widget()->rpWidget()->unsetCursor();
+	}
+	cursorDisplay = nullptr;
+}
+
 Compositor::Compositor(const QByteArray &socketName, bool gpu)
 : _private(std::make_unique<Private>(this, gpu)) {
 	connect(
@@ -1663,6 +1982,7 @@ Compositor::Compositor(const QByteArray &socketName, bool gpu)
 			seat->setMouseFocus(nullptr);
 			_private->dragging = true;
 		});
+	_private->setupCursor(seat);
 }
 
 Compositor::~Compositor() {

@@ -69,7 +69,14 @@ elseif (LINUX)
         G_LOG_DOMAIN="WebView"
     )
 
-    if (NOT TARGET Qt::WaylandCompositor)
+    if (TARGET Qt::WaylandCompositor)
+        qt_generate_wayland_protocol_server_sources(lib_webview
+        PRIVATE_CODE
+        FILES
+            ${third_party_loc}/wayland-protocols/staging/cursor-shape/cursor-shape-v1.xml
+            ${third_party_loc}/wayland-protocols/unstable/tablet/tablet-unstable-v2.xml
+        )
+    else()
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_compositor.cpp
         )
