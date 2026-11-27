@@ -29,6 +29,7 @@
 #include <wrl/event.h>
 
 #include <QtCore/QUrl>
+#include <QtCore/QWinEventNotifier>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QWindow>
 #include <QtWidgets/QWidget>
@@ -211,6 +212,14 @@ struct PendingPermission {
 		= COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
 };
 
+class Handler;
+
+void CancelEnvironmentRequest(Handler *handler);
+[[nodiscard]] bool CompleteEnvironmentRequest(
+	Handler *handler,
+	HRESULT result,
+	ICoreWebView2Environment *environment);
+
 class Handler
 	: public winrt::implements<
 		Handler,
@@ -262,6 +271,18 @@ public:
 	// must not touch the runtime objects after that point.
 	void setDestroying() {
 		_destroying = true;
+		CancelEnvironmentRequest(this);
+	}
+
+	void setEnvironmentUserDataPath(std::wstring path) {
+		_environmentUserDataPath = std::move(path);
+	}
+	const std::wstring &environmentUserDataPath() const {
+		return _environmentUserDataPath;
+	}
+	void failEnvironmentRequest() {
+		_window = nullptr;
+		fireReady();
 	}
 
 	void setOpaqueBg(QColor opaqueBg);
@@ -377,6 +398,7 @@ private:
 
 	QColor _opaqueBg;
 	std::string _restrictedOrigin;
+	std::wstring _environmentUserDataPath;
 	bool _debug = false;
 	bool _destroying = false;
 	bool _permissionAsking = false;
@@ -429,11 +451,18 @@ void Handler::setOpaqueBg(QColor opaqueBg) {
 HRESULT STDMETHODCALLTYPE Handler::Invoke(
 		HRESULT res,
 		ICoreWebView2Environment *env) {
+	const auto tracked = CompleteEnvironmentRequest(this, res, env);
 	if (_destroying) {
 		return S_OK;
+	} else if (FAILED(res) || !env || !tracked) {
+		_window = nullptr;
+		fireReady();
+		return FAILED(res) ? res : E_FAIL;
 	}
 	_environment.copy_from(env);
 	if (!_environment) {
+		_window = nullptr;
+		fireReady();
 		return E_FAIL;
 	}
 	if (!_restrictedOrigin.empty()) {
@@ -1179,6 +1208,208 @@ void Handler::processPermissionRequests() {
 	}
 }
 
+struct EnvironmentRequest {
+	std::wstring arguments;
+	winrt::com_ptr<ICoreWebView2EnvironmentOptions> options;
+	winrt::com_ptr<Handler> owned;
+};
+
+struct EnvironmentEntry {
+	std::wstring arguments;
+	std::vector<EnvironmentRequest> waiting;
+	winrt::handle process;
+	std::unique_ptr<QWinEventNotifier> processNotifier;
+	uint64 generation = 0;
+	int creating = 0;
+	bool active = false;
+	bool trackingFailed = false;
+};
+
+[[nodiscard]] auto &Environments() {
+	static auto result = base::flat_map<std::wstring, EnvironmentEntry>();
+	return result;
+}
+
+[[nodiscard]] uint64 NextEnvironmentGeneration() {
+	static auto result = uint64();
+	return ++result;
+}
+
+void StartEnvironment(
+		const std::wstring &path,
+		EnvironmentRequest request) {
+	auto &entry = Environments()[path];
+	entry.arguments = request.arguments;
+	++entry.creating;
+	const auto handler = request.owned.get();
+	const auto result = CreateCoreWebView2EnvironmentWithOptions(
+		nullptr,
+		path.empty() ? nullptr : path.c_str(),
+		request.options.get(),
+		handler);
+	if (result != S_OK) {
+		const auto owned = request.owned;
+		crl::on_main([owned, result] {
+			owned->Invoke(result, (ICoreWebView2Environment*)nullptr);
+		});
+	}
+}
+
+void StartNextEnvironment(const std::wstring &path) {
+	auto &environments = Environments();
+	const auto i = environments.find(path);
+	if (i == environments.end() || i->second.active || i->second.creating) {
+		return;
+	} else if (i->second.waiting.empty()) {
+		if (!i->second.trackingFailed) {
+			environments.erase(i);
+		}
+		return;
+	}
+	auto request = std::move(i->second.waiting.front());
+	i->second.waiting.erase(i->second.waiting.begin());
+	StartEnvironment(path, std::move(request));
+}
+
+void FailEnvironmentRequest(winrt::com_ptr<Handler> owned) {
+	crl::on_main([owned] {
+		owned->failEnvironmentRequest();
+	});
+}
+
+void FailWaitingEnvironmentRequests(const std::wstring &path) {
+	auto &environments = Environments();
+	const auto i = environments.find(path);
+	if (i == environments.end()) {
+		return;
+	}
+	auto waiting = std::move(i->second.waiting);
+	for (auto &request : waiting) {
+		FailEnvironmentRequest(std::move(request.owned));
+	}
+}
+
+void RequestEnvironment(
+		std::wstring path,
+		std::wstring arguments,
+		winrt::com_ptr<ICoreWebView2EnvironmentOptions> options,
+		winrt::com_ptr<Handler> owned) {
+	owned->setEnvironmentUserDataPath(path);
+	auto &entry = Environments()[path];
+	if (entry.trackingFailed && entry.arguments != arguments) {
+		FailEnvironmentRequest(std::move(owned));
+		return;
+	}
+	if ((entry.active || entry.creating)
+		&& entry.arguments != arguments) {
+		entry.waiting.push_back({
+			.arguments = std::move(arguments),
+			.options = std::move(options),
+			.owned = std::move(owned),
+		});
+		return;
+	}
+	StartEnvironment(path, {
+		.arguments = std::move(arguments),
+		.options = std::move(options),
+		.owned = std::move(owned),
+	});
+}
+
+void BrowserProcessExited(
+		const std::wstring &path,
+		uint64 generation) {
+	auto &environments = Environments();
+	const auto i = environments.find(path);
+	if (i == environments.end() || i->second.generation != generation) {
+		return;
+	}
+	i->second.active = false;
+	i->second.trackingFailed = false;
+	i->second.processNotifier.reset();
+	i->second.process.close();
+	StartNextEnvironment(path);
+}
+
+[[nodiscard]] bool CompleteEnvironmentRequest(
+		Handler *handler,
+		HRESULT result,
+		ICoreWebView2Environment *environment) {
+	const auto path = handler->environmentUserDataPath();
+	auto &environments = Environments();
+	const auto i = environments.find(path);
+	if (i == environments.end()) {
+		return false;
+	}
+	auto &entry = i->second;
+	if (entry.creating > 0) {
+		--entry.creating;
+	}
+	if (FAILED(result) || !environment) {
+		StartNextEnvironment(path);
+		return false;
+	}
+	const auto failTracking = [&] {
+		entry.active = false;
+		entry.trackingFailed = true;
+		entry.generation = NextEnvironmentGeneration();
+		entry.processNotifier.reset();
+		entry.process.close();
+		FailWaitingEnvironmentRequests(path);
+		return false;
+	};
+	auto processId = UINT32();
+	if (environment->get_BrowserProcessId(&processId) != S_OK || !processId) {
+		return failTracking();
+	}
+	const auto handle = OpenProcess(SYNCHRONIZE, FALSE, processId);
+	if (!handle) {
+		if (GetLastError() != ERROR_INVALID_PARAMETER) {
+			return failTracking();
+		}
+		// The process exited before we could open its handle.
+		entry.active = false;
+		entry.trackingFailed = false;
+		entry.generation = NextEnvironmentGeneration();
+		entry.processNotifier.reset();
+		entry.process.close();
+		StartNextEnvironment(path);
+		return false;
+	}
+	entry.processNotifier.reset();
+	entry.process.attach(handle);
+	entry.active = true;
+	entry.trackingFailed = false;
+	entry.generation = NextEnvironmentGeneration();
+	const auto generation = entry.generation;
+	auto notifier = std::make_unique<QWinEventNotifier>(entry.process.get());
+	QObject::connect(
+		notifier.get(),
+		&QWinEventNotifier::activated,
+		[path, generation](HANDLE) {
+			crl::on_main([path, generation] {
+				BrowserProcessExited(path, generation);
+			});
+		});
+	entry.processNotifier = std::move(notifier);
+	return true;
+}
+
+void CancelEnvironmentRequest(Handler *handler) {
+	const auto path = handler->environmentUserDataPath();
+	auto &environments = Environments();
+	const auto i = environments.find(path);
+	if (i == environments.end()) {
+		return;
+	}
+	auto &waiting = i->second.waiting;
+	waiting.erase(
+		std::remove_if(waiting.begin(), waiting.end(), [&](const auto &request) {
+			return request.owned.get() == handler;
+		}),
+		waiting.end());
+}
+
 class Instance final : public Interface, public base::has_weak_ptr {
 public:
 	explicit Instance(Config &&config);
@@ -1350,17 +1581,15 @@ void Instance::start(Config &&config) {
 		std::move(pin),
 		[&](not_null<Handler*> that) { handler = that; },
 		crl::guard(this, ready));
-	const auto result = CreateCoreWebView2EnvironmentWithOptions(
-		nullptr,
-		wpath.empty() ? nullptr : wpath.c_str(),
-		options.get(),
-		handler);
-	if (result == S_OK) {
-		_ownedHandler = std::move(owned);
-		_handler = handler;
-		if (_readyFlag) {
-			processReadySteps();
-		}
+	_ownedHandler = owned;
+	_handler = handler;
+	RequestEnvironment(
+		wpath,
+		std::move(arguments),
+		std::move(options),
+		std::move(owned));
+	if (_readyFlag) {
+		processReadySteps();
 	}
 }
 
