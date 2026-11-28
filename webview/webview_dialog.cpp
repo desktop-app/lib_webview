@@ -322,15 +322,26 @@ PopupResult ShowBlockingPopup(PopupArgs &&args) {
 	QEventLoop loop;
 	auto running = true;
 	auto widget = base::unique_qptr<Ui::SeparatePanel>();
+	const auto finish = [&] {
+		if (running) {
+			running = false;
+			loop.quit();
+		}
+	};
+	auto lifetime = rpl::lifetime();
+	Ui::Integration::Instance().forcePopupMenuHideRequests(
+	) | rpl::on_next([&] {
+		if (widget) {
+			widget->hideForStacking();
+		}
+		finish();
+	}, lifetime);
 	InvokeQueued(&context, [&] {
+		if (!running) {
+			return;
+		}
 		widget = CreatePopupPanel(args, args.parent, true, &result);
 		const auto raw = widget.get();
-		const auto finish = [&] {
-			if (running) {
-				running = false;
-				loop.quit();
-			}
-		};
 		QObject::connect(raw, &QObject::destroyed, finish);
 		raw->closeEvents() | rpl::on_next(finish, raw->lifetime());
 	});
