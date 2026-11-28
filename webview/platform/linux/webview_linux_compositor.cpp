@@ -282,6 +282,7 @@ public:
 	void setOrigin(QPoint origin);
 	void setBackground(QColor color);
 	void setParentDisplay(not_null<Display*> parent);
+	void setHeld(bool held);
 
 	void init(QOpenGLFunctions &f) override;
 	void deinit(QOpenGLFunctions *f) override;
@@ -332,6 +333,7 @@ private:
 	std::unique_ptr<SurfaceNode> _root;
 	QPoint _origin;
 	QColor _background = Qt::transparent;
+	bool _held = false;
 	rpl::variable<qreal> _scale = 1.;
 	std::optional<QOpenGLTextureBlitter> _blitter;
 	base::flat_map<SurfaceNode*, Ui::GL::Textures<1>> _textures;
@@ -366,12 +368,15 @@ private:
 	void trackSizeLimits(
 		not_null<QWaylandXdgToplevel*> toplevel,
 		not_null<Display*> display);
+	void setHeld(bool held);
+	void followClient();
 	void setupWindow(not_null<QWaylandXdgSurface*> xdgSurface);
 
 	const not_null<QWaylandXdgSurface*> _xdgSurface;
 	const base::weak_ptr<Display> _display;
 	const base::unique_qptr<QWidget> _window;
 	rpl::variable<bool> _completed = false;
+	bool _held = false;
 	bool _following = false;
 	rpl::lifetime _lifetime;
 
@@ -533,6 +538,17 @@ void Compositor::Display::setBackground(QColor color) {
 
 void Compositor::Display::setParentDisplay(not_null<Display*> parent) {
 	_parentDisplay = base::make_weak(parent);
+}
+
+void Compositor::Display::setHeld(bool held) {
+	if (_held == held) {
+		return;
+	}
+	_held = held;
+	_widget->rpWidget()->setUpdatesEnabled(!held);
+	if (held) {
+		sendFrameCallbacks();
+	}
 }
 
 void Compositor::Display::init(QOpenGLFunctions &f) {
@@ -782,7 +798,10 @@ auto Compositor::Display::pointerTarget(QPointF global) -> Display* {
 }
 
 void Compositor::Display::update() {
-	if (_widget) {
+	if (_held) {
+		// Let the client draw the frame we are waiting for
+		sendFrameCallbacks();
+	} else if (_widget) {
 		_widget->rpWidget()->update();
 	}
 }
@@ -1155,10 +1174,7 @@ void Compositor::Chrome::trackGeometry(
 		if (_window && popup) {
 			updatePopupWindow(geometry, scale);
 		} else if (_window) {
-			const auto size = QSizeF(geometry.window.size());
-			_following = true;
-			_window->resize((size * scale).toSize());
-			_following = false;
+			followClient();
 		}
 
 		_completed = true;
@@ -1215,10 +1231,22 @@ void Compositor::Chrome::trackToplevel(
 			return;
 		}
 		weak->sendFullscreen(size);
+		if (_window && _window->isVisible()) {
+			// Commit only once the client has drawn the new size
+			setHeld(true);
+		}
 	}, _lifetime);
 
 	if (_window) {
 		trackSizeLimits(toplevel, display);
+
+		base::qt_signal_producer(
+			_xdgSurface->surface(),
+			&QWaylandSurface::redraw
+		) | rpl::filter([=] { return _held; }) | rpl::on_next([=] {
+			followClient();
+			setHeld(false);
+		}, _lifetime);
 	}
 
 	base::qt_signal_producer(
@@ -1269,6 +1297,30 @@ void Compositor::Chrome::trackSizeLimits(
 			side(max.width()),
 			side(max.height()));
 	}, _lifetime);
+}
+
+void Compositor::Chrome::setHeld(bool held) {
+	_held = held;
+	if (const auto display = _display.get()) {
+		display->setHeld(held);
+	}
+}
+
+void Compositor::Chrome::followClient() {
+	const auto display = _display.get();
+	if (!display) {
+		return;
+	}
+	const auto geometry = QSizeF(WindowGeometry(_xdgSurface).size());
+	const auto size = (geometry * display->scale()).toSize();
+	if (size.isEmpty() || _window->size() == size) {
+		return;
+	} else if (_window->isVisible()) {
+		setHeld(true);
+	}
+	_following = true;
+	_window->resize(size);
+	_following = false;
 }
 
 void Compositor::Chrome::setupWindow(
