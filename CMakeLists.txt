@@ -29,6 +29,8 @@ PRIVATE
     webview/platform/linux/webview_linux.cpp
     webview/platform/linux/webview_linux_compositor.cpp
     webview/platform/linux/webview_linux_compositor.h
+    webview/platform/linux/webview_linux_data_device.cpp
+    webview/platform/linux/webview_linux_data_device.h
     webview/platform/linux/webview_linux_http_server.cpp
     webview/platform/linux/webview_linux_http_server.h
     webview/platform/linux/webview_linux_webkitgtk_library.cpp
@@ -74,11 +76,13 @@ elseif (LINUX)
         PRIVATE_CODE
         FILES
             ${third_party_loc}/wayland-protocols/staging/cursor-shape/cursor-shape-v1.xml
+            ${third_party_loc}/wayland-protocols/unstable/primary-selection/primary-selection-unstable-v1.xml
             ${third_party_loc}/wayland-protocols/unstable/tablet/tablet-unstable-v2.xml
         )
     else()
         remove_target_sources(lib_webview ${src_loc}
             webview/platform/linux/webview_linux_compositor.cpp
+            webview/platform/linux/webview_linux_data_device.cpp
         )
     endif()
 endif()

@@ -14,18 +14,23 @@
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/platform/ui_platform_utility.h"
+#include "ui/style/style_core_scale.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
+#include "webview/platform/linux/webview_linux_data_device.h"
 
+#include <QtCore/QMimeData>
+#include <QtCore/QTimer>
 #include <QtGui/QCursor>
+#include <QtGui/QDrag>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QScreen>
+#include <QtOpenGL/QOpenGLFramebufferObject>
 #include <QtOpenGL/QOpenGLTexture>
 #include <QtOpenGL/QOpenGLTextureBlitter>
 #include <QtOpenGLWidgets/QOpenGLWidget>
 #include <QtWaylandCompositor/QWaylandClient>
-#include <QtWaylandCompositor/QWaylandDrag>
 #include <QtWaylandCompositor/QWaylandOutput>
 #include <QtWaylandCompositor/QWaylandSeat>
 #include <QtWaylandCompositor/QWaylandView>
@@ -41,6 +46,8 @@
 
 namespace Webview {
 namespace {
+
+constexpr auto kDragIconTimeout = 100;
 
 struct SurfaceGeometry {
 	QRect window;
@@ -74,6 +81,118 @@ struct SurfaceGeometry {
 	const auto source = surface->sourceGeometry();
 	const auto scale = surface->bufferScale();
 	return QRectF(source.topLeft() * scale, source.size() * scale);
+}
+
+[[nodiscard]] int PaddedLength(int length, qreal scale) {
+	if (scale <= 0.) {
+		return length;
+	}
+	const auto from = int(std::ceil(length / scale - 0.001));
+	for (auto units = from; units != from + 120; ++units) {
+		const auto pixels = units * scale;
+		if (std::abs(pixels - std::round(pixels)) < 0.01) {
+			return std::max(int(std::round(pixels)), length);
+		}
+	}
+	return length;
+}
+
+[[nodiscard]] QImage BufferImage(
+		const QWaylandBufferRef &buffer,
+		QOpenGLWidget *gl,
+		const QRectF &source,
+		QSize size) {
+	using Blitter = QOpenGLTextureBlitter;
+	if (buffer.isSharedMemory()) {
+		auto result = QImage(
+			size,
+			QImage::Format_ARGB32_Premultiplied);
+		QPainter p(&result);
+		p.setCompositionMode(QPainter::CompositionMode_Source);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawImage(QRect(QPoint(), size), buffer.image(), source);
+		p.end();
+		return result;
+	} else if (!gl || !gl->context()) {
+		return QImage();
+	}
+	gl->makeCurrent();
+	auto result = QImage();
+	if (const auto texture = buffer.toOpenGLTexture()) {
+		auto &f = *gl->context()->functions();
+		auto fbo = QOpenGLFramebufferObject(size);
+		fbo.bind();
+		f.glViewport(0, 0, size.width(), size.height());
+		f.glDisable(GL_BLEND);
+		const auto topLeft = (buffer.origin()
+			== QWaylandSurface::OriginTopLeft);
+		auto blitter = Blitter();
+		blitter.create();
+		blitter.bind(texture->target());
+		blitter.blit(
+			texture->textureId(),
+			Blitter::targetTransform(
+				QRectF(QPointF(), size),
+				QRect(QPoint(), size)),
+			Blitter::sourceTransform(
+				source,
+				buffer.size(),
+				(topLeft
+					? Blitter::OriginTopLeft
+					: Blitter::OriginBottomLeft)));
+		blitter.release();
+		blitter.destroy();
+		fbo.release();
+		result = fbo.toImage();
+	}
+	gl->doneCurrent();
+	return result;
+}
+
+[[nodiscard]] QPixmap SurfacePixmap(
+		not_null<QWaylandSurface*> surface,
+		QOpenGLWidget *gl,
+		qreal scale,
+		qreal visible,
+		qreal hostScale) {
+	auto view = QWaylandView();
+	view.setSurface(surface);
+	view.advance();
+	const auto buffer = view.currentBuffer();
+	const auto size = surface->destinationSize();
+	if (!buffer.hasContent() || size.isEmpty()) {
+		return QPixmap();
+	}
+	const auto source = SourceRect(surface);
+	const auto ratio = std::max(
+		int(std::round(source.width() / size.width())),
+		1);
+	const auto content = size * ratio;
+	const auto cropped = (visible < 1.);
+	const auto frame = BufferImage(
+		buffer,
+		gl,
+		source,
+		cropped ? (QSizeF(content) * visible).toSize() : content);
+	if (frame.isNull()) {
+		return QPixmap();
+	}
+	// Qt rounds the drag icon window size to whole logical pixels.
+	auto image = QImage(
+		(cropped
+			? content
+			: QSize(
+				PaddedLength(content.width(), hostScale),
+				PaddedLength(content.height(), hostScale))),
+		QImage::Format_ARGB32_Premultiplied);
+	image.fill(Qt::transparent);
+	{
+		QPainter p(&image);
+		p.setCompositionMode(QPainter::CompositionMode_Source);
+		p.drawImage(QPoint(), frame);
+	}
+	image.setDevicePixelRatio(ratio / scale);
+	return QPixmap::fromImage(std::move(image));
 }
 
 [[nodiscard]] int OutputScale(not_null<QWidget*> widget) {
@@ -420,6 +539,8 @@ public:
 	void setBackground(QColor color);
 	void setParentDisplay(not_null<Display*> parent);
 	void setHeld(bool held);
+	void releaseGrab(not_null<QWaylandSeat*> seat);
+	[[nodiscard]] bool touching() const;
 
 	void init(QOpenGLFunctions &f) override;
 	void deinit(QOpenGLFunctions *f) override;
@@ -455,11 +576,10 @@ private:
 	void sendLocalMouseMove(
 		not_null<QWaylandSeat*> seat,
 		QPointF position);
-	[[nodiscard]] QWaylandDrag *activeDrag(
-		not_null<QWaylandSeat*> seat) const;
-	void sendDragMove(not_null<QWaylandDrag*> drag, QPointF global);
-	void finishDrag(not_null<QWaylandDrag*> drag, bool cancel);
-	void releaseGrab(not_null<QWaylandSeat*> seat);
+	[[nodiscard]] DataDeviceManager *dataDevices() const;
+	void sendDragMove(
+		not_null<DataDeviceManager*> drag,
+		not_null<QDropEvent*> e);
 	[[nodiscard]] base::EventFilterResult filterEvent(
 		not_null<QEvent*> e);
 
@@ -581,6 +701,7 @@ struct Compositor::Private {
 		QWaylandClient *client);
 	void updateCursor();
 	void resetCursor();
+	void startHostDrag();
 
 	const not_null<Compositor*> compositor;
 	QWaylandXdgShell shell;
@@ -588,7 +709,6 @@ struct Compositor::Private {
 	QWaylandViewporter viewporter;
 	wl_protocol_logger *logger = nullptr;
 	const bool gpu = false;
-	bool dragging = false;
 	QColor background;
 	base::weak_ptr<Display> display;
 	base::flat_map<QWaylandXdgSurface*, std::unique_ptr<Chrome>> chromes;
@@ -599,7 +719,12 @@ struct Compositor::Private {
 	QPoint cursorHotspot;
 	base::weak_ptr<Display> cursorDisplay;
 	rpl::lifetime cursorLifetime;
+	base::weak_ptr<Display> grabDisplay;
+	bool hostDragRunning = false;
+	bool dragIconWaited = false;
+	rpl::lifetime dragIconLifetime;
 	std::unique_ptr<CursorShapeManager> cursorShapes;
+	std::unique_ptr<DataDeviceManager> dataDevices;
 	rpl::lifetime lifetime;
 };
 
@@ -660,6 +785,7 @@ void Compositor::Display::attach(not_null<Ui::RpWidgetWrap*> widget) {
 	raw->setMouseTracking(true);
 	raw->setFocusPolicy(Qt::StrongFocus);
 	raw->setAttribute(Qt::WA_AcceptTouchEvents);
+	raw->setAcceptDrops(true);
 	if (!_output) {
 		_ownedOutput = base::make_unique_q<Output>(_compositor, raw);
 		_output = _ownedOutput.get();
@@ -1050,45 +1176,27 @@ void Compositor::Display::sendLocalMouseMove(
 	}
 }
 
-QWaylandDrag *Compositor::Display::activeDrag(
-		not_null<QWaylandSeat*> seat) const {
-	return (_compositor && _compositor->_private->dragging)
-		? seat->drag()
+DataDeviceManager *Compositor::Display::dataDevices() const {
+	return _compositor
+		? _compositor->_private->dataDevices.get()
 		: nullptr;
 }
 
 void Compositor::Display::sendDragMove(
-		not_null<QWaylandDrag*> drag,
-		QPointF global) {
-	for (const auto &display : displayChain()) {
-		const auto widget = display->_widget->rpWidget();
-		const auto position = widget->mapFromGlobal(global);
-		if (const auto target = display->targetAt(position)) {
-			const auto point = position / display->scale();
-			drag->dragMove(
-				target->node->surface(),
-				point - QPointF(target->position));
-			return;
-		}
-	}
-	drag->dragMove(nullptr, QPointF());
-}
-
-void Compositor::Display::finishDrag(
-		not_null<QWaylandDrag*> drag,
-		bool cancel) {
-	_compositor->_private->dragging = false;
-	if (cancel) {
-		drag->dragMove(nullptr, QPointF());
-	}
-	drag->drop();
+		not_null<DataDeviceManager*> drag,
+		not_null<QDropEvent*> e) {
+	const auto position = e->position();
+	const auto target = targetAt(position);
+	const auto point = position / scale();
+	drag->dragMove(
+		target ? target->node->surface() : nullptr,
+		target ? (point - QPointF(target->position)) : QPointF(),
+		e->mimeData(),
+		e->possibleActions());
 }
 
 void Compositor::Display::releaseGrab(not_null<QWaylandSeat*> seat) {
-	const auto drag = (_grab || _touch) ? activeDrag(seat) : nullptr;
-	if (drag) {
-		finishDrag(drag, true);
-	} else if (_grab) {
+	if (_grab) {
 		const auto buttons = QGuiApplication::mouseButtons();
 		const auto last = uint(Qt::MaxMouseButton);
 		for (auto bit = 1u; bit <= last; bit <<= 1) {
@@ -1106,6 +1214,10 @@ void Compositor::Display::releaseGrab(not_null<QWaylandSeat*> seat) {
 	}
 	_grab = nullptr;
 	_touch = nullptr;
+}
+
+bool Compositor::Display::touching() const {
+	return _touch != nullptr;
 }
 
 base::EventFilterResult Compositor::Display::filterEvent(
@@ -1143,15 +1255,15 @@ base::EventFilterResult Compositor::Display::filterEvent(
 			const auto position = widget->mapFromGlobal(global);
 			display->_grab = display->viewAt(position);
 		}
+		_compositor->_private->grabDisplay = base::make_weak(display);
 		sendMouseMove(seat, global);
 		seat->sendMousePressEvent(event->button());
 		return Result::Cancel;
 	}
 	case QEvent::MouseMove: {
 		const auto event = static_cast<QMouseEvent*>(e.get());
-		if (const auto drag = activeDrag(seat)) {
-			sendDragMove(drag, event->globalPosition());
-		} else {
+		const auto drag = dataDevices();
+		if (!drag || !drag->dragging()) {
 			sendMouseMove(seat, event->globalPosition());
 		}
 		return Result::Cancel;
@@ -1160,8 +1272,9 @@ base::EventFilterResult Compositor::Display::filterEvent(
 		const auto event = static_cast<QMouseEvent*>(e.get());
 		const auto global = event->globalPosition();
 		const auto display = pointerTarget(global);
-		if (const auto drag = activeDrag(seat)) {
-			finishDrag(drag, false);
+		const auto drag = dataDevices();
+		if (drag && drag->dragging()) {
+			return Result::Cancel;
 		} else if (display && display->_grab) {
 			seat->sendMouseReleaseEvent(event->button());
 		}
@@ -1227,8 +1340,16 @@ base::EventFilterResult Compositor::Display::filterEvent(
 			_touch = !points.isEmpty()
 				? viewAt(points.front().position())
 				: nullptr;
+			if (_touch) {
+				_compositor->_private->grabDisplay
+					= base::make_weak(this);
+			}
 		}
-		if (const auto target = targetFor(_touch)) {
+		const auto drag = dataDevices();
+		const auto target = (drag && drag->dragging())
+			? std::nullopt
+			: targetFor(_touch);
+		if (target) {
 			const auto surface = target->node->surface();
 			const auto offset = QPointF(target->position);
 			for (const auto &point : points) {
@@ -1240,14 +1361,6 @@ base::EventFilterResult Compositor::Display::filterEvent(
 			}
 			seat->sendTouchFrameEvent(surface->client());
 		}
-		if (const auto drag = _touch ? activeDrag(seat) : nullptr) {
-			if (e->type() == QEvent::TouchEnd) {
-				finishDrag(drag, false);
-			} else if (!points.isEmpty()) {
-				const auto &point = points.front();
-				sendDragMove(drag, point.globalPosition());
-			}
-		}
 		if (e->type() == QEvent::TouchEnd) {
 			_touch = nullptr;
 		}
@@ -1255,14 +1368,52 @@ base::EventFilterResult Compositor::Display::filterEvent(
 		return Result::Cancel;
 	}
 	case QEvent::TouchCancel: {
-		if (const auto drag = _touch ? activeDrag(seat) : nullptr) {
-			finishDrag(drag, true);
-		}
 		if (const auto target = targetFor(_touch)) {
 			const auto client = target->node->surface()->client();
 			seat->sendTouchCancelEvent(client);
 		}
 		_touch = nullptr;
+		return Result::Cancel;
+	}
+	case QEvent::DragEnter:
+	case QEvent::DragMove: {
+		const auto drag = dataDevices();
+		if (!drag) {
+			return Result::Continue;
+		}
+		const auto event = static_cast<QDragMoveEvent*>(e.get());
+		sendDragMove(drag, event);
+		const auto action = drag->dragAction();
+		if (action != Qt::IgnoreAction) {
+			event->setDropAction(action);
+			event->accept();
+		} else if (e->type() == QEvent::DragEnter) {
+			event->acceptProposedAction();
+		} else {
+			event->ignore();
+		}
+		return Result::Cancel;
+	}
+	case QEvent::DragLeave: {
+		if (const auto drag = dataDevices()) {
+			drag->dragLeave();
+		}
+		return Result::Cancel;
+	}
+	case QEvent::Drop: {
+		const auto drag = dataDevices();
+		if (!drag) {
+			return Result::Continue;
+		}
+		const auto event = static_cast<QDropEvent*>(e.get());
+		sendDragMove(drag, event);
+		const auto action = drag->drop(event->mimeData());
+		if (action != Qt::IgnoreAction) {
+			event->setDropAction(action);
+			event->accept();
+		} else {
+			event->ignore();
+		}
 		return Result::Cancel;
 	}
 	default:
@@ -1940,6 +2091,84 @@ void Compositor::Private::resetCursor() {
 	cursorDisplay = nullptr;
 }
 
+void Compositor::Private::startHostDrag() {
+	const auto drag = dataDevices.get();
+	const auto display = grabDisplay.get();
+	const auto pressed = display
+		&& (QGuiApplication::mouseButtons() || display->touching());
+	if (!drag || !drag->dragging() || hostDragRunning) {
+		return;
+	} else if (!pressed) {
+		drag->cancelDrag();
+		if (display) {
+			display->releaseGrab(compositor->defaultSeat());
+		}
+		return;
+	}
+	const auto icon = drag->dragIcon();
+	if (icon && !icon->hasContent() && !dragIconWaited) {
+		dragIconWaited = true;
+		const auto retry = [=] {
+			QMetaObject::invokeMethod(
+				compositor.get(),
+				[=] { startHostDrag(); },
+				Qt::QueuedConnection);
+		};
+		base::qt_signal_producer(
+			icon,
+			&QWaylandSurface::hasContentChanged
+		) | rpl::on_next(retry, dragIconLifetime);
+		QTimer::singleShot(kDragIconTimeout, compositor.get(), retry);
+		return;
+	}
+	dragIconLifetime.destroy();
+	dragIconWaited = false;
+	hostDragRunning = true;
+
+	const auto guard = QPointer<Compositor>(compositor.get());
+	const auto qdrag = new QDrag(display->widget()->rpWidget());
+	qdrag->setMimeData(drag->createDragData());
+	const auto scale = display->scale();
+	const auto widget = display->widget()->rpWidget();
+	const auto window = widget->window()->windowHandle();
+	// QT_WIDGETS_HIGHDPI_DOWNSCALE crops raster windows to window DPR.
+	const auto visible = window
+		? (window->devicePixelRatio() / widget->devicePixelRatio())
+		: 1.;
+	const auto hostScale = window
+		? (window->devicePixelRatio()
+			* window->screen()->logicalDotsPerInch()
+			/ style::BaseDpi())
+		: 1.;
+	const auto pixmap = icon
+		? SurfacePixmap(
+			icon,
+			qobject_cast<QOpenGLWidget*>(widget),
+			scale,
+			visible,
+			hostScale)
+		: QPixmap();
+	if (!pixmap.isNull()) {
+		qdrag->setPixmap(pixmap);
+		qdrag->setHotSpot(
+			(QPointF(-drag->dragIconOffset()) * scale).toPoint());
+	}
+	const auto actions = drag->dragActions();
+	const auto result = qdrag->exec(
+		actions,
+		(actions & Qt::CopyAction) ? Qt::CopyAction : Qt::MoveAction);
+	if (!guard) {
+		return;
+	}
+	hostDragRunning = false;
+	if (const auto drag = dataDevices.get()) {
+		drag->dragFinished(result);
+	}
+	if (const auto display = grabDisplay.get()) {
+		display->releaseGrab(compositor->defaultSeat());
+	}
+}
+
 Compositor::Compositor(const QByteArray &socketName, bool gpu)
 : _private(std::make_unique<Private>(this, gpu)) {
 	connect(
@@ -1956,31 +2185,37 @@ Compositor::Compositor(const QByteArray &socketName, bool gpu)
 			_private->popupCreated(popup, xdgSurface);
 		});
 
-	if (!gpu) {
-		const auto filter = [](
-				const wl_client*,
-				const wl_global *global,
-				void*) {
-			const auto name = std::string_view(
-				wl_global_get_interface(global)->name);
-			return name != "wl_drm"
+	const auto filter = [](
+			const wl_client*,
+			const wl_global *global,
+			void *data) {
+		const auto that = static_cast<const Private*>(data);
+		const auto name = std::string_view(
+			wl_global_get_interface(global)->name);
+		if (name == "wl_data_device_manager") {
+			return that->dataDevices
+				&& (global == that->dataDevices->global());
+		}
+		return that->gpu
+			|| (name != "wl_drm"
 				&& name != "zwp_linux_dmabuf_v1"
-				&& name != "wl_eglstream_display";
-		};
-		wl_display_set_global_filter(display(), filter, nullptr);
-	}
+				&& name != "wl_eglstream_display");
+	};
+	wl_display_set_global_filter(display(), filter, _private.get());
 
 	setSocketName(socketName);
 	create();
 
 	const auto seat = defaultSeat();
-	connect(
-		seat->drag(),
-		&QWaylandDrag::dragStarted,
+	_private->dataDevices = std::make_unique<DataDeviceManager>(
 		this,
+		seat,
 		[=] {
 			seat->setMouseFocus(nullptr);
-			_private->dragging = true;
+			QMetaObject::invokeMethod(
+				this,
+				[=] { _private->startHostDrag(); },
+				Qt::QueuedConnection);
 		});
 	_private->setupCursor(seat);
 }
